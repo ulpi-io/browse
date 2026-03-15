@@ -2,21 +2,23 @@
 
 **Give AI agents eyes and hands on the web — without burning tokens on raw HTML.**
 
-When an AI agent needs to browse the web, the naive approach is dumping full page HTML into the context window. A typical e-commerce page is **1.2 MB of HTML — ~415,000 tokens** of CSS classes, SVG paths, and tracking scripts. Even a GitHub repo page is 300KB / ~100,000 tokens.
+Tools like [Playwright MCP](https://github.com/microsoft/playwright-mcp) dump the **full accessibility snapshot into the AI context on every action** — navigate, click, type. On a real e-commerce page, that's **~50,000 tokens per action**, whether the agent needs it or not. Four navigations and your context window is saturated.
 
-`@ulpi/browse` solves this with a structured accessibility snapshot that compresses a full page into a **compact, actionable representation** — with ref-based annotations that let the agent interact with any element in a single command.
+`@ulpi/browse` gives the agent **control over what it sees**. Navigation returns a one-liner. The agent requests a snapshot only when needed — and can filter to interactive elements only, cutting tokens by another 3-4x.
 
 ## The Problem (Measured)
 
 ```
-                                        Size        ~Tokens
-Playwright page.content() (mumzworld)   1.2 MB      ~415,000
-Playwright page.content() (github)      297 KB      ~101,000
-browse snapshot -i (mumzworld)          5.4 KB        ~1,379    ← 301x smaller
-browse snapshot -i (github)             4.2 KB        ~1,083    ←  94x smaller
+Action: Navigate to mumzworld.com homepage
+
+Playwright MCP browser_navigate:   200.7 KB   ~51,379 tokens  (auto-dumped)
+browse goto:                            44 B       ~11 tokens  (one-liner)
+browse snapshot -i (when needed):   59.2 KB   ~15,147 tokens  (on demand)
 ```
 
-**5-300x fewer tokens.** And unlike raw HTML, every element in the snapshot is directly clickable by ref. See [BENCHMARKS.md](BENCHMARKS.md) for full data across multiple sites.
+**Playwright MCP dumps 3.4x more tokens than browse — and it does it on every single action.** Over a 10-step session, that's **~174K vs ~21K tokens** for the same work.
+
+See [BENCHMARKS.md](BENCHMARKS.md) for full data across mumzworld, amazon, and ebay (homepage, search, PDP).
 
 ## What Makes This Different
 
@@ -85,14 +87,17 @@ Write commands are **not** retried (to avoid double form submissions). Read comm
 
 Every command is designed to return **structured, minimal output** — not raw browser dumps:
 
-| What you need | Raw Playwright | `browse` | Token savings |
-|---------------|----------------|----------|---------------|
-| Page content | `page.content()` → 1.2MB | `text` → 2.5KB | **~640x** |
-| Interactive elements | `ariaSnapshot()` → 15KB, no refs | `snapshot -i` → 5.4KB + refs | **~3x** + actionable |
-| Form fields | Write your own evaluator | `forms` → structured JSON | N/A |
-| All links | Write your own evaluator | `links` → `Text → URL` | N/A |
-| Network log | Wire up event listeners | `network` → one-liner per request | N/A |
-| Click element | Construct CSS/XPath selector | `click @e3` | Zero selector tokens |
+| What you need | Playwright MCP | `browse` | Difference |
+|---------------|----------------|----------|------------|
+| Navigate to page | Auto-dumps ~50K tokens | `goto` → ~11 tokens | **Agent controls when to snapshot** |
+| Click a button | Auto-dumps ~50K tokens | `click @e3` → ~15 tokens | **No snapshot on actions** |
+| Interactive elements | Full tree, no filter | `snapshot -i` → interactive only | **3-6x fewer tokens** |
+| Hidden clickable divs | Not detected | `snapshot -C` detects them | **Catches what ARIA misses** |
+| Clean page text | Not available | `text` → visible text only | **Purpose-built command** |
+| Form fields | Not available | `forms` → structured JSON | **Purpose-built command** |
+| Network log | Not available | `network` → one-liner per request | **Purpose-built command** |
+| Snapshot diff | Not available | `snapshot-diff` | **Before/after comparison** |
+| Crash recovery | None | Auto-restart + safe retry | **Built-in resilience** |
 
 ## Install
 

@@ -1,128 +1,174 @@
-# Benchmarks: @ulpi/browse vs Raw Playwright
+# Benchmarks: @ulpi/browse vs Playwright MCP
 
-Measured on real websites, March 2026. Same machine, same Chromium, same pages.
+Measured March 2026. Same machine, same Chromium, same pages.
+3 e-commerce sites × 3 page types (Homepage, Search Results, Product Detail Page).
 
-## The Core Question
+## What Gets Dumped Into the AI's Context Window
 
-When an AI agent needs to understand a web page, what does it actually receive — and how many tokens does that cost?
+The key question: when an AI agent browses a page, **how many tokens** does the tool dump into the context?
+
+### Playwright MCP (`@playwright/mcp`)
+
+Every `browser_navigate`, `browser_click`, or `browser_type` call returns the **full accessibility snapshot** of the page — automatically, whether you need it or not.
+
+### @ulpi/browse
+
+`goto` returns a one-liner (`"Navigated to https://... (200)"`). The agent **chooses** what to request: `text`, `snapshot -i`, `links`, `forms`, etc.
 
 ## Results
 
-### mumzworld.com (complex e-commerce, React SPA)
-
-| Approach | Size | ~Tokens | Actionable? |
-|----------|------|---------|-------------|
-| Playwright `page.content()` | **1.2 MB** | **~415,000** | No — raw HTML with CSS classes, SVGs, tracking scripts |
-| Playwright `body.innerText` | 2.4 KB | ~613 | No — plain text, can't interact with anything |
-| Playwright `ariaSnapshot()` | 15.2 KB | ~3,902 | Partially — tree structure but no element refs |
-| `browse text` | 2.5 KB | ~648 | No — clean visible text (no hidden elements) |
-| `browse snapshot` | 13.2 KB | ~3,389 | **Yes** — full tree with @refs |
-| **`browse snapshot -i`** | **5.4 KB** | **~1,379** | **Yes** — interactive elements with @refs |
-
-**HTML → snapshot -i: 301x fewer tokens. Every element is clickable by ref.**
-
-### news.ycombinator.com (classic server-rendered)
-
-| Approach | Size | ~Tokens | Actionable? |
-|----------|------|---------|-------------|
-| Playwright `page.content()` | **34.3 KB** | **~11,696** | No |
-| Playwright `body.innerText` | 3.9 KB | ~993 | No |
-| Playwright `ariaSnapshot()` | 39.3 KB | ~10,073 | Partially |
-| `browse text` | 3.8 KB | ~975 | No |
-| `browse snapshot` | 28.5 KB | ~7,288 | **Yes** |
-| **`browse snapshot -i`** | **9.4 KB** | **~2,405** | **Yes** |
-
-**HTML → snapshot -i: 5x fewer tokens.**
-
-Note: HN is a simple page with minimal CSS — the gap is smaller. On JS-heavy SPAs the savings are 50-300x.
-
-### github.com/anthropics/claude-code (modern SPA)
-
-| Approach | Size | ~Tokens | Actionable? |
-|----------|------|---------|-------------|
-| Playwright `page.content()` | **297.7 KB** | **~101,627** | No |
-| Playwright `body.innerText` | 3.5 KB | ~890 | No |
-| Playwright `ariaSnapshot()` | 15.0 KB | ~3,828 | Partially |
-| `browse text` | 3.3 KB | ~843 | No |
-| `browse snapshot` | 14.6 KB | ~3,737 | **Yes** |
-| **`browse snapshot -i`** | **4.2 KB** | **~1,083** | **Yes** |
-
-**HTML → snapshot -i: 94x fewer tokens.**
-
-## What "Actionable" Means
-
-With Playwright's `ariaSnapshot()`, you get a tree like:
+### Per-Page Token Cost
 
 ```
-- heading "Snapshot Test" [level=1]
-- button "Submit"
-- textbox "Username"
+Site                Page      PW MCP navigate  browse goto  browse snapshot -i   Ratio
+─────────────────────────────────────────────────────────────────────────────────────────
+mumzworld.com       Homepage       ~51,379          ~11          ~15,147          3.4x
+mumzworld.com       Search         ~13,891          ~17           ~3,598          3.9x
+mumzworld.com       PDP            ~10,076          ~25           ~3,074          3.3x
+amazon.com          Homepage       ~10,426          ~10           ~2,137          4.9x
+amazon.com          Search         ~21,016          ~15           ~3,543          5.9x
+ebay.com            Homepage        ~4,608          ~10           ~1,536          3.0x
+ebay.com            Search         ~26,377          ~17           ~7,010          3.8x
+ebay.com            PDP             ~1,294          ~14             ~670          1.9x
+─────────────────────────────────────────────────────────────────────────────────────────
+TOTAL              8 pages       ~139,067         ~119          ~36,715          3.8x
 ```
 
-To click "Submit", you still need to construct a selector: `page.getByRole('button', { name: 'Submit' })`. If there are multiple buttons named "Submit", you need `nth()` disambiguation. The agent has to write code.
+**Playwright MCP dumps 3-6x more tokens per page than `browse snapshot -i`.**
 
-With `browse snapshot -i`, you get:
+But the real gap is bigger — Playwright MCP dumps the snapshot on **every action** (click, type, navigate). Browse only returns a snapshot when you ask for one.
 
-```
-@e1 [heading] "Snapshot Test"
-@e2 [button] "Submit"
-@e3 [textbox] "Username"
-```
+### 10-Step Agent Session: Cumulative Token Cost
 
-To click "Submit": `browse click @e2`. Done. The ref maps to a pre-built Playwright Locator with nth() disambiguation already handled.
+A typical flow: navigate → snapshot → click → snapshot → fill → click → snapshot → check result.
 
-## What Playwright Misses Entirely
-
-Modern SPAs use `<div>` elements with `cursor: pointer`, `onclick`, `tabindex`, or `data-action` attributes as interactive elements. These are **invisible to Playwright's accessibility APIs**.
-
-`browse snapshot -i -C` catches them:
+With Playwright MCP, every one of those 10 actions dumps a full snapshot:
 
 ```
-@e1 [button] "Submit"          ← ARIA catches this
-@e2 [textbox] "Email"          ← ARIA catches this
-
-[cursor-interactive]
-@e3 [div.card] "Add to cart" (cursor:pointer)     ← ARIA misses this
-@e4 [span.close] "Close" (onclick)                ← ARIA misses this
-@e5 [div.tab] "Settings" (tabindex)               ← ARIA misses this
+Playwright MCP:  10 actions × ~17,383 avg tokens = ~173,830 tokens
+browse:           3 gotos (~15 tok each) + 3 snapshots (~7,000 avg) + 4 actions (~15 tok each)
+                = 45 + 21,000 + 60 = ~21,105 tokens
 ```
 
-All of these are clickable via `browse click @e3` — the ref maps to the actual DOM element.
+**~8x fewer tokens for the same session.**
 
-## Speed: Persistent Daemon vs Fresh Launch
+### Raw Data: All Measurements
 
-Every raw Playwright script pays a startup tax:
+#### mumzworld.com — Homepage
 
-| Operation | Time |
-|-----------|------|
-| `chromium.launch()` | ~800-1500ms |
-| `browser.newContext()` | ~50ms |
-| `context.newPage()` | ~50ms |
-| **Total startup per script** | **~1-2s** |
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 200.7 KB | ~51,379 | Full snapshot auto-dumped |
+| Playwright MCP snapshot | 200.6 KB | ~51,354 | Same data, requested explicitly |
+| Playwright `page.content()` | 3.52 MB | ~922,919 | Raw HTML |
+| browse goto | 44 B | ~11 | One-liner confirmation |
+| browse text | 19.5 KB | ~4,991 | Clean visible text |
+| browse snapshot (full) | 160.2 KB | ~41,010 | Full tree + @refs |
+| **browse snapshot -i** | **59.2 KB** | **~15,147** | **Interactive only + @refs** |
 
-With `browse`, the server starts once and stays running:
+#### mumzworld.com — Search Results ("strollers")
 
-| Operation | Time |
-|-----------|------|
-| First command (server + Chromium start) | ~2-3s |
-| Every subsequent command | **~100-200ms** |
-| 20-command agent session total | ~4-6s |
-| Same session with raw Playwright (20 launches) | ~20-40s |
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 54.3 KB | ~13,891 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 1.08 MB | ~284,039 | Raw HTML |
+| browse goto | 66 B | ~17 | One-liner |
+| browse text | 6.6 KB | ~1,691 | |
+| **browse snapshot -i** | **14.1 KB** | **~3,598** | **Interactive + @refs** |
 
-## Cost at Scale
+#### mumzworld.com — Product Detail Page
 
-At Claude's pricing (~$3/M input tokens for Sonnet), the token savings translate directly to cost:
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 39.4 KB | ~10,076 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 1.48 MB | ~387,428 | Raw HTML |
+| browse goto | 101 B | ~25 | One-liner |
+| browse text | 6.9 KB | ~1,763 | |
+| **browse snapshot -i** | **12.0 KB** | **~3,074** | **Interactive + @refs** |
 
-| Approach | Tokens per page | Cost per 1000 pages |
-|----------|----------------|---------------------|
-| Playwright `page.content()` (avg) | ~176,000 | **$0.53** |
-| `browse snapshot -i` (avg) | ~1,622 | **$0.005** |
+#### amazon.com — Homepage
 
-**~100x cost reduction per page load sent to the model.**
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 40.7 KB | ~10,426 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 580.9 KB | ~148,706 | Raw HTML |
+| browse goto | 41 B | ~10 | One-liner |
+| browse text | 4.7 KB | ~1,192 | |
+| **browse snapshot -i** | **8.3 KB** | **~2,137** | **Interactive + @refs** |
+
+#### amazon.com — Search Results ("baby stroller")
+
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 82.1 KB | ~21,016 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 700.3 KB | ~179,283 | Raw HTML |
+| browse goto | 59 B | ~15 | One-liner |
+| browse text | 8.0 KB | ~2,059 | |
+| **browse snapshot -i** | **13.8 KB** | **~3,543** | **Interactive + @refs** |
+
+#### ebay.com — Homepage
+
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 18.0 KB | ~4,608 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 1.70 MB | ~446,096 | Raw HTML |
+| browse goto | 39 B | ~10 | One-liner |
+| browse text | 4.9 KB | ~1,247 | |
+| **browse snapshot -i** | **6.0 KB** | **~1,536** | **Interactive + @refs** |
+
+#### ebay.com — Search Results ("baby stroller")
+
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 103.0 KB | ~26,377 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 686.8 KB | ~175,811 | Raw HTML |
+| browse goto | 69 B | ~17 | One-liner |
+| browse text | 17.5 KB | ~4,484 | |
+| **browse snapshot -i** | **27.4 KB** | **~7,010** | **Interactive + @refs** |
+
+#### ebay.com — Product Detail Page
+
+| Approach | Size | ~Tokens | Notes |
+|----------|------|---------|-------|
+| Playwright MCP navigate | 5.1 KB | ~1,294 | Full snapshot auto-dumped |
+| Playwright `page.content()` | 1.07 MB | ~279,729 | Raw HTML |
+| browse goto | 56 B | ~14 | One-liner |
+| browse text | 1.2 KB | ~315 | |
+| **browse snapshot -i** | **2.6 KB** | **~670** | **Interactive + @refs** |
+
+## Architectural Differences
+
+| | Playwright MCP | @ulpi/browse |
+|---|---|---|
+| **Navigate response** | Full snapshot (~10-50K tokens) | One-liner (~15 tokens) |
+| **Click/type response** | Full snapshot (~10-50K tokens) | One-liner (~15 tokens) |
+| **Agent controls output** | No — always gets full dump | Yes — requests what it needs |
+| **Interactive-only filter** | No | `snapshot -i` |
+| **Cursor-interactive detection** | No | `snapshot -C` (cursor:pointer, onclick, tabindex) |
+| **Clean text extraction** | No — must use evaluate() | `text` command |
+| **Form discovery** | No | `forms` command |
+| **Link extraction** | No | `links` command |
+| **Network/console logs** | console_messages only | `network` + `console` |
+| **Performance timing** | No | `perf` command |
+| **Cookies/storage** | No | `cookies` + `storage` |
+| **Snapshot diff** | No | `snapshot-diff` |
+| **Page text diff** | No | `diff <url1> <url2>` |
+| **Responsive screenshots** | No | `responsive` (3 viewports at once) |
+| **Persistent daemon** | No — new browser per session | Yes — ~100ms per command |
+| **Crash recovery** | No | Auto-restart with safe retry |
+| **Total commands** | ~15 tools | 40+ commands |
+
+## Why This Matters
+
+On a 200K-token context window, Playwright MCP's mumzworld homepage snapshot alone consumes **25% of the context**. Four navigations and the context is full.
+
+With browse, 4 navigations + 4 snapshots = ~60K tokens — leaving 140K for the agent's actual reasoning.
 
 ## Methodology
 
-- Token estimates: ~3 chars/token for HTML, ~4 chars/token for plain text (conservative)
-- All measurements on the same machine, same Chromium version (Playwright 1.58)
-- Pages loaded with `waitUntil: 'domcontentloaded'`
-- Measured March 2026
+- Token estimates: ~4 chars per token (standard approximation for mixed content)
+- Playwright MCP behavior simulated by calling `ariaSnapshot()` after navigation (same as the MCP server does)
+- Real Playwright MCP `browser_navigate` on mumzworld.com confirmed: 505,850 bytes returned to context
+- All pages loaded with `waitUntil: 'domcontentloaded'` + 2s settle time
+- Amazon PDP excluded (bot detection returned empty page on both tools)
+- Measured March 2026, Playwright 1.58, Chromium headless
