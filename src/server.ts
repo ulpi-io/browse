@@ -105,7 +105,7 @@ const policyChecker = new PolicyChecker();
 // Read/write/meta command sets for routing
 const READ_COMMANDS = new Set([
   'text', 'html', 'links', 'forms', 'accessibility',
-  'js', 'eval', 'css', 'attrs', 'state', 'dialog',
+  'js', 'eval', 'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'storage', 'perf', 'devices',
   'value', 'count',
 ]);

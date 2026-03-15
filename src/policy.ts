@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 
 interface ActionPolicy {
   default?: 'allow' | 'deny';
@@ -18,6 +19,22 @@ interface ActionPolicy {
 
 export type PolicyResult = 'allow' | 'deny' | 'confirm';
 
+/**
+ * Walk up from cwd looking for a file by name.
+ * Returns the full path if found, or null.
+ */
+function findFileUpward(filename: string): string | null {
+  let dir = process.cwd();
+  for (let i = 0; i < 20; i++) {
+    const candidate = path.join(dir, filename);
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 export class PolicyChecker {
   private filePath: string | null = null;
   private lastMtime: number = 0;
@@ -25,9 +42,8 @@ export class PolicyChecker {
   private confirmOverrides: Set<string> | null = null;
 
   constructor(filePath?: string) {
-    // Explicit path from env or argument, or auto-discover default location.
-    // Always set filePath so reload() can detect the file appearing later.
-    this.filePath = filePath || process.env.BROWSE_POLICY || 'browse-policy.json';
+    // Explicit path from env or argument, or walk up from cwd to find browse-policy.json.
+    this.filePath = filePath || process.env.BROWSE_POLICY || findFileUpward('browse-policy.json') || 'browse-policy.json';
 
     // Parse BROWSE_CONFIRM_ACTIONS env var
     const confirmEnv = process.env.BROWSE_CONFIRM_ACTIONS;

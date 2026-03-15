@@ -10,6 +10,7 @@
 import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
 import { SessionBuffers, type LogEntry, type NetworkEntry } from './buffers';
 import type { HarRecording } from './har';
+import type { DomainFilter } from './domain-filter';
 
 /** Shorthand aliases for common devices → Playwright device names */
 const DEVICE_ALIASES: Record<string, string> = {
@@ -168,6 +169,12 @@ export class BrowserManager {
 
   // ─── Init Script (domain filter JS injection) ─────────────
   private initScript: string | null = null;
+
+  // ─── User Routes (survive context recreation) ─────────────
+  private userRoutes: Array<{pattern: string; action: 'block' | 'fulfill'; status?: number; body?: string}> = [];
+
+  // ─── Domain Filter (survive context recreation) ───────────
+  private domainFilter: DomainFilter | null = null;
 
   // Whether this instance owns (and should close) the Browser process
   private ownsBrowser = false;
@@ -566,6 +573,22 @@ export class BrowserManager {
       if (this.initScript) {
         await newContext.addInitScript(this.initScript);
       }
+      // Re-apply domain filter route
+      if (this.domainFilter) {
+        const df = this.domainFilter;
+        await newContext.route('**/*', (route) => {
+          const url = route.request().url();
+          if (df.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+        });
+      }
+      // Re-apply user routes
+      for (const r of this.userRoutes) {
+        if (r.action === 'block') {
+          await newContext.route(r.pattern, (route) => route.abort('blockedbyclient'));
+        } else {
+          await newContext.route(r.pattern, (route) => route.fulfill({ status: r.status || 200, body: r.body || '', contentType: 'text/plain' }));
+        }
+      }
     } catch (err) {
       await newContext.close().catch(() => {});
       throw err;
@@ -577,6 +600,7 @@ export class BrowserManager {
     const oldActiveTabId = this.activeTabId;
     const oldNextTabId = this.nextTabId;
     const oldTabSnapshots = new Map(this.tabSnapshots);
+    const oldRefMap = new Map(this.refMap);
 
     // Swap to new context
     this.context = newContext;
@@ -613,7 +637,7 @@ export class BrowserManager {
       this.activeTabId = oldActiveTabId;
       this.nextTabId = oldNextTabId;
       this.tabSnapshots = oldTabSnapshots;
-      this.refMap.clear();
+      this.refMap = oldRefMap;
       throw err;
     }
 
@@ -727,6 +751,28 @@ export class BrowserManager {
 
   getInitScript(): string | null {
     return this.initScript;
+  }
+
+  // ─── User Routes ──────────────────────────────────────────
+  addUserRoute(pattern: string, action: 'block' | 'fulfill', status?: number, body?: string) {
+    this.userRoutes.push({pattern, action, status, body});
+  }
+
+  clearUserRoutes() {
+    this.userRoutes = [];
+  }
+
+  getUserRoutes() {
+    return this.userRoutes;
+  }
+
+  // ─── Domain Filter ────────────────────────────────────────
+  setDomainFilter(filter: DomainFilter) {
+    this.domainFilter = filter;
+  }
+
+  getDomainFilter(): DomainFilter | null {
+    return this.domainFilter;
   }
 
   /**

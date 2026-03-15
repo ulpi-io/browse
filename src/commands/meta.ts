@@ -6,6 +6,7 @@ import type { BrowserManager } from '../browser-manager';
 import type { SessionManager, Session } from '../session-manager';
 import { handleSnapshot } from '../snapshot';
 import { DEFAULTS } from '../constants';
+import { sanitizeName } from '../sanitize';
 import * as Diff from 'diff';
 import * as fs from 'fs';
 
@@ -106,7 +107,7 @@ export async function handleMetaCommand(
       if (!subcommand || !['save', 'load'].includes(subcommand)) {
         throw new Error('Usage: browse state save [name] | browse state load [name]');
       }
-      const name = args[1] || 'default';
+      const name = sanitizeName(args[1] || 'default');
       const statesDir = `${LOCAL_DIR}/states`;
       const statePath = `${statesDir}/${name}.json`;
 
@@ -115,7 +116,7 @@ export async function handleMetaCommand(
         if (!context) throw new Error('No browser context');
         const state = await context.storageState();
         fs.mkdirSync(statesDir, { recursive: true });
-        fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+        fs.writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
         return `State saved: ${statePath}`;
       }
 
@@ -279,7 +280,7 @@ export async function handleMetaCommand(
       const { PolicyChecker } = await import('../policy');
 
       const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline']);
-      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices','value','count']);
+      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count']);
 
       const sessionBuffers = currentSession?.buffers;
       const policy = new PolicyChecker();
@@ -423,6 +424,7 @@ export async function handleMetaCommand(
           const [, name, url, username] = args;
           // Password: from arg, env var, or --password-stdin flag
           let password = args[4];
+          if (password === '--password-stdin') password = undefined;
           if (!password && process.env.BROWSE_AUTH_PASSWORD) {
             password = process.env.BROWSE_AUTH_PASSWORD;
           }
@@ -436,7 +438,17 @@ export async function handleMetaCommand(
               '       BROWSE_AUTH_PASSWORD=secret browse auth save <name> <url> <username>'
             );
           }
-          vault.save(name, url, username, password);
+          // Parse optional selector flags
+          let userSel: string | undefined;
+          let passSel: string | undefined;
+          let submitSel: string | undefined;
+          for (let i = 4; i < args.length; i++) {
+            if (args[i] === '--user-sel' && args[i+1]) { userSel = args[++i]; }
+            else if (args[i] === '--pass-sel' && args[i+1]) { passSel = args[++i]; }
+            else if (args[i] === '--submit-sel' && args[i+1]) { submitSel = args[++i]; }
+          }
+          const selectors = (userSel || passSel || submitSel) ? { username: userSel, password: passSel, submit: submitSel } : undefined;
+          vault.save(name, url, username, password, selectors);
           return `Credentials saved: ${name}`;
         }
         case 'login': {

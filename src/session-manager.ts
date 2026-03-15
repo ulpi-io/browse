@@ -10,6 +10,7 @@ import type { Browser } from 'playwright';
 import { BrowserManager } from './browser-manager';
 import { SessionBuffers } from './buffers';
 import { DomainFilter } from './domain-filter';
+import { sanitizeName } from './sanitize';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -41,11 +42,34 @@ export class SessionManager {
     let session = this.sessions.get(sessionId);
     if (session) {
       session.lastActivity = Date.now();
+      // Update domain filter if provided and session doesn't already have one
+      if (allowedDomains && !session.domainFilter) {
+        const domains = allowedDomains.split(',').map(d => d.trim()).filter(Boolean);
+        if (domains.length > 0) {
+          const domainFilter = new DomainFilter(domains);
+          session.manager.setDomainFilter(domainFilter);
+          const context = session.manager.getContext();
+          if (context) {
+            await context.route('**/*', (route) => {
+              const url = route.request().url();
+              if (domainFilter.isAllowed(url)) {
+                route.continue();
+              } else {
+                route.abort('blockedbyclient');
+              }
+            });
+            const initScript = domainFilter.generateInitScript();
+            await context.addInitScript(initScript);
+            session.manager.setInitScript(initScript);
+          }
+          session.domainFilter = domainFilter;
+        }
+      }
       return session;
     }
 
     // Create per-session output directory
-    const outputDir = path.join(this.localDir, 'sessions', sessionId);
+    const outputDir = path.join(this.localDir, 'sessions', sanitizeName(sessionId));
     fs.mkdirSync(outputDir, { recursive: true });
 
     const buffers = new SessionBuffers();
@@ -58,6 +82,7 @@ export class SessionManager {
       const domains = allowedDomains.split(',').map(d => d.trim()).filter(Boolean);
       if (domains.length > 0) {
         domainFilter = new DomainFilter(domains);
+        manager.setDomainFilter(domainFilter);
         const context = manager.getContext();
         if (context) {
           // Block disallowed domains at the network level via Playwright route()

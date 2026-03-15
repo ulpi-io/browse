@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { BrowserManager } from './browser-manager';
 import { DEFAULTS } from './constants';
+import { sanitizeName } from './sanitize';
 
 interface StoredCredential {
   name: string;
@@ -121,12 +122,12 @@ export class AuthVault {
       updatedAt: now,
     };
 
-    const filePath = path.join(this.authDir, `${name}.json`);
+    const filePath = path.join(this.authDir, `${sanitizeName(name)}.json`);
     fs.writeFileSync(filePath, JSON.stringify(credential, null, 2), { mode: 0o600 });
   }
 
   private load(name: string): StoredCredential {
-    const filePath = path.join(this.authDir, `${name}.json`);
+    const filePath = path.join(this.authDir, `${sanitizeName(name)}.json`);
     if (!fs.existsSync(filePath)) {
       throw new Error(`Credential "${name}" not found. Run "browse auth list" to see saved credentials.`);
     }
@@ -181,7 +182,7 @@ export class AuthVault {
   }
 
   delete(name: string): void {
-    const filePath = path.join(this.authDir, `${name}.json`);
+    const filePath = path.join(this.authDir, `${sanitizeName(name)}.json`);
     if (!fs.existsSync(filePath)) {
       throw new Error(`Credential "${name}" not found.`);
     }

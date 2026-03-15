@@ -307,7 +307,7 @@ function cleanOrphanedServers(): void {
 export const SAFE_TO_RETRY = new Set([
   // Read commands — no side effects
   'text', 'html', 'links', 'forms', 'accessibility',
-  'css', 'attrs', 'state', 'dialog',
+  'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'perf', 'value', 'count',
   // Meta commands that are read-only or idempotent
   'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame',
@@ -433,7 +433,7 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
 }
 
 // ─── Main ──────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   const args = process.argv.slice(2);
 
   // Load project config (browse.json) — values serve as defaults
@@ -510,7 +510,7 @@ Interaction:    click <sel> | fill <sel> <val> | select <sel> <val>
                 viewport <WxH> | highlight <sel> | download <sel> [path]
 Device:         emulate <device> | emulate reset | devices [filter]
 Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
-                console [--clear] | network [--clear]
+                element-state <sel> | console [--clear] | network [--clear]
                 cookies | storage [set <k> <v>] | perf
                 value <sel> | count <sel>
 Visual:         screenshot [path] | pdf [path] | responsive [prefix]
@@ -564,6 +564,7 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
 if (process.env.__BROWSE_SERVER_MODE === '1') {
   import('./server');
 } else if (import.meta.main) {
+  // Direct execution: bun run src/cli.ts <command>
   main().catch((err) => {
     console.error(`[browse] ${err.message}`);
     process.exit(1);

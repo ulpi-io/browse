@@ -415,13 +415,22 @@ export async function handleWriteCommand(
 
       if (pattern === 'clear') {
         await context.unrouteAll();
-        return 'All routes cleared';
+        bm.clearUserRoutes();
+        // Re-apply domain filter route if active
+        if (domainFilter) {
+          await context.route('**/*', (route) => {
+            const url = route.request().url();
+            if (domainFilter!.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+          });
+        }
+        return domainFilter ? 'All routes cleared (domain filter preserved)' : 'All routes cleared';
       }
 
       const action = args[1] || 'block';
 
       if (action === 'block') {
         await context.route(pattern, (route) => route.abort('blockedbyclient'));
+        bm.addUserRoute(pattern, 'block');
         return `Blocking requests matching: ${pattern}`;
       }
 
@@ -431,6 +440,7 @@ export async function handleWriteCommand(
         await context.route(pattern, (route) =>
           route.fulfill({ status, body, contentType: 'text/plain' })
         );
+        bm.addUserRoute(pattern, 'fulfill', status, body);
         return `Mocking requests matching: ${pattern} → ${status}${body ? ` "${body}"` : ''}`;
       }
 

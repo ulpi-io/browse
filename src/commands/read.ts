@@ -154,9 +154,9 @@ export async function handleReadCommand(
       return value as string;
     }
 
-    case 'state': {
+    case 'element-state': {
       const selector = args[0];
-      if (!selector) throw new Error('Usage: browse state <selector>');
+      if (!selector) throw new Error('Usage: browse element-state <selector>');
       const resolved = bm.resolveRef(selector);
       const locator = 'locator' in resolved
         ? resolved.locator
