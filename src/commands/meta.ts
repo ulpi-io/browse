@@ -528,7 +528,7 @@ export async function handleMetaCommand(
         `Mismatch: ${result.mismatchPct.toFixed(3)}%`,
         `Threshold: ${thresholdPct}%`,
         `Result: ${result.passed ? 'PASS' : 'FAIL'}`,
-        ...(!result.passed ? [`Diff saved: ${diffPath}`] : []),
+        ...(!result.passed ? [`Current saved: ${diffPath}`] : []),
       ].join('\n');
     }
 
