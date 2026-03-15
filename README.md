@@ -12,28 +12,35 @@ Ten actions and you've burned **159K tokens — 79% of a 200K context window** �
 
 ## Benchmarks (Measured)
 
-Tested on 4 major e-commerce sites — mumzworld, amazon, ebay, nike — across homepage, search, and product pages ([full data](BENCHMARKS.md)):
+Tested on 4 e-commerce sites (mumzworld, amazon, ebay, nike) across homepage, search results, and product detail pages ([raw data](BENCHMARKS.md)):
 
-| Site | Page | @playwright/mcp | browse snapshot -i | Reduction |
-|------|------|----------------:|-------------------:|----------:|
-| mumzworld.com | Homepage | ~51,150 tokens | ~15,072 tokens | **3x** |
-| amazon.com | Search | ~20,696 tokens | ~3,451 tokens | **6x** |
-| ebay.com | Search | ~36,187 tokens | ~7,138 tokens | **5x** |
-| nike.com | Search | ~7,987 tokens | ~2,678 tokens | **3x** |
-| **10 pages total** | | **~158,883** | **~40,266** | **4x** |
+| Site | Page | @playwright/mcp navigate | browse snapshot -i | Reduction |
+|------|------|-------------------------:|-------------------:|----------:|
+| mumzworld.com | Homepage | ~51,151 | ~15,072 | **3x** |
+| mumzworld.com | Search | ~13,860 | ~3,614 | **4x** |
+| mumzworld.com | PDP | ~10,071 | ~3,084 | **3x** |
+| amazon.com | Homepage | ~10,431 | ~2,150 | **5x** |
+| amazon.com | Search | ~19,458 | ~3,644 | **5x** |
+| ebay.com | Homepage | ~4,641 | ~1,557 | **3x** |
+| ebay.com | Search | ~35,929 | ~7,088 | **5x** |
+| ebay.com | PDP | ~1,294 | ~678 | **2x** |
+| nike.com | Homepage | ~2,495 | ~816 | **3x** |
+| nike.com | Search | ~7,998 | ~2,678 | **3x** |
+| nike.com | PDP | ~3,034 | ~989 | **3x** |
+| **TOTAL** | **11 pages** | **~160,362** | **~41,370** | **4x** |
 
-And that's comparing snapshot-to-snapshot. The real gap is architectural:
+And that's the per-snapshot comparison. The real gap is architectural — @playwright/mcp dumps a snapshot on every action (navigate, click, type). `browse` only returns ~15 tokens per action:
 
 | | @playwright/mcp | @ulpi/browse |
 |---|---:|---:|
-| Tokens on `navigate` | ~15,888 (auto-dumped) | **~11** (one-liner) |
-| Tokens on `click` | ~15,888 (auto-dumped) | **~15** (one-liner) |
-| 10-action session | ~158,880 | **~12,186** |
-| Context consumed (200K) | **79%** | **6%** |
+| Tokens on `navigate` | ~14,578 (auto-dumped) | **~11** (one-liner) |
+| Tokens on `click` | ~14,578 (auto-dumped) | **~15** (one-liner) |
+| 10-action session | ~145,780 | **~11,511** |
+| Context consumed (200K) | **73%** | **6%** |
 
-The agent decides when it needs to see the page. Most actions don't need a snapshot.
+The agent decides when to see the page. Most actions don't need a snapshot.
 
-Rerun benchmarks yourself: `bun run benchmark`
+Rerun: `bun run benchmark`
 
 ## Why It's Faster
 

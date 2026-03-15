@@ -34,6 +34,7 @@ const PAGES: PageConfig[] = [
   { site: 'ebay.com',      page: 'PDP',      url: 'https://www.ebay.com/itm/276855553922' },
   { site: 'nike.com',      page: 'Homepage', url: 'https://www.nike.com' },
   { site: 'nike.com',      page: 'Search',   url: 'https://www.nike.com/w?q=running+shoes' },
+  { site: 'nike.com',      page: 'PDP',      url: 'https://www.nike.com/t/air-max-90-mens-shoes-6n3vKB/CN8490-002' },
 ];
 
 const SETTLE_MS = 2500;
