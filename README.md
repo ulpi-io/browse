@@ -1,30 +1,57 @@
 # @ulpi/browse
 
-**Give AI agents eyes and hands on the web — without burning tokens on raw HTML.**
+**The headless browser CLI built for AI agents — not humans.**
 
-Tools like [Playwright MCP](https://github.com/microsoft/playwright-mcp) dump the **full accessibility snapshot into the AI context on every action** — navigate, click, type. On a real e-commerce page, that's **~50,000 tokens per action**, whether the agent needs it or not. Four navigations and your context window is saturated.
+When AI agents browse the web, the bottleneck isn't Chromium — it's **what gets dumped into the context window**. [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp) sends the full accessibility snapshot on every navigate, click, and keystroke. On a real e-commerce page, that's **~16,000 tokens per action** — automatically, whether the agent needs it or not.
 
-`@ulpi/browse` gives the agent **control over what it sees**. Navigation returns a one-liner. The agent requests a snapshot only when needed — and can filter to interactive elements only, cutting tokens by another 3-4x.
+Ten actions and you've burned **159K tokens — 79% of a 200K context window** — just on browser output. That leaves almost nothing for the agent to actually think.
 
-## The Problem (Measured)
+`@ulpi/browse` flips this. Navigation returns 11 tokens. Clicks return 15 tokens. The agent requests a page snapshot **only when it needs one** — and can filter to interactive elements only, cutting another 2-6x.
+
+**Same 10 actions: 12K tokens. 6% of context. 13x less than @playwright/mcp.**
+
+## Benchmarks (Measured)
+
+Tested on 4 major e-commerce sites — mumzworld, amazon, ebay, nike — across homepage, search, and product pages ([full data](BENCHMARKS.md)):
+
+| Site | Page | @playwright/mcp | browse snapshot -i | Reduction |
+|------|------|----------------:|-------------------:|----------:|
+| mumzworld.com | Homepage | ~51,150 tokens | ~15,072 tokens | **3x** |
+| amazon.com | Search | ~20,696 tokens | ~3,451 tokens | **6x** |
+| ebay.com | Search | ~36,187 tokens | ~7,138 tokens | **5x** |
+| nike.com | Search | ~7,987 tokens | ~2,678 tokens | **3x** |
+| **10 pages total** | | **~158,883** | **~40,266** | **4x** |
+
+And that's comparing snapshot-to-snapshot. The real gap is architectural:
+
+| | @playwright/mcp | @ulpi/browse |
+|---|---:|---:|
+| Tokens on `navigate` | ~15,888 (auto-dumped) | **~11** (one-liner) |
+| Tokens on `click` | ~15,888 (auto-dumped) | **~15** (one-liner) |
+| 10-action session | ~158,880 | **~12,186** |
+| Context consumed (200K) | **79%** | **6%** |
+
+The agent decides when it needs to see the page. Most actions don't need a snapshot.
+
+Rerun benchmarks yourself: `bun run benchmark`
+
+## Why It's Faster
+
+### 1. You Control What Enters the Context
 
 ```
-Action: Navigate to mumzworld.com homepage
+@playwright/mcp browser_navigate → 51,150 tokens (full snapshot, every time)
 
-Playwright MCP browser_navigate:   200.7 KB   ~51,379 tokens  (auto-dumped)
-browse goto:                            44 B       ~11 tokens  (one-liner)
-browse snapshot -i (when needed):   59.2 KB   ~15,147 tokens  (on demand)
+browse goto    →     11 tokens  ("Navigated to https://... (200)")
+browse text    →  4,970 tokens  (clean visible text, when you need it)
+browse snap -i → 15,072 tokens  (interactive elements + refs, when you need it)
 ```
 
-**Playwright MCP dumps 3.4x more tokens than browse — and it does it on every single action.** Over a 10-step session, that's **~174K vs ~21K tokens** for the same work.
+You pick the right view for the task. Reading prices? Use `text`. Need to click something? Use `snapshot -i`. Just navigating? `goto` is enough.
 
-See [BENCHMARKS.md](BENCHMARKS.md) for full data across mumzworld, amazon, and ebay (homepage, search, PDP).
+### 2. Ref-Based Interaction — No Selector Construction
 
-## What Makes This Different
-
-### 1. Ref-Based Element Selection — No More CSS Selector Gymnastics
-
-After a `snapshot`, every element gets a stable ref (`@e1`, `@e2`, ...) backed by a Playwright Locator. The agent doesn't need to construct fragile CSS selectors or XPaths — it just says `click @e3`.
+After `snapshot`, every element gets a ref (`@e1`, `@e2`, ...) backed by a Playwright Locator. The agent doesn't waste tokens constructing CSS selectors:
 
 ```bash
 $ browse snapshot -i
@@ -33,9 +60,6 @@ $ browse snapshot -i
   @e3 [searchbox]
 @e4 [link] "Sign In"
 @e5 [link] "Cart"
-      @e6 [link] "Sale"
-      @e7 [link] "Gear"
-      @e8 [link] "Toys"
 
 $ browse fill @e3 "strollers"
 Filled @e3
@@ -44,60 +68,58 @@ $ browse press Enter
 Pressed Enter
 ```
 
-No selectors. No DOM traversal. No guessing. The agent sees `@e3 [searchbox]`, fills it, done.
+### 3. Cursor-Interactive Detection — What ARIA Misses
 
-### 2. Cursor-Interactive Detection — Catch What ARIA Misses
-
-Modern SPAs are full of `<div onclick="...">` and `<span style="cursor:pointer">` elements that are invisible to accessibility trees. The `-C` flag scans the DOM for these hidden interactive elements and gives them refs too:
+Modern SPAs use `<div onclick>`, `cursor: pointer`, `tabindex`, and `data-action` for interactivity. These are **invisible** to accessibility trees — both @playwright/mcp and raw `ariaSnapshot()` miss them.
 
 ```bash
 $ browse snapshot -i -C
 @e1 [button] "Submit"
 @e2 [textbox] "Email"
-@e3 [link] "Sign In"
 
 [cursor-interactive]
-@e4 [div.card] "Add to cart" (cursor:pointer)
-@e5 [span.close] "Close dialog" (onclick)
-@e6 [div.tab] "Custom Tab" (tabindex)
-@e7 [div.menu] "Open Menu" (data-action)
+@e3 [div.card] "Add to cart" (cursor:pointer)
+@e4 [span.close] "Close dialog" (onclick)
+@e5 [div.menu] "Open Menu" (data-action)
 ```
 
-The agent can now `click @e4` to add to cart — something raw Playwright accessibility APIs would miss entirely.
+Every detected element gets a ref. `browse click @e3` just works.
 
-### 3. Persistent Daemon — 100ms Commands, Not 3-Second Browser Launches
+### 4. 40+ Purpose-Built Commands vs Generic Tools
 
-Every Playwright script pays a ~2-3 second tax to launch Chromium. `browse` starts a persistent background server on first use and keeps it running. Every subsequent command is just an HTTP call to localhost:
+@playwright/mcp has ~15 tools. For anything beyond navigate/click/type, you write JavaScript via `browser_evaluate`. `browse` has purpose-built commands that return structured, minimal output:
+
+| Need | @playwright/mcp | browse |
+|------|----------------|--------|
+| Page text | `browser_evaluate` + custom JS | `text` |
+| Form fields | `browser_evaluate` + custom JS | `forms` → structured JSON |
+| All links | `browser_evaluate` + custom JS | `links` → `Text → URL` |
+| Network log | Not available | `network` |
+| Cookies | Not available | `cookies` |
+| Performance | Not available | `perf` |
+| Page diff | Not available | `diff <url1> <url2>` |
+| Snapshot diff | Not available | `snapshot-diff` |
+| Responsive screenshots | Not available | `responsive` |
+| Device emulation | Not available | `emulate iphone` |
+
+### 5. Persistent Daemon — 100ms Commands
 
 ```
-First command:    ~2s  (server + Chromium startup)
+First command:       ~2s  (server + Chromium startup, once)
 Every command after: ~100-200ms  (HTTP to localhost)
-Idle shutdown:    30 min (configurable)
 ```
 
-For an agent running 20 browser commands in a session, that's **~40 seconds saved** vs launching a fresh browser each time.
+@playwright/mcp starts a new browser per MCP session. `browse` keeps the server running across commands with auto-shutdown after 30 min idle. Crash recovery is built in — the CLI detects a dead server and restarts transparently.
 
-### 4. Crash Recovery Without Agent Logic
+### 6. Multi-Agent Session Isolation
 
-Chromium crashed? Server died? The CLI detects it and auto-restarts transparently. The agent doesn't need try/catch/retry logic — it just works.
+Multiple AI agents share one Chromium process with fully isolated sessions:
 
-Write commands are **not** retried (to avoid double form submissions). Read commands retry automatically. The agent gets a clear error if recovery isn't possible.
-
-### 5. Token-Efficient Output Across All Commands
-
-Every command is designed to return **structured, minimal output** — not raw browser dumps:
-
-| What you need | Playwright MCP | `browse` | Difference |
-|---------------|----------------|----------|------------|
-| Navigate to page | Auto-dumps ~50K tokens | `goto` → ~11 tokens | **Agent controls when to snapshot** |
-| Click a button | Auto-dumps ~50K tokens | `click @e3` → ~15 tokens | **No snapshot on actions** |
-| Interactive elements | Full tree, no filter | `snapshot -i` → interactive only | **3-6x fewer tokens** |
-| Hidden clickable divs | Not detected | `snapshot -C` detects them | **Catches what ARIA misses** |
-| Clean page text | Not available | `text` → visible text only | **Purpose-built command** |
-| Form fields | Not available | `forms` → structured JSON | **Purpose-built command** |
-| Network log | Not available | `network` → one-liner per request | **Purpose-built command** |
-| Snapshot diff | Not available | `snapshot-diff` | **Before/after comparison** |
-| Crash recovery | None | Auto-restart + safe retry | **Built-in resilience** |
+```bash
+browse --session agent-a goto https://mumzworld.com
+browse --session agent-b goto https://amazon.com
+# Each has its own tabs, refs, cookies, storage — no cross-talk
+```
 
 ## Install
 
@@ -109,35 +131,28 @@ Requires [Bun](https://bun.sh). Chromium is installed automatically via Playwrig
 
 ## Real-World Example: E-Commerce Flow
 
-Here's an agent browsing mumzworld.com — search, find a product, add to cart, checkout:
+Agent browses mumzworld.com — search, find a product, add to cart, checkout:
 
 ```bash
-# Navigate and search
 browse goto https://www.mumzworld.com
-browse snapshot -i                    # find the searchbox → @e3
+browse snapshot -i                    # find searchbox → @e3
 browse fill @e3 "strollers"
 browse press Enter
 
-# Find the right product (1,400 AED stroller)
 browse text                           # scan prices in results
 browse goto "https://www.mumzworld.com/en/doona-infant-car-seat..."
 
-# Add to cart
 browse snapshot -i                    # find Add to Cart → @e54
 browse click @e54
 
-# Handle the cart modal
-browse snapshot -i -s "[role=dialog]" # scope snapshot to modal only
+browse snapshot -i -s "[role=dialog]" # scope to cart modal
 browse click @e3                      # "View Cart"
 
-# Checkout
 browse snapshot -i                    # find Checkout → @e52
 browse click @e52
-# → redirected to sign-in page
 ```
 
-**Total tokens consumed by the agent for this 12-step flow: ~15,000** (snapshot -i at each step).
-With `page.content()` at each step: **~4,000,000+ tokens** — 270x more.
+**12 steps. ~15K tokens total.** With @playwright/mcp: **~190K tokens** for the same flow.
 
 ## Command Reference
 
@@ -162,12 +177,12 @@ snapshot [-i] [-c] [-C] [-d N] [-s sel]
 After snapshot, use `@e1`, `@e2`... as selectors in any command.
 
 ### Snapshot Diff
-`snapshot-diff` — compare current page against last snapshot (strips ref numbers to avoid false positives from renumbering).
+`snapshot-diff` — compare current page against last snapshot.
 
 ### Device Emulation
 `emulate <device>` | `emulate reset` | `devices [filter]`
 
-Supports 100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright built-ins.
+100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright built-ins.
 
 ### Inspection
 `js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `state <sel>` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
@@ -175,10 +190,8 @@ Supports 100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright
 ### Visual
 `screenshot [path]` | `screenshot --annotate` | `pdf [path]` | `responsive [prefix]`
 
-`--annotate` overlays numbered badges on interactive elements and returns a legend — useful for visual debugging.
-
 ### Compare
-`diff <url1> <url2>` — text diff between two pages (uses a temp tab, preserves your session).
+`diff <url1> <url2>` — text diff between two pages.
 
 ### Multi-Step
 ```bash
@@ -193,39 +206,6 @@ echo '[["goto","https://example.com"],["text"]]' | browse chain
 
 ### Server Control
 `status` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
-
-## Parallel Agents
-
-Multiple AI agents can share a single `browse` server with fully isolated browser sessions. Each session gets its own tabs, refs, cookies, console/network buffers, and localStorage — no cross-talk.
-
-```bash
-# Agent A — searches for strollers
-browse --session agent-a goto https://www.mumzworld.com
-browse --session agent-a snapshot -i
-browse --session agent-a fill @e3 "strollers"
-
-# Agent B — browses electronics (simultaneously, same server)
-browse --session agent-b goto https://www.amazon.com
-browse --session agent-b snapshot -i
-browse --session agent-b click @e5
-
-# Or use the env var
-BROWSE_SESSION=agent-a browse text
-BROWSE_SESSION=agent-b browse text
-```
-
-Without `--session`, all commands use a `"default"` session — fully backward compatible.
-
-Under the hood, sessions share a single Chromium process but get isolated `BrowserContext` instances (separate cookies, storage, pages). For full process isolation, use `BROWSE_PORT` to run separate server instances.
-
-**Session management:**
-```bash
-browse sessions                # List all active sessions
-browse session-close agent-a   # Close a specific session
-browse status                  # Shows session count
-```
-
-Sessions auto-close after the idle timeout (default 30 min). The server shuts down when all sessions are idle.
 
 ## Architecture
 
@@ -248,11 +228,6 @@ browse [--session <id>] <command>
     Chromium (Playwright, headless, shared)
 ```
 
-- Server auto-starts on first command, stays running across commands
-- Auto-shutdown when all sessions idle past timeout (default 30 min)
-- State file in project `.browse/` directory (auto-gitignored)
-- Crash recovery: CLI detects dead server and restarts transparently
-
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -264,7 +239,7 @@ browse [--session <id>] <command>
 
 ## Acknowledgments
 
-This project was inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
+Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
 
 We've since added: session multiplexing for parallel agents, cursor-interactive detection (`-C`), device emulation, snapshot-diff, annotated screenshots, safe retry classification, concurrency-safe server spawning, TreeWalker-based text extraction, dialog handling, file upload, per-tab ref scoping, and restructured it as a standalone npm package.
 
