@@ -118,15 +118,51 @@ Every command after: ~100-200ms  (HTTP to localhost)
 
 @playwright/mcp starts a new browser per MCP session. `browse` keeps the server running across commands with auto-shutdown after 30 min idle. Crash recovery is built in — the CLI detects a dead server and restarts transparently.
 
-### 6. Multi-Agent Session Isolation
+### 6. Multi-Agent Sessions — Parallel Browsing on One Chromium
 
-Multiple AI agents share one Chromium process with fully isolated sessions:
+Run multiple AI agents in parallel, each with its own isolated browser session, sharing a single Chromium process. Each session gets its own tabs, refs, cookies, localStorage, and console/network buffers — zero cross-talk.
 
 ```bash
-browse --session agent-a goto https://mumzworld.com
-browse --session agent-b goto https://amazon.com
-# Each has its own tabs, refs, cookies, storage — no cross-talk
+# Agent A researches strollers on mumzworld
+browse --session agent-a goto https://www.mumzworld.com
+browse --session agent-a snapshot -i
+browse --session agent-a fill @e3 "strollers"
+browse --session agent-a press Enter
+
+# Agent B checks competitor pricing on amazon — simultaneously
+browse --session agent-b goto https://www.amazon.com
+browse --session agent-b snapshot -i
+browse --session agent-b fill @e6 "baby stroller"
+browse --session agent-b press Enter
+
+# Or set once via env var
+export BROWSE_SESSION=agent-a
+browse text    # runs in agent-a's session
 ```
+
+Under the hood, each session is a separate Playwright `BrowserContext` on the shared Chromium — same isolation model as browser profiles (separate cookies, storage, cache). One process, no extra memory for multiple Chromium instances.
+
+```
+browse --session <id> <command>
+          │
+    Persistent server (one Chromium process)
+          │
+    SessionManager
+    ├── "default"  → BrowserContext → tabs, refs, cookies, buffers
+    ├── "agent-a"  → BrowserContext → tabs, refs, cookies, buffers
+    └── "agent-b"  → BrowserContext → tabs, refs, cookies, buffers
+```
+
+**Session management:**
+```bash
+browse sessions                # list active sessions with tab counts
+browse session-close agent-a   # close a session (frees its tabs/context)
+browse status                  # shows total session count
+```
+
+Sessions auto-close after the idle timeout (default 30 min). The server shuts down when all sessions are idle. Without `--session`, everything runs in a `"default"` session — fully backward compatible.
+
+For full process isolation (separate Chromium instances), use `BROWSE_PORT` to run independent servers.
 
 ## Install
 
