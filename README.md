@@ -188,21 +188,68 @@ echo '[["goto","https://example.com"],["text"]]' | browse chain
 ### Tabs
 `tabs` | `tab <id>` | `newtab [url]` | `closetab [id]`
 
+### Sessions
+`sessions` | `session-close <id>`
+
 ### Server Control
 `status` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
+
+## Parallel Agents
+
+Multiple AI agents can share a single `browse` server with fully isolated browser sessions. Each session gets its own tabs, refs, cookies, console/network buffers, and localStorage — no cross-talk.
+
+```bash
+# Agent A — searches for strollers
+browse --session agent-a goto https://www.mumzworld.com
+browse --session agent-a snapshot -i
+browse --session agent-a fill @e3 "strollers"
+
+# Agent B — browses electronics (simultaneously, same server)
+browse --session agent-b goto https://www.amazon.com
+browse --session agent-b snapshot -i
+browse --session agent-b click @e5
+
+# Or use the env var
+BROWSE_SESSION=agent-a browse text
+BROWSE_SESSION=agent-b browse text
+```
+
+Without `--session`, all commands use a `"default"` session — fully backward compatible.
+
+Under the hood, sessions share a single Chromium process but get isolated `BrowserContext` instances (separate cookies, storage, pages). For full process isolation, use `BROWSE_PORT` to run separate server instances.
+
+**Session management:**
+```bash
+browse sessions                # List all active sessions
+browse session-close agent-a   # Close a specific session
+browse status                  # Shows session count
+```
+
+Sessions auto-close after the idle timeout (default 30 min). The server shuts down when all sessions are idle.
 
 ## Architecture
 
 ```
-browse <command>  →  CLI (thin HTTP client)
-                        ↓
-                  Persistent server (localhost, auto-started)
-                        ↓
-                  Chromium (Playwright, headless)
+browse [--session <id>] <command>
+          │
+          ▼
+    CLI (thin HTTP client)
+    X-Browse-Session: <id>
+          │
+          ▼
+    Persistent server (localhost, auto-started)
+          │
+    SessionManager
+    ├── Session "default" → BrowserContext + tabs + refs + buffers
+    ├── Session "agent-a" → BrowserContext + tabs + refs + buffers
+    └── Session "agent-b" → BrowserContext + tabs + refs + buffers
+          │
+          ▼
+    Chromium (Playwright, headless, shared)
 ```
 
 - Server auto-starts on first command, stays running across commands
-- Auto-shutdown after 30 min idle (configurable)
+- Auto-shutdown when all sessions idle past timeout (default 30 min)
 - State file in project `.browse/` directory (auto-gitignored)
 - Crash recovery: CLI detects dead server and restarts transparently
 
@@ -210,9 +257,16 @@ browse <command>  →  CLI (thin HTTP client)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BROWSE_PORT` | auto 9400-9410 | Fixed server port |
+| `BROWSE_PORT` | auto 9400-10400 | Fixed server port |
+| `BROWSE_SESSION` | (none) | Default session ID for all commands |
 | `BROWSE_IDLE_TIMEOUT` | 1800000 (30m) | Idle shutdown in ms |
 | `BROWSE_LOCAL_DIR` | `.browse/` or `/tmp` | State/log directory |
+
+## Acknowledgments
+
+This project was inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
+
+We've since added: session multiplexing for parallel agents, cursor-interactive detection (`-C`), device emulation, snapshot-diff, annotated screenshots, safe retry classification, concurrency-safe server spawning, TreeWalker-based text extraction, dialog handling, file upload, per-tab ref scoping, and restructured it as a standalone npm package.
 
 ## License
 
