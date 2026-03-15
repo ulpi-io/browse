@@ -31,7 +31,7 @@ async function rebuildRoutes(context: BrowserContext, bm: BrowserManager, domain
   if (domainFilter) {
     await context.route('**/*', (route) => {
       const url = route.request().url();
-      if (domainFilter.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+      if (domainFilter.isAllowed(url)) { route.fallback(); } else { route.abort('blockedbyclient'); }
     });
   }
 }

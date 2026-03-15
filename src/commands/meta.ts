@@ -503,41 +503,21 @@ export async function handleMetaCommand(
         currentBuffer = await page.screenshot({ fullPage: true }) as Buffer;
       }
 
-      // Server-side pixel comparison using Playwright's bundled pixelmatch + PNG decoder.
-      // No page.evaluate, no base64 through CDP, no memory limits.
-      // Dynamic require to prevent bundler from resolving at compile time.
-      // These are Playwright's bundled internals — always available at runtime.
-      const pw = 'playwright-core/lib';
-      const { getComparator } = require(`${pw}/server/utils/comparators`);
-      const comparator = getComparator('image/png');
-      const result = comparator(currentBuffer, baselineBuffer, {
-        threshold: thresholdPct / 100,
-        maxDiffPixelRatio: thresholdPct / 100,
-      });
-
-      const { PNG } = require(`${pw}/utilsBundle`);
-      const baseImg = PNG.sync.read(baselineBuffer);
-      const totalPixels = baseImg.width * baseImg.height;
-      const passed = result === null;
-      let diffPixels = 0;
-      if (!passed && result.errorMessage) {
-        const pixelMatch = result.errorMessage.match(/(\d+) pixels/);
-        diffPixels = pixelMatch ? parseInt(pixelMatch[1], 10) : totalPixels;
-      }
-      const mismatchPct = totalPixels > 0 ? (diffPixels / totalPixels) * 100 : 0;
+      const { compareScreenshots } = await import('../png-compare');
+      const result = compareScreenshots(baselineBuffer, currentBuffer, thresholdPct);
 
       const diffPath = baseline.replace(/\.[^.]+$/, '-diff.png');
-      if (!passed && result.diff) {
-        fs.writeFileSync(diffPath, result.diff);
+      if (!result.passed) {
+        fs.writeFileSync(diffPath, currentBuffer);
       }
 
       return [
-        `Pixels: ${totalPixels}`,
-        `Different: ${diffPixels}`,
-        `Mismatch: ${mismatchPct.toFixed(3)}%`,
+        `Pixels: ${result.totalPixels}`,
+        `Different: ${result.diffPixels}`,
+        `Mismatch: ${result.mismatchPct.toFixed(3)}%`,
         `Threshold: ${thresholdPct}%`,
-        `Result: ${passed ? 'PASS' : 'FAIL'}`,
-        ...(!passed ? [`Diff saved: ${diffPath}`] : []),
+        `Result: ${result.passed ? 'PASS' : 'FAIL'}`,
+        ...(!result.passed ? [`Diff saved: ${diffPath}`] : []),
       ].join('\n');
     }
 
@@ -555,11 +535,12 @@ export async function handleMetaCommand(
           let passSel: string | undefined;
           let submitSel: string | undefined;
           const positionalAfterUsername: string[] = [];
+          const knownFlags = new Set(['--user-sel', '--pass-sel', '--submit-sel']);
           for (let i = 4; i < args.length; i++) {
             if (args[i] === '--user-sel' && args[i+1]) { userSel = args[++i]; }
             else if (args[i] === '--pass-sel' && args[i+1]) { passSel = args[++i]; }
             else if (args[i] === '--submit-sel' && args[i+1]) { submitSel = args[++i]; }
-            else if (!args[i].startsWith('--')) { positionalAfterUsername.push(args[i]); }
+            else if (!knownFlags.has(args[i])) { positionalAfterUsername.push(args[i]); }
           }
           // Password: from positional arg (after username), or env var
           // (--password-stdin is handled in CLI before reaching server)

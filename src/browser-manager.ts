@@ -357,6 +357,10 @@ export class BrowserManager {
     return page;
   }
 
+  getPageById(id: number): Page | undefined {
+    return this.pages.get(id);
+  }
+
   getCurrentUrl(): string {
     try {
       return this.getPage().url();
@@ -590,7 +594,7 @@ export class BrowserManager {
         const df = this.domainFilter;
         await newContext.route('**/*', (route) => {
           const url = route.request().url();
-          if (df.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+          if (df.isAllowed(url)) { route.fallback(); } else { route.abort('blockedbyclient'); }
         });
       }
     } catch (err) {

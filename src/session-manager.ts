@@ -53,7 +53,7 @@ export class SessionManager {
             await context.route('**/*', (route) => {
               const url = route.request().url();
               if (domainFilter.isAllowed(url)) {
-                route.continue();
+                route.fallback();
               } else {
                 route.abort('blockedbyclient');
               }
@@ -61,11 +61,13 @@ export class SessionManager {
             const initScript = domainFilter.generateInitScript();
             await context.addInitScript(initScript);
             session.manager.setInitScript(initScript);
-            // Inject filter script into the current page immediately
-            try {
-              const page = session.manager.getPage();
-              await page.evaluate(initScript);
-            } catch {}
+            // Inject filter script into ALL open tabs immediately
+            for (const tab of session.manager.getTabList()) {
+              try {
+                const page = session.manager.getPageById(tab.id);
+                if (page) await page.evaluate(initScript);
+              } catch {}
+            }
           }
           session.domainFilter = domainFilter;
         }
