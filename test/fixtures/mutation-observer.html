@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>Mutation Observer Test</title></head>
+<body>
+<p>Hello World</p>
+<style>body { margin: 0; }</style>
+<script>
+  // Set up observer AFTER all static DOM content so parse-time additions
+  // don't increment the counter. Only post-load mutations (e.g., text
+  // extraction appending clones) should be detected.
+  window.__mutationCount = 0;
+  const observer = new MutationObserver(() => { window.__mutationCount++; });
+  observer.observe(document.body, { attributes: true, subtree: true, childList: true });
+</script>
+</body>
+</html>

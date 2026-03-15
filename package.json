@@ -1,0 +1,46 @@
+{
+  "name": "@ulpi/browse",
+  "version": "0.1.0",
+  "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "browse": "bin/browse.ts"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun build --compile src/cli.ts --outfile dist/browse",
+    "dev": "bun run src/cli.ts",
+    "server": "bun run src/server.ts",
+    "test": "bun test",
+    "start": "bun run src/server.ts",
+    "postinstall": "bunx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2",
+    "diff": "^7.0.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ulpi-io/browse"
+  },
+  "keywords": [
+    "browser",
+    "automation",
+    "playwright",
+    "headless",
+    "cli",
+    "ai-agent",
+    "claude"
+  ]
+}

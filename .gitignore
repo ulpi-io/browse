@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.browse/
+/tmp/browse-*
+bun.lock
+*.bun-build

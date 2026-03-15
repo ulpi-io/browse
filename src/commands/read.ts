@@ -1,0 +1,301 @@
+/**
+ * Read commands — extract data from pages without side effects
+ *
+ * text, html, links, forms, accessibility, js, eval, css, attrs, state,
+ * console, network, cookies, storage, perf
+ */
+
+import type { BrowserManager } from '../browser-manager';
+import { listDevices } from '../browser-manager';
+import { consoleBuffer, networkBuffer } from '../buffers';
+import * as fs from 'fs';
+
+export async function handleReadCommand(
+  command: string,
+  args: string[],
+  bm: BrowserManager
+): Promise<string> {
+  const page = bm.getPage();
+
+  switch (command) {
+    case 'text': {
+      // TreeWalker-based extraction — never appends to the live DOM,
+      // so MutationObservers are not triggered.
+      return await page.evaluate(() => {
+        const body = document.body;
+        if (!body) return '';
+        const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG']);
+        const lines: string[] = [];
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            let el = node.parentElement;
+            while (el && el !== body) {
+              if (SKIP.has(el.tagName)) return NodeFilter.FILTER_REJECT;
+              const style = getComputedStyle(el);
+              if (style.display === 'none' || style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+              el = el.parentElement;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        let node: Node | null;
+        while ((node = walker.nextNode())) {
+          const text = (node.textContent || '').trim();
+          if (text) lines.push(text);
+        }
+        return lines.join('\n');
+      });
+    }
+
+    case 'html': {
+      const selector = args[0];
+      if (selector) {
+        const resolved = bm.resolveRef(selector);
+        if ('locator' in resolved) {
+          return await resolved.locator.innerHTML({ timeout: 5000 });
+        }
+        return await page.innerHTML(resolved.selector);
+      }
+      return await page.content();
+    }
+
+    case 'links': {
+      const links = await page.evaluate(() =>
+        [...document.querySelectorAll('a[href]')].map(a => ({
+          text: a.textContent?.trim().slice(0, 120) || '',
+          href: (a as HTMLAnchorElement).href,
+        })).filter(l => l.text && l.href)
+      );
+      return links.map(l => `${l.text} → ${l.href}`).join('\n');
+    }
+
+    case 'forms': {
+      const forms = await page.evaluate(() => {
+        return [...document.querySelectorAll('form')].map((form, i) => {
+          const fields = [...form.querySelectorAll('input, select, textarea')].map(el => {
+            const input = el as HTMLInputElement;
+            return {
+              tag: el.tagName.toLowerCase(),
+              type: input.type || undefined,
+              name: input.name || undefined,
+              id: input.id || undefined,
+              placeholder: input.placeholder || undefined,
+              required: input.required || undefined,
+              value: input.value || undefined,
+              options: el.tagName === 'SELECT'
+                ? [...(el as HTMLSelectElement).options].map(o => ({ value: o.value, text: o.text }))
+                : undefined,
+            };
+          });
+          return {
+            index: i,
+            action: form.action || undefined,
+            method: form.method || 'get',
+            id: form.id || undefined,
+            fields,
+          };
+        });
+      });
+      return JSON.stringify(forms, null, 2);
+    }
+
+    case 'accessibility': {
+      const snapshot = await page.locator("body").ariaSnapshot();
+      return snapshot;
+    }
+
+    case 'js': {
+      const expr = args[0];
+      if (!expr) throw new Error('Usage: browse js <expression>');
+      const result = await page.evaluate(expr);
+      return typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result ?? '');
+    }
+
+    case 'eval': {
+      const filePath = args[0];
+      if (!filePath) throw new Error('Usage: browse eval <js-file>');
+      if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
+      const code = fs.readFileSync(filePath, 'utf-8');
+      const result = await page.evaluate(code);
+      return typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result ?? '');
+    }
+
+    case 'css': {
+      const [selector, property] = args;
+      if (!selector || !property) throw new Error('Usage: browse css <selector> <property>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        const value = await resolved.locator.evaluate(
+          (el, prop) => getComputedStyle(el).getPropertyValue(prop),
+          property
+        );
+        return value;
+      }
+      const value = await page.evaluate(
+        ([sel, prop]) => {
+          const el = document.querySelector(sel);
+          if (!el) return { __notFound: true, selector: sel };
+          return getComputedStyle(el).getPropertyValue(prop);
+        },
+        [resolved.selector, property]
+      );
+      if (typeof value === 'object' && value !== null && '__notFound' in value) {
+        throw new Error(`Element not found: ${(value as any).selector}`);
+      }
+      return value as string;
+    }
+
+    case 'state': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse state <selector>');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved
+        ? resolved.locator
+        : page.locator(resolved.selector);
+
+      const state: Record<string, unknown> = {};
+
+      // Core state checks — each wrapped individually since not all
+      // apply to every element type (e.g. isChecked only for checkbox/radio)
+      try { state.visible = await locator.isVisible(); } catch { state.visible = null; }
+      try { state.enabled = await locator.isEnabled(); } catch { state.enabled = null; }
+      try { state.checked = await locator.isChecked(); } catch { state.checked = null; }
+      try { state.editable = await locator.isEditable(); } catch { state.editable = null; }
+
+      // Properties that require evaluate — grouped in one call for efficiency
+      try {
+        const domProps = await locator.evaluate((el) => {
+          const input = el as HTMLInputElement;
+          return {
+            focused: document.activeElement === el,
+            tag: el.tagName.toLowerCase(),
+            type: input.type || null,
+            value: input.value ?? null,
+          };
+        });
+        Object.assign(state, domProps);
+      } catch {
+        state.focused = null;
+        state.tag = null;
+        state.type = null;
+        state.value = null;
+      }
+
+      // Bounding box — null when element is not visible
+      try { state.boundingBox = await locator.boundingBox(); } catch { state.boundingBox = null; }
+
+      return JSON.stringify(state, null, 2);
+    }
+
+    case 'attrs': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse attrs <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        const attrs = await resolved.locator.evaluate((el) => {
+          const result: Record<string, string> = {};
+          for (const attr of el.attributes) {
+            result[attr.name] = attr.value;
+          }
+          return result;
+        });
+        return JSON.stringify(attrs, null, 2);
+      }
+      const attrs = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return { __notFound: true, selector: sel };
+        const result: Record<string, string> = {};
+        for (const attr of el.attributes) {
+          result[attr.name] = attr.value;
+        }
+        return result;
+      }, resolved.selector);
+      if (typeof attrs === 'object' && attrs !== null && '__notFound' in attrs) {
+        throw new Error(`Element not found: ${(attrs as any).selector}`);
+      }
+      return JSON.stringify(attrs, null, 2);
+    }
+
+    case 'dialog': {
+      const last = bm.getLastDialog();
+      if (!last) return '(no dialog detected)';
+      return JSON.stringify(last, null, 2);
+    }
+
+    case 'console': {
+      if (args[0] === '--clear') {
+        consoleBuffer.length = 0;
+        return 'Console buffer cleared.';
+      }
+      if (consoleBuffer.length === 0) return '(no console messages)';
+      return consoleBuffer.map(e =>
+        `[${new Date(e.timestamp).toISOString()}] [${e.level}] ${e.text}`
+      ).join('\n');
+    }
+
+    case 'network': {
+      if (args[0] === '--clear') {
+        networkBuffer.length = 0;
+        return 'Network buffer cleared.';
+      }
+      if (networkBuffer.length === 0) return '(no network requests)';
+      return networkBuffer.map(e =>
+        `${e.method} ${e.url} → ${e.status || 'pending'} (${e.duration || '?'}ms, ${e.size || '?'}B)`
+      ).join('\n');
+    }
+
+    case 'cookies': {
+      const cookies = await page.context().cookies();
+      return JSON.stringify(cookies, null, 2);
+    }
+
+    case 'storage': {
+      if (args[0] === 'set' && args[1]) {
+        const key = args[1];
+        const value = args[2] || '';
+        await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value]);
+        return `Set localStorage["${key}"] = "${value}"`;
+      }
+      const storage = await page.evaluate(() => ({
+        localStorage: { ...localStorage },
+        sessionStorage: { ...sessionStorage },
+      }));
+      return JSON.stringify(storage, null, 2);
+    }
+
+    case 'perf': {
+      const timings = await page.evaluate(() => {
+        const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+        if (!nav) return 'No navigation timing data available.';
+        return {
+          dns: Math.round(nav.domainLookupEnd - nav.domainLookupStart),
+          tcp: Math.round(nav.connectEnd - nav.connectStart),
+          ssl: Math.round(nav.secureConnectionStart > 0 ? nav.connectEnd - nav.secureConnectionStart : 0),
+          ttfb: Math.round(nav.responseStart - nav.requestStart),
+          download: Math.round(nav.responseEnd - nav.responseStart),
+          domParse: Math.round(nav.domInteractive - nav.responseEnd),
+          domReady: Math.round(nav.domContentLoadedEventEnd - nav.startTime),
+          load: Math.round(nav.loadEventEnd - nav.startTime),
+          total: Math.round(nav.loadEventEnd - nav.startTime),
+        };
+      });
+      if (typeof timings === 'string') return timings;
+      return Object.entries(timings)
+        .map(([k, v]) => `${k.padEnd(12)} ${v}ms`)
+        .join('\n');
+    }
+
+    case 'devices': {
+      const filter = args.join(' ').toLowerCase();
+      const all = listDevices();
+      const filtered = filter ? all.filter(d => d.toLowerCase().includes(filter)) : all;
+      if (filtered.length === 0) {
+        return `No devices matching "${filter}". Run "browse devices" to see all.`;
+      }
+      return filtered.join('\n');
+    }
+
+    default:
+      throw new Error(`Unknown read command: ${command}`);
+  }
+}

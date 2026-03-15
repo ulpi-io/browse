@@ -1,0 +1,349 @@
+/**
+ * Meta commands — tabs, server control, screenshots, chain, diff, snapshot
+ */
+
+import type { BrowserManager } from '../browser-manager';
+import { handleSnapshot } from '../snapshot';
+import { DEFAULTS } from '../constants';
+import * as Diff from 'diff';
+import * as fs from 'fs';
+
+const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
+
+export async function handleMetaCommand(
+  command: string,
+  args: string[],
+  bm: BrowserManager,
+  shutdown: () => Promise<void> | void
+): Promise<string> {
+  switch (command) {
+    // ─── Tabs ──────────────────────────────────────────
+    case 'tabs': {
+      const tabs = await bm.getTabListWithTitles();
+      return tabs.map(t =>
+        `${t.active ? '→ ' : '  '}[${t.id}] ${t.title || '(untitled)'} — ${t.url}`
+      ).join('\n');
+    }
+
+    case 'tab': {
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) throw new Error('Usage: browse tab <id>');
+      bm.switchTab(id);
+      return `Switched to tab ${id}`;
+    }
+
+    case 'newtab': {
+      const url = args[0];
+      const id = await bm.newTab(url);
+      return `Opened tab ${id}${url ? ` → ${url}` : ''}`;
+    }
+
+    case 'closetab': {
+      const id = args[0] ? parseInt(args[0], 10) : undefined;
+      await bm.closeTab(id);
+      return `Closed tab${id ? ` ${id}` : ''}`;
+    }
+
+    // ─── Server Control ────────────────────────────────
+    case 'status': {
+      const page = bm.getPage();
+      const tabs = bm.getTabCount();
+      return [
+        `Status: healthy`,
+        `URL: ${page.url()}`,
+        `Tabs: ${tabs}`,
+        `PID: ${process.pid}`,
+        `Uptime: ${Math.floor(process.uptime())}s`,
+      ].join('\n');
+    }
+
+    case 'url': {
+      return bm.getCurrentUrl();
+    }
+
+    case 'stop': {
+      // Schedule shutdown after response is sent — process.exit in shutdown()
+      // would kill the HTTP handler before the response flushes.
+      setTimeout(() => shutdown(), 100);
+      return 'Server stopped';
+    }
+
+    case 'restart': {
+      // Signal that we want a restart — the CLI will detect exit and restart.
+      // Schedule shutdown after response flushes (same rationale as stop).
+      console.log('[browse] Restart requested. Exiting for CLI to restart.');
+      setTimeout(() => shutdown(), 100);
+      return 'Restarting...';
+    }
+
+    // ─── Visual ────────────────────────────────────────
+    case 'screenshot': {
+      const page = bm.getPage();
+      const annotate = args.includes('--annotate');
+      const filteredArgs = args.filter(a => a !== '--annotate');
+      const screenshotPath = filteredArgs[0] || `${LOCAL_DIR}/browse-screenshot.png`;
+
+      if (annotate) {
+        // Single evaluate call to find all visible interactive elements + their positions.
+        // This avoids hundreds of individual boundingBox() protocol round-trips.
+        const viewport = page.viewportSize() || { width: 1920, height: 1080 };
+        const annotations = await page.evaluate((vp) => {
+          const INTERACTIVE = ['a', 'button', 'input', 'select', 'textarea', 'details', 'summary'];
+          const INTERACTIVE_ROLES = ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox',
+            'listbox', 'menuitem', 'option', 'searchbox', 'slider', 'switch', 'tab'];
+          const results: Array<{ x: number; y: number; desc: string }> = [];
+          const scrollX = window.scrollX;
+          const scrollY = window.scrollY;
+
+          const candidates = document.querySelectorAll(
+            INTERACTIVE.join(',') + ',[role],[onclick],[tabindex],[data-action]'
+          );
+
+          for (let i = 0; i < candidates.length && results.length < 200; i++) {
+            const el = candidates[i] as HTMLElement;
+            // Skip hidden
+            if (el.offsetWidth === 0 && el.offsetHeight === 0) continue;
+
+            const tag = el.tagName.toLowerCase();
+            const role = el.getAttribute('role') || '';
+            const isInteractive = INTERACTIVE.includes(tag) || INTERACTIVE_ROLES.includes(role);
+            if (!isInteractive && !el.hasAttribute('onclick') &&
+                !el.hasAttribute('tabindex') && !el.hasAttribute('data-action') &&
+                getComputedStyle(el).cursor !== 'pointer') continue;
+
+            const rect = el.getBoundingClientRect();
+            // Skip horizontally off-screen (vertical is fine — fullPage captures the scroll)
+            if (rect.right < 0 || rect.left > vp.width) continue;
+            // Skip tiny elements
+            if (rect.width < 5 || rect.height < 5) continue;
+
+            const text = (el.textContent || '').trim().slice(0, 40).replace(/\s+/g, ' ');
+            const desc = `${tag}${role ? '[' + role + ']' : ''} "${text}"`;
+            // Use page-absolute coords (not viewport-relative) for fullPage screenshot
+            results.push({ x: rect.left + scrollX, y: rect.top + scrollY, desc });
+          }
+          return results;
+        }, viewport);
+
+        const legend: string[] = [];
+        const badges = annotations.map((a, i) => {
+          const num = i + 1;
+          legend.push(`${num}. ${a.desc}`);
+          return { num, x: a.x, y: a.y };
+        });
+
+        // Inject overlay badges, take screenshot, always clean up
+        try {
+          await page.evaluate((items: Array<{ num: number; x: number; y: number }>) => {
+            const container = document.createElement('div');
+            container.id = '__browse_annotate__';
+            container.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;z-index:2147483647;pointer-events:none;';
+            for (const b of items) {
+              const el = document.createElement('div');
+              el.style.cssText = `position:absolute;top:${b.y}px;left:${b.x}px;width:20px;height:20px;border-radius:50%;background:#e11d48;color:#fff;font:bold 11px/20px sans-serif;text-align:center;border:1px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);`;
+              el.textContent = String(b.num);
+              container.appendChild(el);
+            }
+            document.body.appendChild(container);
+          }, badges);
+
+          // fullPage — captures full scroll height, badges use absolute positioning
+          await page.screenshot({ path: screenshotPath, fullPage: true });
+        } finally {
+          await page.evaluate(() => {
+            document.getElementById('__browse_annotate__')?.remove();
+          }).catch(() => {});
+        }
+
+        return `Screenshot saved: ${screenshotPath}\n\nLegend:\n${legend.join('\n')}`;
+      }
+
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      return `Screenshot saved: ${screenshotPath}`;
+    }
+
+    case 'pdf': {
+      const page = bm.getPage();
+      const pdfPath = args[0] || `${LOCAL_DIR}/browse-page.pdf`;
+      await page.pdf({ path: pdfPath, format: 'A4' });
+      return `PDF saved: ${pdfPath}`;
+    }
+
+    case 'responsive': {
+      const page = bm.getPage();
+      const prefix = args[0] || `${LOCAL_DIR}/browse-responsive`;
+      const viewports = [
+        { name: 'mobile', width: 375, height: 812 },
+        { name: 'tablet', width: 768, height: 1024 },
+        { name: 'desktop', width: 1920, height: 1080 },
+      ];
+      const originalViewport = page.viewportSize();
+      const results: string[] = [];
+
+      try {
+        for (const vp of viewports) {
+          await page.setViewportSize({ width: vp.width, height: vp.height });
+          const path = `${prefix}-${vp.name}.png`;
+          await page.screenshot({ path, fullPage: true });
+          results.push(`${vp.name} (${vp.width}x${vp.height}): ${path}`);
+        }
+      } finally {
+        // Always restore original viewport, even if a screenshot fails
+        if (originalViewport) {
+          await page.setViewportSize(originalViewport).catch(() => {});
+        }
+      }
+
+      return results.join('\n');
+    }
+
+    // ─── Chain ─────────────────────────────────────────
+    case 'chain': {
+      // Read JSON array from args[0] (if provided) or expect it was passed as body
+      const jsonStr = args[0];
+      if (!jsonStr) throw new Error('Usage: echo \'[["goto","url"],["text"]]\' | browse chain');
+
+      let commands: string[][];
+      try {
+        commands = JSON.parse(jsonStr);
+      } catch {
+        throw new Error('Invalid JSON. Expected: [["command", "arg1", "arg2"], ...]');
+      }
+
+      if (!Array.isArray(commands)) throw new Error('Expected JSON array of commands');
+
+      const results: string[] = [];
+      const { handleReadCommand } = await import('./read');
+      const { handleWriteCommand } = await import('./write');
+
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','fill','select','hover','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate']);
+      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices']);
+
+      for (const cmd of commands) {
+        const [name, ...cmdArgs] = cmd;
+        try {
+          let result: string;
+          if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm);
+          else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm);
+          else                          result = await handleMetaCommand(name, cmdArgs, bm, shutdown);
+          results.push(`[${name}] ${result}`);
+        } catch (err: any) {
+          results.push(`[${name}] ERROR: ${err.message}`);
+        }
+      }
+
+      return results.join('\n\n');
+    }
+
+    // ─── Diff ──────────────────────────────────────────
+    case 'diff': {
+      const [url1, url2] = args;
+      if (!url1 || !url2) throw new Error('Usage: browse diff <url1> <url2>');
+
+      const extractText = () => {
+        const body = document.body;
+        if (!body) return '';
+        const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG']);
+        const lines: string[] = [];
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            let el = node.parentElement;
+            while (el && el !== body) {
+              if (SKIP.has(el.tagName)) return NodeFilter.FILTER_REJECT;
+              const style = getComputedStyle(el);
+              if (style.display === 'none' || style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+              el = el.parentElement;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        let node: Node | null;
+        while ((node = walker.nextNode())) {
+          const text = (node.textContent || '').trim();
+          if (text) lines.push(text);
+        }
+        return lines.join('\n');
+      };
+
+      // Use a temporary tab so active tab's state/URL/refs are preserved
+      const previousTabId = bm.getActiveTabId();
+      const tempTabId = await bm.newTab(url1);
+      const tempPage = bm.getPage(); // newTab sets it as active
+
+      let text1: string;
+      let text2: string;
+      try {
+        text1 = await tempPage.evaluate(extractText);
+        await tempPage.goto(url2, { waitUntil: 'domcontentloaded', timeout: DEFAULTS.COMMAND_TIMEOUT_MS });
+        text2 = await tempPage.evaluate(extractText);
+      } finally {
+        // Close temp tab and restore the previously active tab
+        await bm.closeTab(tempTabId);
+        if (bm.hasTab(previousTabId)) {
+          bm.switchTab(previousTabId);
+        }
+      }
+
+      const changes = Diff.diffLines(text1, text2);
+      const output: string[] = [`--- ${url1}`, `+++ ${url2}`, ''];
+
+      for (const part of changes) {
+        const prefix = part.added ? '+' : part.removed ? '-' : ' ';
+        const lines = part.value.split('\n').filter(l => l.length > 0);
+        for (const line of lines) {
+          output.push(`${prefix} ${line}`);
+        }
+      }
+
+      return output.join('\n');
+    }
+
+    // ─── Snapshot ─────────────────────────────────────
+    case 'snapshot': {
+      return await handleSnapshot(args, bm);
+    }
+
+    // ─── Snapshot Diff ──────────────────────────────
+    case 'snapshot-diff': {
+      const previous = bm.getLastSnapshot();
+      if (!previous) {
+        return 'No previous snapshot to compare against. Run "snapshot" first.';
+      }
+
+      // Re-run snapshot with the same options to get comparable rendered output
+      const snapshotArgs = bm.getLastSnapshotOpts();
+      const current = await handleSnapshot(snapshotArgs, bm);
+
+      if (!current || current === '(no accessible elements found)' || current === '(no interactive elements found)') {
+        return 'Current page has no accessible elements to compare.';
+      }
+
+      // Strip volatile @eN ref labels before diffing — ref numbers are reassigned
+      // from 1 on every snapshot, so an inserted element near the top renumbers
+      // the entire tree and makes unchanged elements look modified.
+      const stripRefs = (text: string) => text.replace(/@e\d+ /g, '');
+      const changes = Diff.diffLines(stripRefs(previous), stripRefs(current));
+      const output: string[] = ['--- previous snapshot', '+++ current snapshot', ''];
+      let hasChanges = false;
+
+      for (const part of changes) {
+        if (part.added || part.removed) hasChanges = true;
+        const prefix = part.added ? '+' : part.removed ? '-' : ' ';
+        const lines = part.value.split('\n').filter(l => l.length > 0);
+        for (const line of lines) {
+          output.push(`${prefix} ${line}`);
+        }
+      }
+
+      if (!hasChanges) {
+        return 'No changes detected between snapshots.';
+      }
+
+      // handleSnapshot already updated the stored snapshot via setLastSnapshot
+      return output.join('\n');
+    }
+
+    default:
+      throw new Error(`Unknown meta command: ${command}`);
+  }
+}

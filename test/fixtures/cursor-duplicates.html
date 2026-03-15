@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>Cursor Duplicates Test</title></head>
+<body>
+<!-- 4 cards: only cards 1 and 3 have cursor:pointer, cards 2 and 4 do not -->
+<div id="products">
+  <div class="card" style="cursor:pointer" onclick="this.dataset.clicked='true'">Product A</div>
+  <div class="card">Product B (not clickable)</div>
+  <div class="card" style="cursor:pointer" onclick="this.dataset.clicked='true'">Product C</div>
+  <div class="card">Product D (not clickable)</div>
+</div>
+</body>
+</html>

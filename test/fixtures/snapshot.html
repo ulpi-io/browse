@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Snapshot Test Page</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    form { margin: 10px 0; }
+    input, select, button { margin: 5px; padding: 5px; }
+    #main { border: 1px solid #ccc; padding: 10px; }
+    .empty-div { }
+    .hidden { display: none; }
+    .card { padding: 10px; border: 1px solid #ddd; cursor: pointer; margin: 5px 0; }
+    .close-btn { display: inline-block; padding: 5px 10px; }
+    .tab-item { display: inline-block; padding: 8px 16px; }
+    .menu-trigger { padding: 5px; }
+    .hidden-interactive { display: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Snapshot Test</h1>
+  <h2>Subheading</h2>
+
+  <nav>
+    <a href="/page1">Internal Link</a>
+    <a href="https://external.com">External Link</a>
+  </nav>
+
+  <div id="main">
+    <h3>Form Section</h3>
+    <form id="test-form">
+      <input type="text" id="username" placeholder="Username" aria-label="Username">
+      <input type="email" id="email" placeholder="Email" aria-label="Email">
+      <input type="password" id="pass" placeholder="Password" aria-label="Password">
+      <label><input type="checkbox" id="agree"> I agree</label>
+      <select id="role" aria-label="Role">
+        <option value="">Choose...</option>
+        <option value="admin">Admin</option>
+        <option value="user">User</option>
+      </select>
+      <button type="submit" id="submit-btn">Submit</button>
+      <button type="button" id="cancel-btn">Cancel</button>
+    </form>
+  </div>
+
+  <div class="empty-div">
+    <div class="empty-div">
+      <button id="nested-btn">Nested Button</button>
+    </div>
+  </div>
+
+  <p>Some paragraph text that is not interactive.</p>
+
+  <!-- Cursor-interactive elements: NOT captured by ARIA tree -->
+  <div id="cursor-section">
+    <!-- cursor:pointer styled div — common in React/Vue apps -->
+    <div class="card" id="product-card">Add to cart</div>
+
+    <!-- onclick attribute — old-school but still common -->
+    <span class="close-btn" onclick="this.parentElement.style.display='none'">Close dialog</span>
+
+    <!-- tabindex — keyboard-accessible custom widget -->
+    <div class="tab-item" tabindex="0">Custom Tab</div>
+
+    <!-- data-action attribute — Stimulus.js / Rails patterns -->
+    <div class="menu-trigger" data-action="click->menu#toggle">Open Menu</div>
+
+    <!-- data-bs-toggle — Bootstrap pattern -->
+    <div class="dropdown-trigger" data-bs-toggle="dropdown">Dropdown</div>
+
+    <!-- Hidden interactive element — should NOT be detected -->
+    <div class="hidden-interactive">Should not appear</div>
+  </div>
+
+  <script>
+    document.getElementById('test-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+    });
+    // Wire up the card click handler via JS (no onclick attribute)
+    document.getElementById('product-card').addEventListener('click', () => {
+      // In a real app this would add to cart
+    });
+  </script>
+</body>
+</html>
