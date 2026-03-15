@@ -17,12 +17,15 @@ export async function handleReadCommand(
   buffers?: SessionBuffers
 ): Promise<string> {
   const page = bm.getPage();
+  // When a frame is active, evaluate() calls run inside the frame context.
+  // For locator-based commands, resolveRef already scopes through the frame.
+  const evalCtx = await bm.getFrameContext() || page;
 
   switch (command) {
     case 'text': {
       // TreeWalker-based extraction — never appends to the live DOM,
       // so MutationObservers are not triggered.
-      return await page.evaluate(() => {
+      return await evalCtx.evaluate(() => {
         const body = document.body;
         if (!body) return '';
         const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG']);
@@ -57,11 +60,15 @@ export async function handleReadCommand(
         }
         return await page.innerHTML(resolved.selector);
       }
+      // When a frame is active, return the frame's full HTML
+      if (bm.getActiveFrameSelector()) {
+        return await evalCtx.evaluate(() => document.documentElement.outerHTML);
+      }
       return await page.content();
     }
 
     case 'links': {
-      const links = await page.evaluate(() =>
+      const links = await evalCtx.evaluate(() =>
         [...document.querySelectorAll('a[href]')].map(a => ({
           text: a.textContent?.trim().slice(0, 120) || '',
           href: (a as HTMLAnchorElement).href,
@@ -71,7 +78,7 @@ export async function handleReadCommand(
     }
 
     case 'forms': {
-      const forms = await page.evaluate(() => {
+      const forms = await evalCtx.evaluate(() => {
         return [...document.querySelectorAll('form')].map((form, i) => {
           const fields = [...form.querySelectorAll('input, select, textarea')].map(el => {
             const input = el as HTMLInputElement;
@@ -101,14 +108,15 @@ export async function handleReadCommand(
     }
 
     case 'accessibility': {
-      const snapshot = await page.locator("body").ariaSnapshot();
+      const root = bm.getLocatorRoot();
+      const snapshot = await root.locator('body').ariaSnapshot();
       return snapshot;
     }
 
     case 'js': {
       const expr = args[0];
       if (!expr) throw new Error('Usage: browse js <expression>');
-      const result = await page.evaluate(expr);
+      const result = await evalCtx.evaluate(expr);
       return typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result ?? '');
     }
 
@@ -117,7 +125,7 @@ export async function handleReadCommand(
       if (!filePath) throw new Error('Usage: browse eval <js-file>');
       if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
       const code = fs.readFileSync(filePath, 'utf-8');
-      const result = await page.evaluate(code);
+      const result = await evalCtx.evaluate(code);
       return typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result ?? '');
     }
 
@@ -132,7 +140,7 @@ export async function handleReadCommand(
         );
         return value;
       }
-      const value = await page.evaluate(
+      const value = await evalCtx.evaluate(
         ([sel, prop]) => {
           const el = document.querySelector(sel);
           if (!el) return { __notFound: true, selector: sel };
@@ -202,7 +210,7 @@ export async function handleReadCommand(
         });
         return JSON.stringify(attrs, null, 2);
       }
-      const attrs = await page.evaluate((sel) => {
+      const attrs = await evalCtx.evaluate((sel) => {
         const el = document.querySelector(sel);
         if (!el) return { __notFound: true, selector: sel };
         const result: Record<string, string> = {};
@@ -256,10 +264,10 @@ export async function handleReadCommand(
       if (args[0] === 'set' && args[1]) {
         const key = args[1];
         const value = args[2] || '';
-        await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value]);
+        await evalCtx.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value]);
         return `Set localStorage["${key}"] = "${value}"`;
       }
-      const storage = await page.evaluate(() => ({
+      const storage = await evalCtx.evaluate(() => ({
         localStorage: { ...localStorage },
         sessionStorage: { ...sessionStorage },
       }));
@@ -267,7 +275,7 @@ export async function handleReadCommand(
     }
 
     case 'perf': {
-      const timings = await page.evaluate(() => {
+      const timings = await evalCtx.evaluate(() => {
         const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
         if (!nav) return 'No navigation timing data available.';
         return {
@@ -286,6 +294,24 @@ export async function handleReadCommand(
       return Object.entries(timings)
         .map(([k, v]) => `${k.padEnd(12)} ${v}ms`)
         .join('\n');
+    }
+
+    case 'value': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse value <selector>');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      const value = await locator.inputValue({ timeout: 5000 });
+      return value;
+    }
+
+    case 'count': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse count <selector>');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      const count = await locator.count();
+      return String(count);
     }
 
     case 'devices': {

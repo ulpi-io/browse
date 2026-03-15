@@ -6,7 +6,6 @@
     "url": "https://github.com/ulpi-io/browse"
   },
   "dependencies": {
-    "@ulpi/browse": "^0.1.0",
     "diff": "^7.0.0",
     "playwright": "^1.58.2"
   },
@@ -40,6 +39,7 @@
   },
   "scripts": {
     "build": "bun build --compile src/cli.ts --outfile dist/browse",
+    "build:all": "bash scripts/build-all.sh",
     "dev": "bun run src/cli.ts",
     "server": "bun run src/server.ts",
     "test": "bun test",

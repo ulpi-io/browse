@@ -18,7 +18,7 @@
  * Later: "click @e3" → look up Locator → locator.click()
  */
 
-import type { Page, Locator } from 'playwright';
+import type { Page, Frame, FrameLocator, Locator } from 'playwright';
 import type { BrowserManager } from './browser-manager';
 
 // Roles considered "interactive" for the -i flag
@@ -146,13 +146,13 @@ const NATIVE_INTERACTIVE_TAGS = new Set([
  *   - Elements already covered by ARIA roles
  */
 async function findCursorInteractiveElements(
-  page: Page,
+  evalCtx: Page | Frame,
   scopeSelector?: string,
 ): Promise<CursorElement[]> {
   const interactiveRolesList = [...INTERACTIVE_ROLES];
   const nativeTagsList = [...NATIVE_INTERACTIVE_TAGS];
 
-  return await page.evaluate(
+  return await evalCtx.evaluate(
     ({ scopeSel, interactiveRoles, nativeTags }) => {
       const root = scopeSel
         ? document.querySelector(scopeSel) || document.body
@@ -323,23 +323,27 @@ export async function handleSnapshot(
 ): Promise<string> {
   const opts = parseSnapshotArgs(args);
   const page = bm.getPage();
+  // When a frame is active, scope snapshot to the frame's content
+  const locatorRoot = bm.getLocatorRoot();
 
   // Get accessibility tree via ariaSnapshot
   let rootLocator: Locator;
   if (opts.selector) {
-    rootLocator = page.locator(opts.selector);
+    rootLocator = locatorRoot.locator(opts.selector);
     const count = await rootLocator.count();
     if (count === 0) throw new Error(`Selector not found: ${opts.selector}`);
   } else {
-    rootLocator = page.locator('body');
+    rootLocator = locatorRoot.locator('body');
   }
 
   const ariaText = await rootLocator.ariaSnapshot();
+  // Get frame context for evaluate calls (cursor-interactive scan)
+  const evalCtx = await bm.getFrameContext() || page;
   if (!ariaText || ariaText.trim().length === 0) {
     bm.setRefMap(new Map());
     // If -C is active, still scan for cursor-interactive even with empty ARIA
     if (opts.cursor) {
-      const result = await appendCursorElements(page, opts, [], new Map(), 1, bm);
+      const result = await appendCursorElements(evalCtx, locatorRoot, opts, [], new Map(), 1, bm);
       bm.setLastSnapshot(result, args);
       return result;
     }
@@ -396,11 +400,11 @@ export async function handleSnapshot(
 
     let locator: Locator;
     if (opts.selector) {
-      locator = page.locator(opts.selector).getByRole(node.role as any, {
+      locator = locatorRoot.locator(opts.selector).getByRole(node.role as any, {
         name: node.name || undefined,
       });
     } else {
-      locator = page.getByRole(node.role as any, {
+      locator = locatorRoot.getByRole(node.role as any, {
         name: node.name || undefined,
       });
     }
@@ -423,7 +427,7 @@ export async function handleSnapshot(
 
   // Cursor-interactive detection: supplement ARIA tree with DOM-level scan
   if (opts.cursor) {
-    const result = await appendCursorElements(page, opts, output, refMap, refCounter, bm);
+    const result = await appendCursorElements(evalCtx, locatorRoot, opts, output, refMap, refCounter, bm);
     bm.setLastSnapshot(result, args);
     return result;
   }
@@ -446,14 +450,15 @@ export async function handleSnapshot(
  * Called when -C flag is active.
  */
 async function appendCursorElements(
-  page: Page,
+  evalCtx: Page | Frame,
+  locatorRoot: Page | FrameLocator,
   opts: SnapshotOptions,
   output: string[],
   refMap: Map<string, Locator>,
   refCounter: number,
   bm: BrowserManager,
 ): Promise<string> {
-  const cursorElements = await findCursorInteractiveElements(page, opts.selector);
+  const cursorElements = await findCursorInteractiveElements(evalCtx, opts.selector);
 
   if (cursorElements.length > 0) {
     output.push('');
@@ -468,9 +473,9 @@ async function appendCursorElements(
       // share the same selector.
       let baseLocator: Locator;
       if (opts.selector) {
-        baseLocator = page.locator(opts.selector).locator(elem.cssSelector);
+        baseLocator = locatorRoot.locator(opts.selector).locator(elem.cssSelector);
       } else {
-        baseLocator = page.locator(elem.cssSelector);
+        baseLocator = locatorRoot.locator(elem.cssSelector);
       }
       const locator = baseLocator.nth(elem.selectorIndex);
 

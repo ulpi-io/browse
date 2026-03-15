@@ -26,7 +26,8 @@ export { type LogEntry, type NetworkEntry };
 // ─── Auth (inline) ─────────────────────────────────────────────
 const AUTH_TOKEN = crypto.randomUUID();
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10); // 0 = auto-scan
-const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : '';
+const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || '';
+const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : (BROWSE_INSTANCE ? `-${BROWSE_INSTANCE}` : '');
 const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
 const STATE_FILE = process.env.BROWSE_STATE_FILE || `${LOCAL_DIR}/browse-server${INSTANCE_SUFFIX}.json`;
 const IDLE_TIMEOUT_MS = parseInt(process.env.BROWSE_IDLE_TIMEOUT || String(DEFAULTS.IDLE_TIMEOUT_MS), 10);
@@ -46,9 +47,8 @@ function flushAllBuffers(sessionManager: SessionManager, final = false) {
 }
 
 function flushSessionBuffers(session: Session, final: boolean) {
-  const suffix = session.id === 'default' ? INSTANCE_SUFFIX : `-${session.id}`;
-  const consolePath = `${LOCAL_DIR}/browse-console${suffix}.log`;
-  const networkPath = `${LOCAL_DIR}/browse-network${suffix}.log`;
+  const consolePath = `${session.outputDir}/console.log`;
+  const networkPath = `${session.outputDir}/network.log`;
   const buffers = session.buffers;
 
   // Console flush
@@ -104,13 +104,17 @@ const READ_COMMANDS = new Set([
   'text', 'html', 'links', 'forms', 'accessibility',
   'js', 'eval', 'css', 'attrs', 'state', 'dialog',
   'console', 'network', 'cookies', 'storage', 'perf', 'devices',
+  'value', 'count',
 ]);
 
 const WRITE_COMMANDS = new Set([
   'goto', 'back', 'forward', 'reload',
-  'click', 'fill', 'select', 'hover', 'type', 'press', 'scroll', 'wait',
+  'click', 'dblclick', 'fill', 'select', 'hover', 'focus', 'check', 'uncheck',
+  'type', 'press', 'scroll', 'wait',
   'viewport', 'cookie', 'header', 'useragent',
   'upload', 'dialog-accept', 'dialog-dismiss', 'emulate',
+  'drag', 'keydown', 'keyup',
+  'highlight', 'download',
 ]);
 
 const META_COMMANDS = new Set([
@@ -120,6 +124,7 @@ const META_COMMANDS = new Set([
   'chain', 'diff',
   'url', 'snapshot', 'snapshot-diff',
   'sessions', 'session-close',
+  'frame', 'state',
 ]);
 
 // Find port: use BROWSE_PORT or scan range
@@ -149,13 +154,33 @@ async function findPort(): Promise<number> {
   throw new Error(`[browse] No available port in range ${start}-${end}`);
 }
 
-async function handleCommand(body: any, session: Session): Promise<Response> {
+// Commands that return page-derived content (for --content-boundaries wrapping).
+// Action commands (click, goto) and meta commands (status, tabs) are NOT wrapped.
+const PAGE_CONTENT_COMMANDS = new Set([
+  'text', 'html', 'links', 'forms', 'accessibility',
+  'js', 'eval', 'console', 'network', 'snapshot',
+]);
+
+// Nonce for content boundaries — generated once per server process
+const BOUNDARY_NONCE = crypto.randomUUID();
+
+interface RequestOptions {
+  jsonMode: boolean;
+  contentBoundaries: boolean;
+}
+
+async function handleCommand(body: any, session: Session, opts: RequestOptions): Promise<Response> {
   const { command, args = [] } = body;
 
   if (!command) {
-    return new Response(JSON.stringify({ error: 'Missing "command" field' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
+    const error = 'Missing "command" field';
+    if (opts.jsonMode) {
+      return new Response(JSON.stringify({ success: false, error }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ error }), {
+      status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -165,27 +190,46 @@ async function handleCommand(body: any, session: Session): Promise<Response> {
     if (READ_COMMANDS.has(command)) {
       result = await handleReadCommand(command, args, session.manager, session.buffers);
     } else if (WRITE_COMMANDS.has(command)) {
-      result = await handleWriteCommand(command, args, session.manager);
+      result = await handleWriteCommand(command, args, session.manager, session.domainFilter);
     } else if (META_COMMANDS.has(command)) {
       result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager, session);
     } else {
-      return new Response(JSON.stringify({
-        error: `Unknown command: ${command}`,
-        hint: `Available commands: ${[...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS].sort().join(', ')}`,
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
+      const error = `Unknown command: ${command}`;
+      const hint = `Available commands: ${[...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS].sort().join(', ')}`;
+      if (opts.jsonMode) {
+        return new Response(JSON.stringify({ success: false, error, hint }), {
+          status: 400, headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error, hint }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Apply content boundaries for page-content commands
+    if (opts.contentBoundaries && PAGE_CONTENT_COMMANDS.has(command)) {
+      const origin = session.manager.getCurrentUrl();
+      result = `--- BROWSE_CONTENT nonce=${BOUNDARY_NONCE} origin=${origin} ---\n${result}\n--- END_BROWSE_CONTENT nonce=${BOUNDARY_NONCE} ---`;
+    }
+
+    // Apply JSON wrapping
+    if (opts.jsonMode) {
+      return new Response(JSON.stringify({ success: true, data: result, command }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
       });
     }
 
     return new Response(result, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' },
+      status: 200, headers: { 'Content-Type': 'text/plain' },
     });
   } catch (err: any) {
+    if (opts.jsonMode) {
+      return new Response(JSON.stringify({ success: false, error: err.message, command }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 }
@@ -247,7 +291,15 @@ async function start() {
   const port = await findPort();
 
   // Launch shared Chromium
-  browser = await chromium.launch({ headless: true });
+  const launchOptions: Record<string, any> = { headless: true };
+  const proxyServer = process.env.BROWSE_PROXY;
+  if (proxyServer) {
+    launchOptions.proxy = { server: proxyServer };
+    if (process.env.BROWSE_PROXY_BYPASS) {
+      launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+    }
+  }
+  browser = await chromium.launch(launchOptions);
 
   // Chromium crash → flush, cleanup, exit
   browser.on('disconnected', () => {
@@ -263,7 +315,7 @@ async function start() {
   });
 
   // Create session manager
-  sessionManager = new SessionManager(browser);
+  sessionManager = new SessionManager(browser, LOCAL_DIR);
 
   const startTime = Date.now();
   const server = Bun.serve({
@@ -296,8 +348,13 @@ async function start() {
       if (url.pathname === '/command' && req.method === 'POST') {
         const body = await req.json();
         const sessionId = req.headers.get('x-browse-session') || 'default';
-        const session = await sessionManager.getOrCreate(sessionId);
-        return handleCommand(body, session);
+        const allowedDomains = req.headers.get('x-browse-allowed-domains') || undefined;
+        const session = await sessionManager.getOrCreate(sessionId, allowedDomains);
+        const opts: RequestOptions = {
+          jsonMode: req.headers.get('x-browse-json') === '1',
+          contentBoundaries: req.headers.get('x-browse-boundaries') === '1',
+        };
+        return handleCommand(body, session, opts);
       }
 
       return new Response('Not found', { status: 404 });

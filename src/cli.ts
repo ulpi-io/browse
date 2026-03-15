@@ -12,9 +12,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DEFAULTS } from './constants';
+import { loadConfig } from './config';
+
+// Global CLI flags — set in main(), used by sendCommand()
+const cliFlags = {
+  json: false,
+  contentBoundaries: false,
+  allowedDomains: '' as string,
+};
 
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10);
-const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : '';
+// Instance isolation: each parent process (e.g., Claude Code) gets its own server.
+// BROWSE_PORT takes precedence (explicit), then BROWSE_INSTANCE (env override), then PPID (auto).
+const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || (BROWSE_PORT ? '' : String(process.ppid));
+const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : (BROWSE_INSTANCE ? `-${BROWSE_INSTANCE}` : '');
 
 /**
  * Resolve the project-local .browse/ directory for state files, logs, screenshots.
@@ -173,7 +184,7 @@ async function startServer(): Promise<ServerState> {
     // Start server as detached background process
     const proc = Bun.spawn(['bun', 'run', SERVER_SCRIPT], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, BROWSE_LOCAL_DIR: LOCAL_DIR },
+      env: { ...process.env, BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE },
     });
 
     // Don't hold the CLI open
@@ -242,9 +253,9 @@ export const SAFE_TO_RETRY = new Set([
   // Read commands — no side effects
   'text', 'html', 'links', 'forms', 'accessibility',
   'css', 'attrs', 'state', 'dialog',
-  'console', 'network', 'cookies', 'perf',
-  // Meta commands that are read-only
-  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions',
+  'console', 'network', 'cookies', 'perf', 'value', 'count',
+  // Meta commands that are read-only or idempotent
+  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame',
 ]);
 
 // Commands that return static data independent of page state.
@@ -260,6 +271,15 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   };
   if (sessionId) {
     headers['X-Browse-Session'] = sessionId;
+  }
+  if (cliFlags.json) {
+    headers['X-Browse-Json'] = '1';
+  }
+  if (cliFlags.contentBoundaries) {
+    headers['X-Browse-Boundaries'] = '1';
+  }
+  if (cliFlags.allowedDomains) {
+    headers['X-Browse-Allowed-Domains'] = cliFlags.allowedDomains;
   }
 
   try {
@@ -359,6 +379,9 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
 async function main() {
   const args = process.argv.slice(2);
 
+  // Load project config (browse.json) — values serve as defaults
+  const config = loadConfig();
+
   // Extract --session flag before command parsing
   let sessionId: string | undefined;
   const sessionIdx = args.indexOf('--session');
@@ -370,7 +393,43 @@ async function main() {
     }
     args.splice(sessionIdx, 2); // remove --session and its value
   }
-  sessionId = sessionId || process.env.BROWSE_SESSION || undefined;
+  sessionId = sessionId || process.env.BROWSE_SESSION || config.session || undefined;
+
+  // Extract --json flag
+  let jsonMode = false;
+  const jsonIdx = args.indexOf('--json');
+  if (jsonIdx !== -1) {
+    jsonMode = true;
+    args.splice(jsonIdx, 1);
+  }
+  jsonMode = jsonMode || process.env.BROWSE_JSON === '1' || config.json === true;
+
+  // Extract --content-boundaries flag
+  let contentBoundaries = false;
+  const boundIdx = args.indexOf('--content-boundaries');
+  if (boundIdx !== -1) {
+    contentBoundaries = true;
+    args.splice(boundIdx, 1);
+  }
+  contentBoundaries = contentBoundaries || process.env.BROWSE_CONTENT_BOUNDARIES === '1' || config.contentBoundaries === true;
+
+  // Extract --allowed-domains flag
+  let allowedDomains: string | undefined;
+  const domIdx = args.indexOf('--allowed-domains');
+  if (domIdx !== -1) {
+    allowedDomains = args[domIdx + 1];
+    if (!allowedDomains || allowedDomains.startsWith('-')) {
+      console.error('Usage: browse --allowed-domains domain1,domain2 <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(domIdx, 2);
+  }
+  allowedDomains = allowedDomains || process.env.BROWSE_ALLOWED_DOMAINS || (config.allowedDomains ? config.allowedDomains.join(',') : undefined);
+
+  // Set global flags for sendCommand()
+  cliFlags.json = jsonMode;
+  cliFlags.contentBoundaries = contentBoundaries;
+  cliFlags.allowedDomains = allowedDomains || '';
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'install-skill') {
@@ -382,31 +441,38 @@ async function main() {
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`browse — Fast headless browser for AI coding agents
 
-Usage: browse [--session <id>] <command> [args...]
+Usage: browse [options] <command> [args...]
 
 Navigation:     goto <url> | back | forward | reload | url
 Content:        text | html [sel] | links | forms | accessibility
 Interaction:    click <sel> | fill <sel> <val> | select <sel> <val>
-                hover <sel> | type <text> | press <key>
-                scroll [sel] | wait <sel> | viewport <WxH>
+                hover <sel> | dblclick <sel> | focus <sel>
+                check <sel> | uncheck <sel> | drag <src> <tgt>
+                type <text> | press <key> | keydown <key> | keyup <key>
+                scroll [sel|up|down] | wait <sel|--url|--network-idle>
+                viewport <WxH> | highlight <sel> | download <sel> [path]
 Device:         emulate <device> | emulate reset | devices [filter]
 Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
                 console [--clear] | network [--clear]
                 cookies | storage [set <k> <v>] | perf
+                value <sel> | count <sel>
 Visual:         screenshot [path] | pdf [path] | responsive [prefix]
 Snapshot:       snapshot [-i] [-c] [-C] [-d N] [-s sel]
 Compare:        diff <url1> <url2>
 Multi-step:     chain (reads JSON from stdin)
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
+Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
+State:          state save [name] | state load [name]
 Server:         status | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
 Setup:          install-skill [path]
 
 Options:
-  --session <id>  Use a named session (isolates tabs, refs, cookies).
-                  Multiple agents can share one server with different sessions.
-                  Also settable via BROWSE_SESSION env var.
+  --session <id>           Named session (isolates tabs, refs, cookies)
+  --json                   Wrap output as {success, data, command}
+  --content-boundaries     Wrap page content in nonce-delimited markers
+  --allowed-domains <d,d>  Block navigation/resources outside allowlist
 
 Snapshot flags:
   -i            Interactive elements only (buttons, links, inputs)

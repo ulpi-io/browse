@@ -100,12 +100,59 @@ export async function handleMetaCommand(
       return `Session "${id}" closed`;
     }
 
+    // ─── State Persistence ───────────────────────────────
+    case 'state': {
+      const subcommand = args[0];
+      if (!subcommand || !['save', 'load'].includes(subcommand)) {
+        throw new Error('Usage: browse state save [name] | browse state load [name]');
+      }
+      const name = args[1] || 'default';
+      const statesDir = `${LOCAL_DIR}/states`;
+      const statePath = `${statesDir}/${name}.json`;
+
+      if (subcommand === 'save') {
+        const context = bm.getContext();
+        if (!context) throw new Error('No browser context');
+        const state = await context.storageState();
+        fs.mkdirSync(statesDir, { recursive: true });
+        fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+        return `State saved: ${statePath}`;
+      }
+
+      if (subcommand === 'load') {
+        if (!fs.existsSync(statePath)) {
+          throw new Error(`State file not found: ${statePath}. Run "browse state save ${name}" first.`);
+        }
+        const stateData = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        // Add cookies from saved state to current context
+        const context = bm.getContext();
+        if (!context) throw new Error('No browser context');
+        if (stateData.cookies?.length) {
+          await context.addCookies(stateData.cookies);
+        }
+        // Restore localStorage/sessionStorage for each origin
+        if (stateData.origins?.length) {
+          for (const origin of stateData.origins) {
+            if (origin.localStorage?.length) {
+              const page = bm.getPage();
+              await page.goto(origin.origin, { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
+              for (const item of origin.localStorage) {
+                await page.evaluate(([k, v]) => localStorage.setItem(k, v), [item.name, item.value]).catch(() => {});
+              }
+            }
+          }
+        }
+        return `State loaded: ${statePath}`;
+      }
+      throw new Error('Usage: browse state save [name] | browse state load [name]');
+    }
+
     // ─── Visual ────────────────────────────────────────
     case 'screenshot': {
       const page = bm.getPage();
       const annotate = args.includes('--annotate');
       const filteredArgs = args.filter(a => a !== '--annotate');
-      const screenshotPath = filteredArgs[0] || `${LOCAL_DIR}/browse-screenshot.png`;
+      const screenshotPath = filteredArgs[0] || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
 
       if (annotate) {
         const viewport = page.viewportSize() || { width: 1920, height: 1080 };
@@ -180,14 +227,14 @@ export async function handleMetaCommand(
 
     case 'pdf': {
       const page = bm.getPage();
-      const pdfPath = args[0] || `${LOCAL_DIR}/browse-page.pdf`;
+      const pdfPath = args[0] || (currentSession ? `${currentSession.outputDir}/page.pdf` : `${LOCAL_DIR}/browse-page.pdf`);
       await page.pdf({ path: pdfPath, format: 'A4' });
       return `PDF saved: ${pdfPath}`;
     }
 
     case 'responsive': {
       const page = bm.getPage();
-      const prefix = args[0] || `${LOCAL_DIR}/browse-responsive`;
+      const prefix = args[0] || (currentSession ? `${currentSession.outputDir}/responsive` : `${LOCAL_DIR}/browse-responsive`);
       const viewports = [
         { name: 'mobile', width: 375, height: 812 },
         { name: 'tablet', width: 768, height: 1024 },
@@ -230,8 +277,8 @@ export async function handleMetaCommand(
       const { handleReadCommand } = await import('./read');
       const { handleWriteCommand } = await import('./write');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','fill','select','hover','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate']);
-      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices']);
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download']);
+      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices','value','count']);
 
       const sessionBuffers = currentSession?.buffers;
 
@@ -350,6 +397,27 @@ export async function handleMetaCommand(
       }
 
       return output.join('\n');
+    }
+
+    // ─── iframe Targeting ─────────────────────────────
+    case 'frame': {
+      if (args[0] === 'main' || args[0] === 'top') {
+        bm.resetFrame();
+        return 'Switched to main frame';
+      }
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse frame <selector> | browse frame main');
+      // Verify the iframe exists and is accessible
+      const page = bm.getPage();
+      const frameEl = page.locator(selector);
+      const count = await frameEl.count();
+      if (count === 0) throw new Error(`iframe not found: ${selector}`);
+      const handle = await frameEl.elementHandle({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      if (!handle) throw new Error(`iframe not found: ${selector}`);
+      const frame = await handle.contentFrame();
+      if (!frame) throw new Error(`Element ${selector} is not an iframe`);
+      bm.setFrame(selector);
+      return `Switched to frame: ${selector}`;
     }
 
     default:

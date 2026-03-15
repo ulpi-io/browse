@@ -7,7 +7,7 @@
  *   We do NOT try to self-heal — don't hide failure.
  */
 
-import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Request as PlaywrightRequest } from 'playwright';
+import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
 import { SessionBuffers, type LogEntry, type NetworkEntry } from './buffers';
 
 /** Shorthand aliases for common devices → Playwright device names */
@@ -136,6 +136,9 @@ export class BrowserManager {
   private customUserAgent: string | null = null;
   private currentDevice: DeviceDescriptor | null = null;
 
+  // ─── iframe targeting ─────────────────────────────────────
+  private activeFrameSelector: string | null = null;
+
   // ─── Per-session buffers ──────────────────────────────────
   private buffers: SessionBuffers;
 
@@ -165,6 +168,10 @@ export class BrowserManager {
 
   getBuffers(): SessionBuffers {
     return this.buffers;
+  }
+
+  getContext(): BrowserContext | null {
+    return this.context;
   }
 
   /**
@@ -341,6 +348,67 @@ export class BrowserManager {
     }
   }
 
+  // ─── iframe Targeting ──────────────────────────────────────
+  /**
+   * Set the active frame by CSS selector (e.g., '#my-iframe', 'iframe[name="content"]').
+   * Subsequent commands that use resolveRef, getLocatorRoot, or getFrameContext
+   * will target this frame's content instead of the main page.
+   */
+  setFrame(selector: string) {
+    this.activeFrameSelector = selector;
+  }
+
+  /**
+   * Reset to main frame — clears the active frame selector.
+   */
+  resetFrame() {
+    this.activeFrameSelector = null;
+  }
+
+  /**
+   * Get the current active frame selector, or null if targeting main page.
+   */
+  getActiveFrameSelector(): string | null {
+    return this.activeFrameSelector;
+  }
+
+  /**
+   * Get a FrameLocator for the active frame.
+   * Returns null if no frame is active (targeting main page).
+   */
+  getFrameLocator(): FrameLocator | null {
+    if (!this.activeFrameSelector) return null;
+    return this.getPage().frameLocator(this.activeFrameSelector);
+  }
+
+  /**
+   * Get the Frame object for the active frame (needed for evaluate() calls).
+   * Returns null if no frame is active.
+   * Unlike FrameLocator, Frame supports evaluate(), querySelector, etc.
+   */
+  async getFrameContext(): Promise<Frame | null> {
+    if (!this.activeFrameSelector) return null;
+    const page = this.getPage();
+    const frameEl = page.locator(this.activeFrameSelector);
+    const handle = await frameEl.elementHandle({ timeout: 5000 });
+    if (!handle) throw new Error(`Frame element not found: ${this.activeFrameSelector}`);
+    const frame = await handle.contentFrame();
+    if (!frame) throw new Error(`Cannot access content of frame: ${this.activeFrameSelector}`);
+    return frame;
+  }
+
+  /**
+   * Get a locator root scoped to the active frame (if any) or the page.
+   * Use this to create locators that respect the current frame context.
+   * Example: bm.getLocatorRoot().locator('button.submit')
+   */
+  getLocatorRoot(): Page | FrameLocator {
+    if (this.activeFrameSelector) {
+      return this.getPage().frameLocator(this.activeFrameSelector);
+    }
+    return this.getPage();
+  }
+
   // ─── Ref Map ──────────────────────────────────────────────
   setRefMap(refs: Map<string, Locator>) {
     this.refMap = refs;
@@ -354,6 +422,10 @@ export class BrowserManager {
   /**
    * Resolve a selector that may be a @ref (e.g., "@e3") or a CSS selector.
    * Returns { locator } for refs or { selector } for CSS selectors.
+   *
+   * When a frame is active and a CSS selector is passed, returns { locator }
+   * scoped to the frame instead of { selector }, so callers automatically
+   * interact with elements inside the iframe.
    */
   resolveRef(selector: string): { locator: Locator } | { selector: string } {
     if (selector.startsWith('@e')) {
@@ -372,6 +444,11 @@ export class BrowserManager {
         );
       }
       return { locator };
+    }
+    // When a frame is active, scope CSS selectors through the frame
+    if (this.activeFrameSelector) {
+      const frame = this.getPage().frameLocator(this.activeFrameSelector);
+      return { locator: frame.locator(selector) };
     }
     return { selector };
   }

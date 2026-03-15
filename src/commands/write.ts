@@ -1,19 +1,22 @@
 /**
  * Write commands — navigate and interact with pages (side effects)
  *
- * goto, back, forward, reload, click, fill, select, hover, type,
- * press, scroll, wait, viewport, cookie, header, useragent
+ * goto, back, forward, reload, click, dblclick, fill, select, hover,
+ * focus, check, uncheck, type, press, scroll, wait, viewport, cookie,
+ * header, useragent, drag, keydown, keyup
  */
 
 import type { BrowserManager } from '../browser-manager';
 import { resolveDevice, listDevices } from '../browser-manager';
+import type { DomainFilter } from '../domain-filter';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
 
 export async function handleWriteCommand(
   command: string,
   args: string[],
-  bm: BrowserManager
+  bm: BrowserManager,
+  domainFilter?: DomainFilter | null
 ): Promise<string> {
   const page = bm.getPage();
 
@@ -21,6 +24,9 @@ export async function handleWriteCommand(
     case 'goto': {
       const url = args[0];
       if (!url) throw new Error('Usage: browse goto <url>');
+      if (domainFilter && !domainFilter.isAllowed(url)) {
+        throw new Error(domainFilter.blockedMessage(url));
+      }
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULTS.COMMAND_TIMEOUT_MS });
       const status = response?.status() || 'unknown';
       return `Navigated to ${url} (${status})`;
@@ -109,7 +115,17 @@ export async function handleWriteCommand(
 
     case 'scroll': {
       const selector = args[0];
-      if (selector) {
+      if (selector === 'up') {
+        const scrollCtx = await bm.getFrameContext() || page;
+        await scrollCtx.evaluate(() => window.scrollBy(0, -window.innerHeight));
+        return 'Scrolled up one viewport';
+      }
+      if (selector === 'down') {
+        const scrollCtx = await bm.getFrameContext() || page;
+        await scrollCtx.evaluate(() => window.scrollBy(0, window.innerHeight));
+        return 'Scrolled down one viewport';
+      }
+      if (selector && selector !== 'bottom') {
         const resolved = bm.resolveRef(selector);
         if ('locator' in resolved) {
           await resolved.locator.scrollIntoViewIfNeeded({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
@@ -118,13 +134,32 @@ export async function handleWriteCommand(
         }
         return `Scrolled ${selector} into view`;
       }
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      // Scroll to bottom (default or explicit "bottom")
+      const scrollCtx = await bm.getFrameContext() || page;
+      await scrollCtx.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       return 'Scrolled to bottom';
     }
 
     case 'wait': {
       const selector = args[0];
-      if (!selector) throw new Error('Usage: browse wait <selector>');
+      if (!selector) throw new Error('Usage: browse wait <selector|--url|--network-idle> [timeout]');
+
+      // wait --network-idle [timeout] — wait for network to settle
+      if (selector === '--network-idle') {
+        const timeout = args[1] ? parseInt(args[1], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+        await page.waitForLoadState('networkidle', { timeout });
+        return 'Network idle';
+      }
+
+      // wait --url <pattern> [timeout] — wait for URL to match
+      if (selector === '--url') {
+        const pattern = args[1];
+        if (!pattern) throw new Error('Usage: browse wait --url <pattern> [timeout]');
+        const timeout = args[2] ? parseInt(args[2], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+        await page.waitForURL(pattern, { timeout });
+        return `URL matched: ${page.url()}`;
+      }
+
       const timeout = args[1] ? parseInt(args[1], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
       const resolved = bm.resolveRef(selector);
       if ('locator' in resolved) {
@@ -251,6 +286,105 @@ export async function handleWriteCommand(
         `  UA: ${device.userAgent.slice(0, 80)}...`,
         'Note: Cookies and tab URLs preserved. localStorage/sessionStorage were reset (Playwright limitation).',
       ].join('\n');
+    }
+
+    case 'dblclick': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse dblclick <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        await resolved.locator.dblclick({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      } else {
+        await page.dblclick(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      }
+      return `Double-clicked ${selector}`;
+    }
+
+    case 'focus': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse focus <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        await resolved.locator.focus({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      } else {
+        await page.locator(resolved.selector).focus({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      }
+      return `Focused ${selector}`;
+    }
+
+    case 'check': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse check <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        await resolved.locator.check({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      } else {
+        await page.locator(resolved.selector).check({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      }
+      return `Checked ${selector}`;
+    }
+
+    case 'uncheck': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse uncheck <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        await resolved.locator.uncheck({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      } else {
+        await page.locator(resolved.selector).uncheck({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      }
+      return `Unchecked ${selector}`;
+    }
+
+    case 'drag': {
+      const [srcSel, tgtSel] = args;
+      if (!srcSel || !tgtSel) throw new Error('Usage: browse drag <source> <target>');
+      const srcResolved = bm.resolveRef(srcSel);
+      const tgtResolved = bm.resolveRef(tgtSel);
+      const srcLocator = 'locator' in srcResolved ? srcResolved.locator : page.locator(srcResolved.selector);
+      const tgtLocator = 'locator' in tgtResolved ? tgtResolved.locator : page.locator(tgtResolved.selector);
+      await srcLocator.dragTo(tgtLocator, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      return `Dragged ${srcSel} to ${tgtSel}`;
+    }
+
+    case 'keydown': {
+      const key = args[0];
+      if (!key) throw new Error('Usage: browse keydown <key>');
+      await page.keyboard.down(key);
+      return `Key down: ${key}`;
+    }
+
+    case 'keyup': {
+      const key = args[0];
+      if (!key) throw new Error('Usage: browse keyup <key>');
+      await page.keyboard.up(key);
+      return `Key up: ${key}`;
+    }
+
+    case 'highlight': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse highlight <selector>');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      await locator.evaluate((el) => {
+        el.style.outline = '3px solid #e11d48';
+        el.style.outlineOffset = '2px';
+      });
+      return `Highlighted ${selector}`;
+    }
+
+    case 'download': {
+      const [selector, savePath] = args;
+      if (!selector) throw new Error('Usage: browse download <selector> [path]');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      const [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: DEFAULTS.COMMAND_TIMEOUT_MS }),
+        locator.click({ timeout: DEFAULTS.ACTION_TIMEOUT_MS }),
+      ]);
+      const finalPath = savePath || download.suggestedFilename();
+      await download.saveAs(finalPath);
+      return `Downloaded: ${finalPath}`;
     }
 
     default:
