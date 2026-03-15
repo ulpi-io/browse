@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><title>iframe Test</title></head>
+<body>
+  <h1>Main Page</h1>
+  <iframe id="test-frame" srcdoc="
+    <html><body>
+      <h1>Inside Frame</h1>
+      <button id='frame-btn'>Frame Button</button>
+      <input id='frame-input' value='frame-value' />
+      <a href='https://example.com'>Frame Link</a>
+    </body></html>
+  " style="width:600px;height:400px;"></iframe>
+</body>
+</html>
