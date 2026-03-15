@@ -42,7 +42,8 @@
     "server": "bun run src/server.ts",
     "test": "bun test",
     "start": "bun run src/server.ts",
-    "postinstall": "bunx playwright install chromium"
+    "postinstall": "bunx playwright install chromium",
+    "benchmark": "bun run benchmark.ts"
   },
   "type": "module",
   "devDependencies": {
