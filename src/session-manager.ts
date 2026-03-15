@@ -137,12 +137,13 @@ export class SessionManager {
    * Close sessions idle longer than maxIdleMs.
    * Returns list of closed session IDs.
    */
-  async closeIdleSessions(maxIdleMs: number): Promise<string[]> {
+  async closeIdleSessions(maxIdleMs: number, flushFn?: (session: Session) => void): Promise<string[]> {
     const now = Date.now();
     const closed: string[] = [];
 
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity > maxIdleMs) {
+        if (flushFn) flushFn(session);
         await session.manager.close().catch(() => {});
         this.sessions.delete(id);
         closed.push(id);

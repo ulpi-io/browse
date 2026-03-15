@@ -349,7 +349,7 @@ const flushInterval = setInterval(() => {
 const sessionCleanupInterval = setInterval(async () => {
   if (!sessionManager || isShuttingDown) return;
 
-  const closed = await sessionManager.closeIdleSessions(IDLE_TIMEOUT_MS);
+  const closed = await sessionManager.closeIdleSessions(IDLE_TIMEOUT_MS, (session) => flushSessionBuffers(session, true));
   for (const id of closed) {
     console.log(`[browse] Session "${id}" idle for ${IDLE_TIMEOUT_MS / 1000}s — closed`);
   }

@@ -128,7 +128,8 @@ function isBrowseProcess(pid: number): boolean {
   try {
     const result = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'command=']);
     const cmd = result.stdout.toString().trim();
-    return cmd.includes('browse') || cmd.includes('server');
+    // Must match our specific binary/script, not generic "server" processes
+    return cmd.includes('browse') || cmd.includes('__BROWSE_SERVER_MODE');
   } catch {
     return false;
   }
@@ -302,21 +303,24 @@ function cleanOrphanedServers(): void {
       if (!file.startsWith('browse-server') || !file.endsWith('.json') || file.endsWith('.lock')) continue;
       const filePath = path.join(LOCAL_DIR, file);
       if (filePath === STATE_FILE) continue; // Don't touch our own state file
-      // Only clean files with a PID-like suffix (>1000, not in port range 9400-10400)
+      // Only clean files with PID-based suffixes. Skip port-based and non-numeric.
+      // Port-based files have a port number from a BROWSE_PORT env var.
+      // PID-based files have a process ID (typically >10000, never <1000).
+      // To distinguish: read the state file and check if the suffix matches the PID inside.
       const suffixMatch = file.match(/browse-server-(\d+)\.json$/);
-      if (!suffixMatch) continue; // Skip files without numeric suffix or base file
+      if (!suffixMatch) continue;
       const suffix = parseInt(suffixMatch[1], 10);
-      if (suffix >= 9400 && suffix <= 10400) continue; // Port-based suffix — intentional BROWSE_PORT instance
-      if (suffix <= 1000) continue; // Not a valid PID
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        if (data.pid) {
-          if (isProcessAlive(data.pid) && isBrowseProcess(data.pid)) {
-            try { process.kill(data.pid, 'SIGTERM'); } catch {}
-          }
-          if (!isProcessAlive(data.pid)) {
-            fs.unlinkSync(filePath);
-          }
+        if (!data.pid) continue;
+        // Port-based file: suffix matches the port inside (intentional BROWSE_PORT instance)
+        if (data.port === suffix) continue;
+        // PID-based file: suffix was a PPID from the spawning CLI
+        if (isProcessAlive(data.pid) && isBrowseProcess(data.pid)) {
+          try { process.kill(data.pid, 'SIGTERM'); } catch {}
+        }
+        if (!isProcessAlive(data.pid)) {
+          fs.unlinkSync(filePath);
         }
       } catch {}
     }
