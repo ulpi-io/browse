@@ -333,28 +333,44 @@ Inspired by and originally derived from the `/browse` skill in [gstack](https://
 
 ### Added beyond gstack
 
-**New commands:**
-- `emulate` / `devices` — device emulation with 100+ devices (iPhone, Pixel, iPad, custom descriptors)
-- `snapshot -C` — cursor-interactive detection (cursor:pointer, onclick, tabindex, data-action)
+**v0.1.0 — Foundation:**
+- `emulate` / `devices` — device emulation (100+ devices)
+- `snapshot -C` — cursor-interactive detection
 - `snapshot-diff` — before/after comparison with ref-number stripping
-- `dialog` / `dialog-accept` / `dialog-dismiss` — dialog handling with prompt value support
-- `state` — element state inspection (visible, enabled, checked, focused, bounding box)
-- `upload` — file upload to input elements
-- `sessions` / `session-close` — multi-agent session multiplexing
+- `dialog` / `dialog-accept` / `dialog-dismiss` — dialog handling
+- `upload` — file upload
 - `screenshot --annotate` — numbered badge overlay with legend
+- Session multiplexing — multiple agents share one Chromium
+- Safe retry classification — read vs write commands
+- TreeWalker text extraction — no MutationObserver triggers
 
-**Architectural improvements:**
-- Session multiplexing — multiple agents share one Chromium via isolated BrowserContexts
-- Per-tab ref scoping — refs belong to the tab that created them, cross-tab usage throws clear error
-- Per-tab snapshot baselines — `snapshot-diff` compares the correct baseline after tab switches
-- Safe retry classification — read commands auto-retry after crash, write commands don't (prevents double form submissions)
-- Concurrency-safe server spawning — file lock with stale detection prevents race conditions
-- Network correlation via WeakMap — accurate request/response pairing even with duplicate URLs
-- Content-Length based sizing — avoids reading response bodies into memory
-- TreeWalker text extraction — `text` command never triggers MutationObservers
-- Tab creation rollback — failed `newTab(url)` closes the page instead of leaving orphan tabs
-- Context recreation with rollback — `emulate`/`useragent` preserve cookies and all tab URLs, rollback on failure
-- Crash callback — server flushes buffers and cleans state file before exit
+**v0.2.0 — Security, Interactions, DX:**
+- `--json` — structured output mode for agent frameworks
+- `--content-boundaries` — CSPRNG nonce wrapping for prompt injection defense
+- `--allowed-domains` — domain allowlist (HTTP + WebSocket/EventSource/sendBeacon)
+- `browse-policy.json` — action policy gate (allow/deny/confirm per command)
+- `auth save/login/list/delete` — AES-256-GCM encrypted credential vault
+- `dblclick`, `focus`, `check`, `uncheck`, `drag`, `keydown`, `keyup` — interaction commands
+- `frame <sel>` / `frame main` — iframe targeting
+- `value <sel>`, `count <sel>` — element inspection
+- `scroll up/down` — viewport-relative scrolling
+- `wait --url`, `wait --network-idle` — navigation/network wait variants
+- `highlight <sel>` — visual element debugging
+- `download <sel> [path]` — file download
+- `route <pattern> block/fulfill` — network request interception and mocking
+- `offline on/off` — offline mode toggle
+- `state save/load` — persist and restore cookies + localStorage (all origins)
+- `har start/stop` — HAR recording and export
+- `screenshot-diff` — pixel-level visual regression testing
+- `find role/text/label/placeholder/testid` — semantic element locators
+- Auto-instance servers via PPID — multi-Claude isolation
+- Per-session output folders (`.browse/sessions/{id}/`)
+- `browse.json` config file support
+- AI-friendly error messages — Playwright errors rewritten to actionable hints
+- CDP remote connection (`BROWSE_CDP_URL`)
+- Proxy support (`BROWSE_PROXY`)
+- Compiled binary self-spawn mode
+- Orphaned server cleanup
 
 ## License
 
