@@ -502,51 +502,32 @@ export async function handleMetaCommand(
         currentBuffer = await page.screenshot({ fullPage: true }) as Buffer;
       }
 
-      // Decode PNGs to raw RGBA pixels via canvas for real pixel comparison
-      const page = bm.getPage();
-      const pixelData = await page.evaluate(async ({ b64Base, b64Curr }: { b64Base: string; b64Curr: string }) => {
-        async function decode(b64: string): Promise<ImageData> {
-          const img = new Image();
-          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/png;base64,' + b64; });
-          const c = document.createElement('canvas');
-          c.width = img.width; c.height = img.height;
-          const ctx = c.getContext('2d')!;
-          ctx.drawImage(img, 0, 0);
-          return ctx.getImageData(0, 0, c.width, c.height);
-        }
-        let base: ImageData, curr: ImageData;
-        try { base = await decode(b64Base); curr = await decode(b64Curr); }
-        catch { return null; }
-        const w = Math.max(base.width, curr.width), h = Math.max(base.height, curr.height);
-        let diff = 0;
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-          if (x >= base.width || y >= base.height || x >= curr.width || y >= curr.height) { diff++; continue; }
-          const i = (y * base.width + x) * 4, j = (y * curr.width + x) * 4;
-          const dr = base.data[i]-curr.data[j], dg = base.data[i+1]-curr.data[j+1], db = base.data[i+2]-curr.data[j+2];
-          if (dr*dr + dg*dg + db*db > 900) diff++; // threshold ~30 per channel
-        }
-        return { total: w * h, diff, bw: base.width, bh: base.height, cw: curr.width, ch: curr.height };
-      }, { b64Base: baselineBuffer.toString('base64'), b64Curr: currentBuffer.toString('base64') });
+      // Server-side pixel comparison using Playwright's bundled pixelmatch + PNG decoder.
+      // No page.evaluate, no base64 through CDP, no memory limits.
+      // Dynamic require to prevent bundler from resolving at compile time.
+      // These are Playwright's bundled internals — always available at runtime.
+      const pw = 'playwright-core/lib';
+      const { getComparator } = require(`${pw}/server/utils/comparators`);
+      const comparator = getComparator('image/png');
+      const result = comparator(currentBuffer, baselineBuffer, {
+        threshold: thresholdPct / 100,
+        maxDiffPixelRatio: thresholdPct / 100,
+      });
 
-      // Fallback to byte comparison if canvas decode failed (e.g., about:blank page)
-      let totalPixels: number, diffPixels: number;
-      if (pixelData) {
-        totalPixels = pixelData.total;
-        diffPixels = pixelData.diff;
-      } else {
-        const minLen = Math.min(baselineBuffer.length, currentBuffer.length);
-        const maxLen = Math.max(baselineBuffer.length, currentBuffer.length);
-        diffPixels = maxLen - minLen;
-        for (let i = 0; i < minLen; i++) { if (baselineBuffer[i] !== currentBuffer[i]) diffPixels++; }
-        totalPixels = maxLen;
+      const { PNG } = require(`${pw}/utilsBundle`);
+      const baseImg = PNG.sync.read(baselineBuffer);
+      const totalPixels = baseImg.width * baseImg.height;
+      const passed = result === null;
+      let diffPixels = 0;
+      if (!passed && result.errorMessage) {
+        const pixelMatch = result.errorMessage.match(/(\d+) pixels/);
+        diffPixels = pixelMatch ? parseInt(pixelMatch[1], 10) : totalPixels;
       }
-
       const mismatchPct = totalPixels > 0 ? (diffPixels / totalPixels) * 100 : 0;
-      const passed = mismatchPct <= thresholdPct;
 
       const diffPath = baseline.replace(/\.[^.]+$/, '-diff.png');
-      if (!passed) {
-        fs.writeFileSync(diffPath, currentBuffer);
+      if (!passed && result.diff) {
+        fs.writeFileSync(diffPath, result.diff);
       }
 
       return [
