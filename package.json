@@ -10,7 +10,8 @@
   "files": [
     "bin/",
     "src/",
-    "LICENSE"
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "bun build --compile src/cli.ts --outfile dist/browse",
