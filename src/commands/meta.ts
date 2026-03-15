@@ -502,15 +502,46 @@ export async function handleMetaCommand(
         currentBuffer = await page.screenshot({ fullPage: true }) as Buffer;
       }
 
-      const minLen = Math.min(baselineBuffer.length, currentBuffer.length);
-      const maxLen = Math.max(baselineBuffer.length, currentBuffer.length);
-      let diffBytes = 0;
-      for (let i = 0; i < minLen; i++) {
-        if (baselineBuffer[i] !== currentBuffer[i]) diffBytes++;
-      }
-      diffBytes += maxLen - minLen;
+      // Decode PNGs to raw RGBA pixels via canvas for real pixel comparison
+      const page = bm.getPage();
+      const pixelData = await page.evaluate(async ({ b64Base, b64Curr }: { b64Base: string; b64Curr: string }) => {
+        async function decode(b64: string): Promise<ImageData> {
+          const img = new Image();
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/png;base64,' + b64; });
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          const ctx = c.getContext('2d')!;
+          ctx.drawImage(img, 0, 0);
+          return ctx.getImageData(0, 0, c.width, c.height);
+        }
+        let base: ImageData, curr: ImageData;
+        try { base = await decode(b64Base); curr = await decode(b64Curr); }
+        catch { return null; }
+        const w = Math.max(base.width, curr.width), h = Math.max(base.height, curr.height);
+        let diff = 0;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          if (x >= base.width || y >= base.height || x >= curr.width || y >= curr.height) { diff++; continue; }
+          const i = (y * base.width + x) * 4, j = (y * curr.width + x) * 4;
+          const dr = base.data[i]-curr.data[j], dg = base.data[i+1]-curr.data[j+1], db = base.data[i+2]-curr.data[j+2];
+          if (dr*dr + dg*dg + db*db > 900) diff++; // threshold ~30 per channel
+        }
+        return { total: w * h, diff, bw: base.width, bh: base.height, cw: curr.width, ch: curr.height };
+      }, { b64Base: baselineBuffer.toString('base64'), b64Curr: currentBuffer.toString('base64') });
 
-      const mismatchPct = maxLen > 0 ? (diffBytes / maxLen) * 100 : 0;
+      // Fallback to byte comparison if canvas decode failed (e.g., about:blank page)
+      let totalPixels: number, diffPixels: number;
+      if (pixelData) {
+        totalPixels = pixelData.total;
+        diffPixels = pixelData.diff;
+      } else {
+        const minLen = Math.min(baselineBuffer.length, currentBuffer.length);
+        const maxLen = Math.max(baselineBuffer.length, currentBuffer.length);
+        diffPixels = maxLen - minLen;
+        for (let i = 0; i < minLen; i++) { if (baselineBuffer[i] !== currentBuffer[i]) diffPixels++; }
+        totalPixels = maxLen;
+      }
+
+      const mismatchPct = totalPixels > 0 ? (diffPixels / totalPixels) * 100 : 0;
       const passed = mismatchPct <= thresholdPct;
 
       const diffPath = baseline.replace(/\.[^.]+$/, '-diff.png');
@@ -519,9 +550,8 @@ export async function handleMetaCommand(
       }
 
       return [
-        `Baseline: ${baselineBuffer.length} bytes`,
-        `Current: ${currentBuffer.length} bytes`,
-        `Diff bytes: ${diffBytes}`,
+        `Pixels: ${totalPixels}`,
+        `Different: ${diffPixels}`,
         `Mismatch: ${mismatchPct.toFixed(3)}%`,
         `Threshold: ${thresholdPct}%`,
         `Result: ${passed ? 'PASS' : 'FAIL'}`,
@@ -619,7 +649,7 @@ export async function handleMetaCommand(
 
     // ─── Semantic Locator ──────────────────────────────
     case 'find': {
-      const page = bm.getPage();
+      const root = bm.getLocatorRoot();
       const sub = args[0];
       if (!sub) throw new Error('Usage: browse find role|text|label|placeholder|testid <query> [name]');
       const query = args[1];
@@ -629,20 +659,20 @@ export async function handleMetaCommand(
       switch (sub) {
         case 'role': {
           const nameOpt = args[2];
-          locator = nameOpt ? page.getByRole(query as any, { name: nameOpt }) : page.getByRole(query as any);
+          locator = nameOpt ? root.getByRole(query as any, { name: nameOpt }) : root.getByRole(query as any);
           break;
         }
         case 'text':
-          locator = page.getByText(query);
+          locator = root.getByText(query);
           break;
         case 'label':
-          locator = page.getByLabel(query);
+          locator = root.getByLabel(query);
           break;
         case 'placeholder':
-          locator = page.getByPlaceholder(query);
+          locator = root.getByPlaceholder(query);
           break;
         case 'testid':
-          locator = page.getByTestId(query);
+          locator = root.getByTestId(query);
           break;
         default:
           throw new Error(`Unknown find type: ${sub}. Use role|text|label|placeholder|testid`);
