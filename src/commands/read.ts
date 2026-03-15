@@ -7,13 +7,14 @@
 
 import type { BrowserManager } from '../browser-manager';
 import { listDevices } from '../browser-manager';
-import { consoleBuffer, networkBuffer } from '../buffers';
+import type { SessionBuffers } from '../buffers';
 import * as fs from 'fs';
 
 export async function handleReadCommand(
   command: string,
   args: string[],
-  bm: BrowserManager
+  bm: BrowserManager,
+  buffers?: SessionBuffers
 ): Promise<string> {
   const page = bm.getPage();
 
@@ -223,23 +224,25 @@ export async function handleReadCommand(
     }
 
     case 'console': {
+      const cb = (buffers || bm.getBuffers()).consoleBuffer;
       if (args[0] === '--clear') {
-        consoleBuffer.length = 0;
+        cb.length = 0;
         return 'Console buffer cleared.';
       }
-      if (consoleBuffer.length === 0) return '(no console messages)';
-      return consoleBuffer.map(e =>
+      if (cb.length === 0) return '(no console messages)';
+      return cb.map(e =>
         `[${new Date(e.timestamp).toISOString()}] [${e.level}] ${e.text}`
       ).join('\n');
     }
 
     case 'network': {
+      const nb = (buffers || bm.getBuffers()).networkBuffer;
       if (args[0] === '--clear') {
-        networkBuffer.length = 0;
+        nb.length = 0;
         return 'Network buffer cleared.';
       }
-      if (networkBuffer.length === 0) return '(no network requests)';
-      return networkBuffer.map(e =>
+      if (nb.length === 0) return '(no network requests)';
+      return nb.map(e =>
         `${e.method} ${e.url} → ${e.status || 'pending'} (${e.duration || '?'}ms, ${e.size || '?'}B)`
       ).join('\n');
     }

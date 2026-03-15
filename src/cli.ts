@@ -244,23 +244,28 @@ export const SAFE_TO_RETRY = new Set([
   'css', 'attrs', 'state', 'dialog',
   'console', 'network', 'cookies', 'perf',
   // Meta commands that are read-only
-  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices',
+  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions',
 ]);
 
 // Commands that return static data independent of page state.
 // Safe to retry even after a server restart (no "blank page" issue).
 const PAGE_INDEPENDENT = new Set(['devices', 'status']);
 
-async function sendCommand(state: ServerState, command: string, args: string[], retries = 0): Promise<void> {
+async function sendCommand(state: ServerState, command: string, args: string[], retries = 0, sessionId?: string): Promise<void> {
   const body = JSON.stringify({ command, args });
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${state.token}`,
+  };
+  if (sessionId) {
+    headers['X-Browse-Session'] = sessionId;
+  }
 
   try {
     const resp = await fetch(`http://127.0.0.1:${state.port}/command`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`,
-      },
+      headers,
       body,
       signal: AbortSignal.timeout(30000),
     });
@@ -270,7 +275,7 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
       console.error('[browse] Auth failed — server may have restarted. Retrying...');
       const newState = readState();
       if (newState && newState.token !== state.token) {
-        return sendCommand(newState, command, args);
+        return sendCommand(newState, command, args, 0, sessionId);
       }
       throw new Error('Authentication failed');
     }
@@ -344,7 +349,7 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
         );
       }
 
-      return sendCommand(newState, command, args, retries + 1);
+      return sendCommand(newState, command, args, retries + 1, sessionId);
     }
     throw err;
   }
@@ -354,10 +359,23 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
 async function main() {
   const args = process.argv.slice(2);
 
+  // Extract --session flag before command parsing
+  let sessionId: string | undefined;
+  const sessionIdx = args.indexOf('--session');
+  if (sessionIdx !== -1) {
+    sessionId = args[sessionIdx + 1];
+    if (!sessionId || sessionId.startsWith('-')) {
+      console.error('Usage: browse --session <id> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(sessionIdx, 2); // remove --session and its value
+  }
+  sessionId = sessionId || process.env.BROWSE_SESSION || undefined;
+
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`browse — Fast headless browser for AI coding agents
 
-Usage: browse <command> [args...]
+Usage: browse [--session <id>] <command> [args...]
 
 Navigation:     goto <url> | back | forward | reload | url
 Content:        text | html [sel] | links | forms | accessibility
@@ -373,8 +391,14 @@ Snapshot:       snapshot [-i] [-c] [-C] [-d N] [-s sel]
 Compare:        diff <url1> <url2>
 Multi-step:     chain (reads JSON from stdin)
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
+Sessions:       sessions | session-close <id>
 Server:         status | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
+
+Options:
+  --session <id>  Use a named session (isolates tabs, refs, cookies).
+                  Multiple agents can share one server with different sessions.
+                  Also settable via BROWSE_SESSION env var.
 
 Snapshot flags:
   -i            Interactive elements only (buttons, links, inputs)
@@ -399,7 +423,7 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
   }
 
   const state = await ensureServer();
-  await sendCommand(state, command, commandArgs);
+  await sendCommand(state, command, commandArgs, 0, sessionId);
 }
 
 if (import.meta.main) {

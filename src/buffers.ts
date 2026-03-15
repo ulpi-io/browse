@@ -20,6 +20,42 @@ export interface NetworkEntry {
   size?: number;
 }
 
+/**
+ * Per-session buffer container.
+ * Each session (or parallel agent) gets its own instance so buffers
+ * don't bleed across concurrent operations.
+ */
+export class SessionBuffers {
+  consoleBuffer: LogEntry[] = [];
+  networkBuffer: NetworkEntry[] = [];
+  consoleTotalAdded = 0;
+  networkTotalAdded = 0;
+  // Flush cursors — used by server.ts flush logic
+  lastConsoleFlushed = 0;
+  lastNetworkFlushed = 0;
+
+  addConsoleEntry(entry: LogEntry) {
+    if (this.consoleBuffer.length >= DEFAULTS.BUFFER_HIGH_WATER_MARK) {
+      this.consoleBuffer.shift();
+    }
+    this.consoleBuffer.push(entry);
+    this.consoleTotalAdded++;
+  }
+
+  addNetworkEntry(entry: NetworkEntry) {
+    if (this.networkBuffer.length >= DEFAULTS.BUFFER_HIGH_WATER_MARK) {
+      this.networkBuffer.shift();
+    }
+    this.networkBuffer.push(entry);
+    this.networkTotalAdded++;
+  }
+}
+
+// ─── Default (singleton) buffers — backward compatibility ────────────
+// Existing code that imports consoleBuffer, networkBuffer, addConsoleEntry,
+// addNetworkEntry, consoleTotalAdded, networkTotalAdded continues to work
+// unchanged against these module-level exports.
+
 export const consoleBuffer: LogEntry[] = [];
 export const networkBuffer: NetworkEntry[] = [];
 

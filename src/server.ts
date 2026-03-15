@@ -3,19 +3,25 @@
  *
  * Architecture:
  *   Bun.serve HTTP on localhost → routes commands to Playwright
- *   Console/network buffers: in-memory (all entries) + disk flush every 1s
+ *   Session multiplexing: multiple agents share one Chromium via X-Browse-Session header
+ *   Console/network buffers: per-session in-memory + disk flush every 1s
  *   Chromium crash → server EXITS with clear error (CLI auto-restarts)
- *   Auto-shutdown after BROWSE_IDLE_TIMEOUT (default 30 min)
+ *   Auto-shutdown when all sessions idle past BROWSE_IDLE_TIMEOUT (default 30 min)
  */
 
-import { BrowserManager } from './browser-manager';
+import { chromium, type Browser } from 'playwright';
+import { SessionManager, type Session } from './session-manager';
 import { handleReadCommand } from './commands/read';
 import { handleWriteCommand } from './commands/write';
 import { handleMetaCommand } from './commands/meta';
 import { DEFAULTS } from './constants';
+import { type LogEntry, type NetworkEntry } from './buffers';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+
+// Re-export types for backward compatibility
+export { type LogEntry, type NetworkEntry };
 
 // ─── Auth (inline) ─────────────────────────────────────────────
 const AUTH_TOKEN = crypto.randomUUID();
@@ -30,49 +36,50 @@ function validateAuth(req: Request): boolean {
   return header === `Bearer ${AUTH_TOKEN}`;
 }
 
-// ─── Buffer (from buffers.ts) ────────────────────────────────────
-import { consoleBuffer, networkBuffer, addConsoleEntry, addNetworkEntry, consoleTotalAdded, networkTotalAdded, type LogEntry, type NetworkEntry } from './buffers';
-export { consoleBuffer, networkBuffer, addConsoleEntry, addNetworkEntry, type LogEntry, type NetworkEntry };
-const CONSOLE_LOG_PATH = `${LOCAL_DIR}/browse-console${INSTANCE_SUFFIX}.log`;
-const NETWORK_LOG_PATH = `${LOCAL_DIR}/browse-network${INSTANCE_SUFFIX}.log`;
-let lastConsoleFlushed = 0;
-let lastNetworkFlushed = 0;
+// ─── Per-Session Buffer Flush ──────────────────────────────────
+// Flushes each session's buffers to separate log files on disk.
 
-function flushBuffers(final = false) {
-  // Use totalAdded cursor (not buffer.length) because the ring buffer
-  // stays pinned at HIGH_WATER_MARK after wrapping.
-  const newConsoleCount = consoleTotalAdded - lastConsoleFlushed;
+function flushAllBuffers(sessionManager: SessionManager, final = false) {
+  for (const session of sessionManager.getAllSessions()) {
+    flushSessionBuffers(session, final);
+  }
+}
+
+function flushSessionBuffers(session: Session, final: boolean) {
+  const suffix = session.id === 'default' ? INSTANCE_SUFFIX : `-${session.id}`;
+  const consolePath = `${LOCAL_DIR}/browse-console${suffix}.log`;
+  const networkPath = `${LOCAL_DIR}/browse-network${suffix}.log`;
+  const buffers = session.buffers;
+
+  // Console flush
+  const newConsoleCount = buffers.consoleTotalAdded - buffers.lastConsoleFlushed;
   if (newConsoleCount > 0) {
-    const count = Math.min(newConsoleCount, consoleBuffer.length);
-    const newEntries = consoleBuffer.slice(-count);
+    const count = Math.min(newConsoleCount, buffers.consoleBuffer.length);
+    const newEntries = buffers.consoleBuffer.slice(-count);
     const lines = newEntries.map(e =>
       `[${new Date(e.timestamp).toISOString()}] [${e.level}] ${e.text}`
     ).join('\n') + '\n';
-    fs.appendFileSync(CONSOLE_LOG_PATH, lines);
-    lastConsoleFlushed = consoleTotalAdded;
+    fs.appendFileSync(consolePath, lines);
+    buffers.lastConsoleFlushed = buffers.consoleTotalAdded;
   }
 
-  let newNetworkCount = networkTotalAdded - lastNetworkFlushed;
+  // Network flush
+  let newNetworkCount = buffers.networkTotalAdded - buffers.lastNetworkFlushed;
   if (newNetworkCount > 0) {
-    // If the ring buffer wrapped, oldest unflushed entries were evicted.
-    // Advance cursor to skip them — they're gone and can't be flushed.
-    if (newNetworkCount > networkBuffer.length) {
-      lastNetworkFlushed = networkTotalAdded - networkBuffer.length;
-      newNetworkCount = networkBuffer.length;
+    if (newNetworkCount > buffers.networkBuffer.length) {
+      buffers.lastNetworkFlushed = buffers.networkTotalAdded - buffers.networkBuffer.length;
+      newNetworkCount = buffers.networkBuffer.length;
     }
-    const newEntries = networkBuffer.slice(-newNetworkCount);
+    const newEntries = buffers.networkBuffer.slice(-newNetworkCount);
     const now = Date.now();
 
-    // Flush only a contiguous prefix of ready entries (oldest first).
-    // Stop at the first still-pending entry to avoid gaps in the log.
-    // On final flush (shutdown), flush everything regardless.
     let prefixLen = 0;
     for (let i = 0; i < newEntries.length; i++) {
       const e = newEntries[i];
       if (final || e.status !== undefined || (now - e.timestamp > DEFAULTS.NETWORK_SETTLE_MS)) {
         prefixLen = i + 1;
       } else {
-        break; // First pending entry — stop here
+        break;
       }
     }
 
@@ -81,31 +88,15 @@ function flushBuffers(final = false) {
       const lines = prefix.map(e =>
         `[${new Date(e.timestamp).toISOString()}] ${e.method} ${e.url} → ${e.status || 'pending'} (${e.duration || '?'}ms, ${e.size || '?'}B)`
       ).join('\n') + '\n';
-      fs.appendFileSync(NETWORK_LOG_PATH, lines);
-      lastNetworkFlushed += prefixLen;
+      fs.appendFileSync(networkPath, lines);
+      buffers.lastNetworkFlushed += prefixLen;
     }
   }
 }
 
-// Flush every 1 second
-const flushInterval = setInterval(flushBuffers, DEFAULTS.BUFFER_FLUSH_INTERVAL_MS);
-
-// ─── Idle Timer ────────────────────────────────────────────────
-let lastActivity = Date.now();
-
-function resetIdleTimer() {
-  lastActivity = Date.now();
-}
-
-const idleCheckInterval = setInterval(() => {
-  if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
-    console.log(`[browse] Idle for ${IDLE_TIMEOUT_MS / 1000}s, shutting down`);
-    shutdown();
-  }
-}, 60_000);
-
 // ─── Server ────────────────────────────────────────────────────
-const browserManager = new BrowserManager();
+let sessionManager: SessionManager;
+let browser: Browser;
 let isShuttingDown = false;
 
 // Read/write/meta command sets for routing
@@ -128,6 +119,7 @@ const META_COMMANDS = new Set([
   'screenshot', 'pdf', 'responsive',
   'chain', 'diff',
   'url', 'snapshot', 'snapshot-diff',
+  'sessions', 'session-close',
 ]);
 
 // Find port: use BROWSE_PORT or scan range
@@ -157,7 +149,7 @@ async function findPort(): Promise<number> {
   throw new Error(`[browse] No available port in range ${start}-${end}`);
 }
 
-async function handleCommand(body: any): Promise<Response> {
+async function handleCommand(body: any, session: Session): Promise<Response> {
   const { command, args = [] } = body;
 
   if (!command) {
@@ -171,11 +163,11 @@ async function handleCommand(body: any): Promise<Response> {
     let result: string;
 
     if (READ_COMMANDS.has(command)) {
-      result = await handleReadCommand(command, args, browserManager);
+      result = await handleReadCommand(command, args, session.manager, session.buffers);
     } else if (WRITE_COMMANDS.has(command)) {
-      result = await handleWriteCommand(command, args, browserManager);
+      result = await handleWriteCommand(command, args, session.manager);
     } else if (META_COMMANDS.has(command)) {
-      result = await handleMetaCommand(command, args, browserManager, shutdown);
+      result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager, session);
     } else {
       return new Response(JSON.stringify({
         error: `Unknown command: ${command}`,
@@ -204,13 +196,18 @@ async function shutdown() {
 
   console.log('[browse] Shutting down...');
   clearInterval(flushInterval);
-  clearInterval(idleCheckInterval);
-  flushBuffers(true); // Final flush — force all pending entries
+  clearInterval(sessionCleanupInterval);
+  flushAllBuffers(sessionManager, true);
 
-  await browserManager.close();
+  await sessionManager.closeAll();
+
+  // Close the shared browser
+  if (browser) {
+    browser.removeAllListeners('disconnected');
+    await browser.close().catch(() => {});
+  }
 
   // Only remove state file if it still belongs to this server instance.
-  // A new server may have already written its own state file during restart.
   try {
     const currentState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
     if (currentState.pid === process.pid || currentState.token === AUTH_TOKEN) {
@@ -225,43 +222,63 @@ async function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
+// ─── Flush Timer ────────────────────────────────────────────────
+const flushInterval = setInterval(() => {
+  if (sessionManager) flushAllBuffers(sessionManager);
+}, DEFAULTS.BUFFER_FLUSH_INTERVAL_MS);
+
+// ─── Session Idle Cleanup ───────────────────────────────────────
+const sessionCleanupInterval = setInterval(async () => {
+  if (!sessionManager || isShuttingDown) return;
+
+  const closed = await sessionManager.closeIdleSessions(IDLE_TIMEOUT_MS);
+  for (const id of closed) {
+    console.log(`[browse] Session "${id}" idle for ${IDLE_TIMEOUT_MS / 1000}s — closed`);
+  }
+
+  if (sessionManager.getSessionCount() === 0) {
+    console.log('[browse] All sessions idle — shutting down');
+    shutdown();
+  }
+}, 60_000);
+
 // ─── Start ─────────────────────────────────────────────────────
 async function start() {
-  // Clear old log files
-  try { fs.unlinkSync(CONSOLE_LOG_PATH); } catch {}
-  try { fs.unlinkSync(NETWORK_LOG_PATH); } catch {}
-
   const port = await findPort();
 
-  // Launch browser — pass crash cleanup so buffers flush and state file is removed
-  await browserManager.launch(() => {
-    flushBuffers(true);
-    // Only remove state file if it still belongs to this server
+  // Launch shared Chromium
+  browser = await chromium.launch({ headless: true });
+
+  // Chromium crash → flush, cleanup, exit
+  browser.on('disconnected', () => {
+    console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
+    if (sessionManager) flushAllBuffers(sessionManager, true);
     try {
       const currentState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
       if (currentState.pid === process.pid || currentState.token === AUTH_TOKEN) {
         fs.unlinkSync(STATE_FILE);
       }
     } catch {}
+    process.exit(1);
   });
+
+  // Create session manager
+  sessionManager = new SessionManager(browser);
 
   const startTime = Date.now();
   const server = Bun.serve({
     port,
     hostname: '127.0.0.1',
     fetch: async (req) => {
-      resetIdleTimer();
-
       const url = new URL(req.url);
 
       // Health check — no auth required
       if (url.pathname === '/health') {
-        const healthy = browserManager.isHealthy();
+        const healthy = browser.isConnected();
         return new Response(JSON.stringify({
           status: healthy ? 'healthy' : 'unhealthy',
           uptime: Math.floor((Date.now() - startTime) / 1000),
-          tabs: browserManager.getTabCount(),
-          currentUrl: browserManager.getCurrentUrl(),
+          sessions: sessionManager.getSessionCount(),
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -278,7 +295,9 @@ async function start() {
 
       if (url.pathname === '/command' && req.method === 'POST') {
         const body = await req.json();
-        return handleCommand(body);
+        const sessionId = req.headers.get('x-browse-session') || 'default';
+        const session = await sessionManager.getOrCreate(sessionId);
+        return handleCommand(body, session);
       }
 
       return new Response('Not found', { status: 404 });

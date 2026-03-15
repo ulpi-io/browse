@@ -1,8 +1,9 @@
 /**
- * Meta commands — tabs, server control, screenshots, chain, diff, snapshot
+ * Meta commands — tabs, server control, screenshots, chain, diff, snapshot, sessions
  */
 
 import type { BrowserManager } from '../browser-manager';
+import type { SessionManager, Session } from '../session-manager';
 import { handleSnapshot } from '../snapshot';
 import { DEFAULTS } from '../constants';
 import * as Diff from 'diff';
@@ -14,7 +15,9 @@ export async function handleMetaCommand(
   command: string,
   args: string[],
   bm: BrowserManager,
-  shutdown: () => Promise<void> | void
+  shutdown: () => Promise<void> | void,
+  sessionManager?: SessionManager,
+  currentSession?: Session
 ): Promise<string> {
   switch (command) {
     // ─── Tabs ──────────────────────────────────────────
@@ -48,13 +51,20 @@ export async function handleMetaCommand(
     case 'status': {
       const page = bm.getPage();
       const tabs = bm.getTabCount();
-      return [
+      const lines = [
         `Status: healthy`,
         `URL: ${page.url()}`,
         `Tabs: ${tabs}`,
         `PID: ${process.pid}`,
         `Uptime: ${Math.floor(process.uptime())}s`,
-      ].join('\n');
+      ];
+      if (sessionManager) {
+        lines.push(`Sessions: ${sessionManager.getSessionCount()}`);
+      }
+      if (currentSession) {
+        lines.push(`Session: ${currentSession.id}`);
+      }
+      return lines.join('\n');
     }
 
     case 'url': {
@@ -62,18 +72,32 @@ export async function handleMetaCommand(
     }
 
     case 'stop': {
-      // Schedule shutdown after response is sent — process.exit in shutdown()
-      // would kill the HTTP handler before the response flushes.
       setTimeout(() => shutdown(), 100);
       return 'Server stopped';
     }
 
     case 'restart': {
-      // Signal that we want a restart — the CLI will detect exit and restart.
-      // Schedule shutdown after response flushes (same rationale as stop).
       console.log('[browse] Restart requested. Exiting for CLI to restart.');
       setTimeout(() => shutdown(), 100);
       return 'Restarting...';
+    }
+
+    // ─── Sessions ───────────────────────────────────────
+    case 'sessions': {
+      if (!sessionManager) return '(session management not available)';
+      const list = sessionManager.listSessions();
+      if (list.length === 0) return '(no active sessions)';
+      return list.map(s =>
+        `  [${s.id}] ${s.tabs} tab(s) — ${s.url} — idle ${s.idleSeconds}s`
+      ).join('\n');
+    }
+
+    case 'session-close': {
+      if (!sessionManager) throw new Error('Session management not available');
+      const id = args[0];
+      if (!id) throw new Error('Usage: browse session-close <id>');
+      await sessionManager.closeSession(id);
+      return `Session "${id}" closed`;
     }
 
     // ─── Visual ────────────────────────────────────────
@@ -84,8 +108,6 @@ export async function handleMetaCommand(
       const screenshotPath = filteredArgs[0] || `${LOCAL_DIR}/browse-screenshot.png`;
 
       if (annotate) {
-        // Single evaluate call to find all visible interactive elements + their positions.
-        // This avoids hundreds of individual boundingBox() protocol round-trips.
         const viewport = page.viewportSize() || { width: 1920, height: 1080 };
         const annotations = await page.evaluate((vp) => {
           const INTERACTIVE = ['a', 'button', 'input', 'select', 'textarea', 'details', 'summary'];
@@ -101,7 +123,6 @@ export async function handleMetaCommand(
 
           for (let i = 0; i < candidates.length && results.length < 200; i++) {
             const el = candidates[i] as HTMLElement;
-            // Skip hidden
             if (el.offsetWidth === 0 && el.offsetHeight === 0) continue;
 
             const tag = el.tagName.toLowerCase();
@@ -112,14 +133,11 @@ export async function handleMetaCommand(
                 getComputedStyle(el).cursor !== 'pointer') continue;
 
             const rect = el.getBoundingClientRect();
-            // Skip horizontally off-screen (vertical is fine — fullPage captures the scroll)
             if (rect.right < 0 || rect.left > vp.width) continue;
-            // Skip tiny elements
             if (rect.width < 5 || rect.height < 5) continue;
 
             const text = (el.textContent || '').trim().slice(0, 40).replace(/\s+/g, ' ');
             const desc = `${tag}${role ? '[' + role + ']' : ''} "${text}"`;
-            // Use page-absolute coords (not viewport-relative) for fullPage screenshot
             results.push({ x: rect.left + scrollX, y: rect.top + scrollY, desc });
           }
           return results;
@@ -132,7 +150,6 @@ export async function handleMetaCommand(
           return { num, x: a.x, y: a.y };
         });
 
-        // Inject overlay badges, take screenshot, always clean up
         try {
           await page.evaluate((items: Array<{ num: number; x: number; y: number }>) => {
             const container = document.createElement('div');
@@ -147,7 +164,6 @@ export async function handleMetaCommand(
             document.body.appendChild(container);
           }, badges);
 
-          // fullPage — captures full scroll height, badges use absolute positioning
           await page.screenshot({ path: screenshotPath, fullPage: true });
         } finally {
           await page.evaluate(() => {
@@ -188,7 +204,6 @@ export async function handleMetaCommand(
           results.push(`${vp.name} (${vp.width}x${vp.height}): ${path}`);
         }
       } finally {
-        // Always restore original viewport, even if a screenshot fails
         if (originalViewport) {
           await page.setViewportSize(originalViewport).catch(() => {});
         }
@@ -199,7 +214,6 @@ export async function handleMetaCommand(
 
     // ─── Chain ─────────────────────────────────────────
     case 'chain': {
-      // Read JSON array from args[0] (if provided) or expect it was passed as body
       const jsonStr = args[0];
       if (!jsonStr) throw new Error('Usage: echo \'[["goto","url"],["text"]]\' | browse chain');
 
@@ -219,13 +233,15 @@ export async function handleMetaCommand(
       const WRITE_SET = new Set(['goto','back','forward','reload','click','fill','select','hover','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate']);
       const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices']);
 
+      const sessionBuffers = currentSession?.buffers;
+
       for (const cmd of commands) {
         const [name, ...cmdArgs] = cmd;
         try {
           let result: string;
           if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm);
-          else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm);
-          else                          result = await handleMetaCommand(name, cmdArgs, bm, shutdown);
+          else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm, sessionBuffers);
+          else                          result = await handleMetaCommand(name, cmdArgs, bm, shutdown, sessionManager, currentSession);
           results.push(`[${name}] ${result}`);
         } catch (err: any) {
           results.push(`[${name}] ERROR: ${err.message}`);
@@ -265,10 +281,9 @@ export async function handleMetaCommand(
         return lines.join('\n');
       };
 
-      // Use a temporary tab so active tab's state/URL/refs are preserved
       const previousTabId = bm.getActiveTabId();
       const tempTabId = await bm.newTab(url1);
-      const tempPage = bm.getPage(); // newTab sets it as active
+      const tempPage = bm.getPage();
 
       let text1: string;
       let text2: string;
@@ -277,7 +292,6 @@ export async function handleMetaCommand(
         await tempPage.goto(url2, { waitUntil: 'domcontentloaded', timeout: DEFAULTS.COMMAND_TIMEOUT_MS });
         text2 = await tempPage.evaluate(extractText);
       } finally {
-        // Close temp tab and restore the previously active tab
         await bm.closeTab(tempTabId);
         if (bm.hasTab(previousTabId)) {
           bm.switchTab(previousTabId);
@@ -310,7 +324,6 @@ export async function handleMetaCommand(
         return 'No previous snapshot to compare against. Run "snapshot" first.';
       }
 
-      // Re-run snapshot with the same options to get comparable rendered output
       const snapshotArgs = bm.getLastSnapshotOpts();
       const current = await handleSnapshot(snapshotArgs, bm);
 
@@ -318,9 +331,6 @@ export async function handleMetaCommand(
         return 'Current page has no accessible elements to compare.';
       }
 
-      // Strip volatile @eN ref labels before diffing — ref numbers are reassigned
-      // from 1 on every snapshot, so an inserted element near the top renumbers
-      // the entire tree and makes unchanged elements look modified.
       const stripRefs = (text: string) => text.replace(/@e\d+ /g, '');
       const changes = Diff.diffLines(stripRefs(previous), stripRefs(current));
       const output: string[] = ['--- previous snapshot', '+++ current snapshot', ''];
@@ -339,7 +349,6 @@ export async function handleMetaCommand(
         return 'No changes detected between snapshots.';
       }
 
-      // handleSnapshot already updated the stored snapshot via setLastSnapshot
       return output.join('\n');
     }
 

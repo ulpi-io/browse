@@ -8,7 +8,7 @@
  */
 
 import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Request as PlaywrightRequest } from 'playwright';
-import { addConsoleEntry, addNetworkEntry, type LogEntry, type NetworkEntry } from './buffers';
+import { SessionBuffers, type LogEntry, type NetworkEntry } from './buffers';
 
 /** Shorthand aliases for common devices → Playwright device names */
 const DEVICE_ALIASES: Record<string, string> = {
@@ -136,6 +136,9 @@ export class BrowserManager {
   private customUserAgent: string | null = null;
   private currentDevice: DeviceDescriptor | null = null;
 
+  // ─── Per-session buffers ──────────────────────────────────
+  private buffers: SessionBuffers;
+
   // ─── Ref Map (snapshot → @e1, @e2, ...) ────────────────────
   // Refs are scoped per tab — switching tabs invalidates refs from the previous tab.
   private refMap: Map<string, Locator> = new Map();
@@ -153,8 +156,24 @@ export class BrowserManager {
   // ─── Network Correlation ────────────────────────────────────
   private requestEntryMap = new WeakMap<PlaywrightRequest, NetworkEntry>();
 
+  // Whether this instance owns (and should close) the Browser process
+  private ownsBrowser = false;
+
+  constructor(buffers?: SessionBuffers) {
+    this.buffers = buffers || new SessionBuffers();
+  }
+
+  getBuffers(): SessionBuffers {
+    return this.buffers;
+  }
+
+  /**
+   * Launch a new Chromium browser (single-session / multi-process mode).
+   * This instance owns the browser and will close it on close().
+   */
   async launch(onCrash?: () => void) {
     this.browser = await chromium.launch({ headless: true });
+    this.ownsBrowser = true;
 
     // Chromium crash → flush what we can, then exit
     this.browser.on('disconnected', () => {
@@ -172,8 +191,39 @@ export class BrowserManager {
     await this.newTab();
   }
 
+  /**
+   * Attach to an existing Browser instance (session multiplexing mode).
+   * Creates a new BrowserContext on the shared browser.
+   * This instance does NOT own the browser — close() only closes the context.
+   */
+  async launchWithBrowser(browser: Browser) {
+    this.browser = browser;
+    this.ownsBrowser = false;
+
+    this.context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+    });
+
+    // Create first tab
+    await this.newTab();
+  }
+
   async close() {
-    if (this.browser) {
+    // Close all pages first
+    for (const [, page] of this.pages) {
+      await page.close().catch(() => {});
+    }
+    this.pages.clear();
+    this.tabSnapshots.clear();
+    this.refMap.clear();
+
+    if (this.context) {
+      await this.context.close().catch(() => {});
+      this.context = null;
+    }
+
+    if (this.ownsBrowser && this.browser) {
       // Remove disconnect handler to avoid exit during intentional close
       this.browser.removeAllListeners('disconnected');
       await this.browser.close();
@@ -580,7 +630,7 @@ export class BrowserManager {
         message: dialog.message(),
         defaultValue: dialog.defaultValue() || undefined,
       };
-      addConsoleEntry({
+      this.buffers.addConsoleEntry({
         timestamp: Date.now(),
         level: 'info',
         text: `[dialog] ${dialog.type()}: ${dialog.message()}`,
@@ -594,7 +644,7 @@ export class BrowserManager {
     });
 
     page.on('console', (msg) => {
-      addConsoleEntry({
+      this.buffers.addConsoleEntry({
         timestamp: Date.now(),
         level: msg.type(),
         text: msg.text(),
@@ -607,7 +657,7 @@ export class BrowserManager {
         method: req.method(),
         url: req.url(),
       };
-      addNetworkEntry(entry);
+      this.buffers.addNetworkEntry(entry);
       // Store direct reference for accurate correlation on duplicate URLs
       this.requestEntryMap.set(req, entry);
     });
