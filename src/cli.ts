@@ -276,9 +276,9 @@ async function ensureServer(): Promise<ServerState> {
 }
 
 /**
- * Find and kill orphaned browse server processes whose state files have stale PIDs.
- * This handles the case where a server was started with a different PPID suffix,
- * the CLI can't find its state file, and the zombie occupies a port forever.
+ * Clean up orphaned browse servers:
+ * 1. Remove state files with dead PIDs
+ * 2. Kill live servers from other instances (old PPID-suffixed state files)
  */
 function cleanOrphanedServers(): void {
   try {
@@ -286,10 +286,14 @@ function cleanOrphanedServers(): void {
     for (const file of files) {
       if (!file.startsWith('browse-server') || !file.endsWith('.json') || file.endsWith('.lock')) continue;
       const filePath = path.join(LOCAL_DIR, file);
+      if (filePath === STATE_FILE) continue; // Don't touch our own state file
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        if (data.pid && !isProcessAlive(data.pid)) {
-          // Dead server — remove state file
+        if (data.pid) {
+          if (isProcessAlive(data.pid)) {
+            // Live orphan from a different instance — kill it to free the port
+            try { process.kill(data.pid, 'SIGTERM'); } catch {}
+          }
           fs.unlinkSync(filePath);
         }
       } catch {}
