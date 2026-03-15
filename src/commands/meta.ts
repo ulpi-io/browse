@@ -277,7 +277,7 @@ export async function handleMetaCommand(
       const { handleReadCommand } = await import('./read');
       const { handleWriteCommand } = await import('./write');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download']);
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route']);
       const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices','value','count']);
 
       const sessionBuffers = currentSession?.buffers;

@@ -387,6 +387,40 @@ export async function handleWriteCommand(
       return `Downloaded: ${finalPath}`;
     }
 
+    case 'route': {
+      // route <pattern> block — abort matching requests
+      // route <pattern> fulfill <status> [body] — respond with custom data
+      // route clear — remove all routes
+      const pattern = args[0];
+      if (!pattern) throw new Error('Usage: browse route <url-pattern> block | browse route <url-pattern> fulfill <status> [body] | browse route clear');
+
+      const context = bm.getContext();
+      if (!context) throw new Error('No browser context');
+
+      if (pattern === 'clear') {
+        await context.unrouteAll();
+        return 'All routes cleared';
+      }
+
+      const action = args[1] || 'block';
+
+      if (action === 'block') {
+        await context.route(pattern, (route) => route.abort('blockedbyclient'));
+        return `Blocking requests matching: ${pattern}`;
+      }
+
+      if (action === 'fulfill') {
+        const status = parseInt(args[2] || '200', 10);
+        const body = args[3] || '';
+        await context.route(pattern, (route) =>
+          route.fulfill({ status, body, contentType: 'text/plain' })
+        );
+        return `Mocking requests matching: ${pattern} → ${status}${body ? ` "${body}"` : ''}`;
+      }
+
+      throw new Error('Usage: browse route <pattern> block | browse route <pattern> fulfill <status> [body]');
+    }
+
     default:
       throw new Error(`Unknown write command: ${command}`);
   }

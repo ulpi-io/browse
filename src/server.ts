@@ -114,7 +114,7 @@ const WRITE_COMMANDS = new Set([
   'viewport', 'cookie', 'header', 'useragent',
   'upload', 'dialog-accept', 'dialog-dismiss', 'emulate',
   'drag', 'keydown', 'keyup',
-  'highlight', 'download',
+  'highlight', 'download', 'route',
 ]);
 
 const META_COMMANDS = new Set([
@@ -167,6 +167,47 @@ const BOUNDARY_NONCE = crypto.randomUUID();
 interface RequestOptions {
   jsonMode: boolean;
   contentBoundaries: boolean;
+}
+
+/**
+ * Rewrite Playwright error messages into actionable hints for AI agents.
+ * Raw errors like "locator.click: Timeout 5000ms exceeded" are unhelpful.
+ */
+function rewriteError(msg: string): string {
+  if (msg.includes('strict mode violation')) {
+    const countMatch = msg.match(/resolved to (\d+) elements/);
+    return `Multiple elements matched (${countMatch?.[1] || 'several'}). Use a more specific selector or run 'snapshot -i' to find exact refs.`;
+  }
+  if (msg.includes('Timeout') && msg.includes('exceeded')) {
+    const timeMatch = msg.match(/Timeout (\d+)ms/);
+    return `Element not found within ${timeMatch?.[1] || '?'}ms. The element may not exist, be hidden, or the page is still loading. Try 'wait <selector>' first, or check with 'snapshot -i'.`;
+  }
+  if (msg.includes('waiting for locator') || msg.includes('waiting for selector')) {
+    return `Element not found on the page. Run 'snapshot -i' to see available elements, or check the current URL with 'url'.`;
+  }
+  if (msg.includes('not an HTMLInputElement') || msg.includes('not an input')) {
+    return `Cannot fill this element — it's not an input field. Use 'click' instead, or run 'snapshot -i' to find the correct input.`;
+  }
+  if (msg.includes('Element is not visible')) {
+    return `Element exists but is hidden (display:none or visibility:hidden). Try scrolling to it with 'scroll <selector>' or wait for it with 'wait <selector>'.`;
+  }
+  if (msg.includes('Element is outside of the viewport')) {
+    return `Element is off-screen. Scroll to it first with 'scroll <selector>'.`;
+  }
+  if (msg.includes('intercepts pointer events')) {
+    return `Another element is covering the target (e.g., a modal, overlay, or cookie banner). Close the overlay first or use 'js' to click directly.`;
+  }
+  if (msg.includes('Frame was detached') || msg.includes('frame was detached')) {
+    return `The iframe was removed or navigated away. Run 'frame main' to return to the main page, then re-navigate.`;
+  }
+  if (msg.includes('Target closed') || msg.includes('target closed')) {
+    return `The page or tab was closed. Use 'tabs' to list open tabs, or 'goto' to navigate to a new page.`;
+  }
+  if (msg.includes('net::ERR_')) {
+    const errMatch = msg.match(/(net::\w+)/);
+    return `Network error: ${errMatch?.[1] || 'connection failed'}. Check the URL and ensure the site is reachable.`;
+  }
+  return msg;
 }
 
 async function handleCommand(body: any, session: Session, opts: RequestOptions): Promise<Response> {
@@ -223,12 +264,13 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       status: 200, headers: { 'Content-Type': 'text/plain' },
     });
   } catch (err: any) {
+    const friendlyError = rewriteError(err.message);
     if (opts.jsonMode) {
-      return new Response(JSON.stringify({ success: false, error: err.message, command }), {
+      return new Response(JSON.stringify({ success: false, error: friendlyError, command }), {
         status: 500, headers: { 'Content-Type': 'application/json' },
       });
     }
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: friendlyError }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
