@@ -4,3 +4,4 @@ dist/
 /tmp/browse-*
 bun.lock
 *.bun-build
+.DS_Store
