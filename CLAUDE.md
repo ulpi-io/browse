@@ -22,7 +22,7 @@ Fast headless browser CLI for AI coding agents. Persistent Chromium daemon via P
 - **Browser:** Playwright + Chromium (headless)
 - **Language:** TypeScript (ESNext, strict, bundler resolution)
 - **Tests:** `bun:test` (integration tests against real browser)
-- **Build:** `bun build --compile` → standalone binary
+- **Build:** `bun build --compile --external electron --external chromium-bidi` → standalone binary
 
 ## Project Structure
 
@@ -53,7 +53,7 @@ test/fixtures/             HTML test fixtures
 bun test                                              # Run tests
 bun run src/cli.ts <command> [args]                   # Dev mode
 bun run src/cli.ts --session <id> <command> [args]    # Dev mode with session
-bun build --compile src/cli.ts --outfile dist/browse  # Build binary
+bun run build                                         # Build binary (uses --external flags)
 ```
 
 ## Architecture Summary
@@ -73,9 +73,17 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 
 ## Command Categories
 
-- **Read** (16): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `devices`
-- **Write** (18): `goto`, `back`, `forward`, `reload`, `click`, `fill`, `select`, `hover`, `type`, `press`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `emulate`
-- **Meta** (14): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `sessions`, `session-close`
+- **Read** (18): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `value`, `count`, `devices`
+- **Write** (27): `goto`, `back`, `forward`, `reload`, `click`, `dblclick`, `fill`, `select`, `hover`, `focus`, `check`, `uncheck`, `type`, `press`, `keydown`, `keyup`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `emulate`, `drag`, `highlight`, `download`, `route`, `offline`, `dialog-accept`, `dialog-dismiss`
+- **Meta** (18): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `sessions`, `session-close`, `frame`, `state`, `auth`, `har`
+
+## Development Rules
+
+- **No shortcuts.** When you find a bug, stop and fix it. Don't patch around it, don't defer it.
+- **No fake reviews.** Find real bugs or say it's clean. Never list non-issues as findings.
+- **Automagic for customers.** The tool must self-heal. Zombie servers, port conflicts, stale state — all handled automatically. If you need `pkill` or `rm` before testing, that's a bug.
+- **Build command:** Always `bun run build` (uses `--external electron --external chromium-bidi`). These are playwright optional deps we never use.
+- **Compiled binary:** Self-spawns in server mode via `__BROWSE_SERVER_MODE=1` env var. In dev mode, spawns `bun run server.ts`.
 
 ## Conventions
 

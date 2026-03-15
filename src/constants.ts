@@ -1,9 +1,11 @@
+const BROWSE_TIMEOUT = parseInt(process.env.BROWSE_TIMEOUT || '0', 10);
+
 export const DEFAULTS = {
   PORT_RANGE_START: 9400,
   PORT_RANGE_END: 10400,
   IDLE_TIMEOUT_MS: 30 * 60 * 1000,       // 30 min
-  COMMAND_TIMEOUT_MS: 15_000,              // 15s for navigation
-  ACTION_TIMEOUT_MS: 5_000,               // 5s for clicks/fills
+  COMMAND_TIMEOUT_MS: BROWSE_TIMEOUT || 15_000,    // 15s for navigation
+  ACTION_TIMEOUT_MS: BROWSE_TIMEOUT || 5_000,      // 5s for clicks/fills
   HEALTH_CHECK_TIMEOUT_MS: 2_000,
   BUFFER_HIGH_WATER_MARK: 50_000,
   BUFFER_FLUSH_INTERVAL_MS: 1_000,

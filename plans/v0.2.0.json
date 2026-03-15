@@ -1,0 +1,309 @@
+{
+  "title": "v0.2.0 — Security, Multi-Instance, Interactions, DX",
+  "branch": "feat/v0.2.0",
+  "mode": "HOLD",
+  "overview": "Ship 10 features that close competitive gaps with agent-browser while preserving USPs. Features span security (--content-boundaries, --allowed-domains), multi-instance support (auto-instance servers, per-session folders), DX (--json, config file), interactions (dblclick, focus, check, drag, iframe), and distribution (state persistence, platform binaries).",
+  "scopeChallenge": "Analyzed agent-browser's 27K-line Rust codebase. Selected 10 highest-impact features. Skipped: action-policy (over-engineered), --max-output (our architecture solves this), cloud providers (not our use case), find semantic locators (our ref system is better), auth vault (premature), raw mouse control (rarely needed), video recording (requires ffmpeg).",
+  "existingCodeLeverage": [
+    { "subProblem": "Instance isolation", "existingCode": "src/cli.ts:16-50", "action": "extend" },
+    { "subProblem": "Session output paths", "existingCode": "src/server.ts:48-51, src/commands/meta.ts:108,183,190", "action": "extend" },
+    { "subProblem": "JSON output", "existingCode": "src/server.ts:152-191", "action": "extend" },
+    { "subProblem": "CLI flag parsing", "existingCode": "src/cli.ts:362-373", "action": "reuse" },
+    { "subProblem": "Command routing", "existingCode": "src/server.ts:103-123", "action": "extend" },
+    { "subProblem": "Interaction commands", "existingCode": "src/commands/write.ts", "action": "reuse" },
+    { "subProblem": "Domain filtering", "existingCode": null, "action": "build" },
+    { "subProblem": "Config file", "existingCode": null, "action": "build" },
+    { "subProblem": "State persistence", "existingCode": null, "action": "build" },
+    { "subProblem": "Platform binaries", "existingCode": "package.json:41", "action": "extend" }
+  ],
+  "failureModes": [
+    { "risk": "PPID not stable across shells/tmux", "affectedTasks": ["TASK-001"], "mitigation": "Fall back to BROWSE_INSTANCE env var" },
+    { "risk": "Playwright route() doesn't catch all sub-resources", "affectedTasks": ["TASK-005"], "mitigation": "Test with real pages; route('**/*') catches all network requests" },
+    { "risk": "iframe locator scope breaks ref system", "affectedTasks": ["TASK-007"], "mitigation": "Snapshot within frame re-scopes refs; document limitation" },
+    { "risk": "storageState() doesn't capture sessionStorage", "affectedTasks": ["TASK-009"], "mitigation": "Document limitation; sessionStorage is ephemeral by design" },
+    { "risk": "Bun cross-compile produces broken binary", "affectedTasks": ["TASK-010"], "mitigation": "Test each binary in CI" },
+    { "risk": "Config file JSON parse error crashes CLI", "affectedTasks": ["TASK-008"], "mitigation": "Wrap in try/catch, silently ignore" },
+    { "risk": "Content boundary nonce leaked via page JS", "affectedTasks": ["TASK-004"], "mitigation": "Nonce is per-server-process, not exposed to page" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "PPID-based instance isolation", "coveringTask": "TASK-013", "testType": "e2e" },
+    { "codepath": "Per-session output directories", "coveringTask": "TASK-013", "testType": "integration" },
+    { "codepath": "JSON response wrapping", "coveringTask": "TASK-011", "testType": "integration" },
+    { "codepath": "Content boundary nonce injection", "coveringTask": "TASK-011", "testType": "integration" },
+    { "codepath": "Domain filter (URL check + route blocking)", "coveringTask": "TASK-011", "testType": "integration" },
+    { "codepath": "dblclick, focus, check, uncheck, drag, keydown, keyup", "coveringTask": "TASK-012", "testType": "integration" },
+    { "codepath": "iframe frame/frame main", "coveringTask": "TASK-012", "testType": "integration" },
+    { "codepath": "Config file loading + override", "coveringTask": "TASK-013", "testType": "integration" },
+    { "codepath": "State save/load via storageState", "coveringTask": "TASK-013", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Auto-Instance Servers via PPID",
+      "description": "Replace single shared state file with PPID-based instance isolation. Each parent process (Claude Code instance) gets its own server and Chromium. In cli.ts: compute INSTANCE_ID from process.ppid (or BROWSE_INSTANCE env var). Update STATE_FILE to .browse/browse-server-{instanceId}.json. In server.ts: read BROWSE_INSTANCE env var for state file naming.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Two CLI processes with different PPIDs get separate state files and separate servers",
+        "Two CLI processes with same PPID share one server",
+        "BROWSE_INSTANCE=custom env var overrides PPID-based detection",
+        "Existing BROWSE_PORT behavior unchanged"
+      ],
+      "filesToModify": ["src/cli.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Per-Session Output Folders",
+      "description": "Move all session artifacts into .browse/sessions/{sessionId}/. Add outputDir field to Session interface in session-manager.ts. Update screenshot/pdf/responsive default paths in meta.ts. Update flushSessionBuffers in server.ts to write logs to session.outputDir.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "Screenshots default to .browse/sessions/{id}/screenshot.png",
+        "Console/network logs flush to .browse/sessions/{id}/",
+        "User-provided explicit path overrides session dir",
+        "Default session uses .browse/sessions/default/"
+      ],
+      "filesToModify": ["src/session-manager.ts", "src/commands/meta.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-003",
+      "title": "--json Mode for All Commands",
+      "description": "Add --json CLI flag. Send X-Browse-Json header. Server wraps responses as {success:true,data:...,command:...} or {success:false,error:...}. Support BROWSE_JSON=1 env var.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse --json goto url returns {success:true,data:'Navigated to...',command:'goto'}",
+        "browse --json goto invalid:// returns {success:false,error:'...'}",
+        "BROWSE_JSON=1 works equivalently",
+        "Without --json, output unchanged"
+      ],
+      "filesToModify": ["src/cli.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-004",
+      "title": "--content-boundaries (Prompt Injection Defense)",
+      "description": "Wrap page-sourced output in CSPRNG nonce-delimited markers. Parse --content-boundaries flag in cli.ts, send X-Browse-Boundaries header. Server wraps page-content commands (text, html, snapshot, js, eval, console, links, forms, accessibility) in --- BROWSE_CONTENT nonce=<uuid> --- markers. Use crypto.randomUUID() for nonce.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse --content-boundaries text wraps output in nonce-delimited markers",
+        "browse --content-boundaries click @e3 does NOT wrap",
+        "Nonce is a valid UUID, consistent within server process",
+        "Origin reflects current page URL"
+      ],
+      "filesToModify": ["src/cli.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-005",
+      "title": "--allowed-domains (Navigation + Resource Blocking)",
+      "description": "Block navigation and sub-resource requests outside allowlist. Create src/domain-filter.ts with DomainFilter class. Parse --allowed-domains in cli.ts. Apply via Playwright context.route('**/*') in session-manager.ts. Validate goto URLs in write.ts.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse --allowed-domains example.com goto evil.com returns error",
+        "browse --allowed-domains *.example.com goto sub.example.com succeeds",
+        "Sub-resources from disallowed domains are blocked",
+        "Without --allowed-domains, no filtering"
+      ],
+      "filesToModify": ["src/cli.ts", "src/session-manager.ts", "src/commands/write.ts"],
+      "filesToCreate": ["src/domain-filter.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Missing Interaction Commands",
+      "description": "Add dblclick, focus, check, uncheck, drag, keydown, keyup to src/commands/write.ts. Register in WRITE_COMMANDS set in server.ts. Each follows existing pattern: resolve ref, call Playwright method, return confirmation.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse dblclick @e3 double-clicks the element",
+        "browse check @e5 checks checkbox; browse uncheck @e5 unchecks",
+        "browse drag @e1 @e2 drags source to target",
+        "browse dblclick nonexistent returns clear error"
+      ],
+      "filesToModify": ["src/commands/write.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-007",
+      "title": "iframe Support",
+      "description": "Add frame <sel> and frame main commands. Add activeFrame field to BrowserManager. When frame is active, commands target that frame. Use Playwright's page.frameLocator(sel) for scoping.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse frame #my-iframe + browse text returns text from iframe",
+        "browse frame main returns to main page context",
+        "browse click @e3 inside a frame clicks correct element",
+        "browse frame nonexistent returns clear error"
+      ],
+      "filesToModify": ["src/browser-manager.ts", "src/commands/meta.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Config File (browse.json)",
+      "description": "Create src/config.ts with loadConfig() that reads browse.json from project root. Schema: {session, json, contentBoundaries, allowedDomains, idleTimeout, viewport, device}. In cli.ts: load config, use as defaults (CLI flags override).",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse.json with {json:true} makes all commands return JSON",
+        "browse.json with {allowedDomains:[...]} blocks other domains",
+        "CLI flag overrides browse.json setting",
+        "Missing or malformed browse.json silently ignored"
+      ],
+      "filesToModify": ["src/cli.ts"],
+      "filesToCreate": ["src/config.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-009",
+      "title": "State Persistence (state save/load)",
+      "description": "Add state save [name] and state load [name] commands using Playwright's context.storageState(). Saves to .browse/states/{name}.json. Add getContext() and replaceContext(storageState) to BrowserManager.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "browse state save mysite saves cookies + localStorage to .browse/states/mysite.json",
+        "browse state load mysite restores cookies + localStorage",
+        "browse state save without name defaults to 'default'",
+        "browse state load nonexistent returns clear error"
+      ],
+      "filesToModify": ["src/browser-manager.ts", "src/commands/meta.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-010",
+      "title": "Platform Binaries",
+      "description": "Create scripts/build-all.sh using bun build --compile --target for darwin-arm64, darwin-x64, linux-x64. Update package.json with build:all script and bin wrapper for platform detection.",
+      "type": "infra",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "bun run build:all produces 3 binaries in dist/",
+        "macOS ARM binary runs without Bun installed",
+        "Linux x64 binary runs without Bun installed",
+        "npm install on machine without Bun can still run browse"
+      ],
+      "filesToModify": ["package.json"],
+      "filesToCreate": ["scripts/build-all.sh"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-011",
+      "title": "Tests for --json, --content-boundaries, --allowed-domains",
+      "description": "Integration tests for JSON wrapping, content boundaries, and domain filtering in test/features.test.ts.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004", "TASK-005"],
+      "acceptanceCriteria": [
+        "Test JSON wrapping: success and error cases",
+        "Test content boundaries: page-content wrapped, actions not",
+        "Test domain filtering: blocked/allowed/sub-resources",
+        "Test features off by default"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/features.test.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-012",
+      "title": "Tests for New Interactions and iframe",
+      "description": "Integration tests for dblclick, focus, check/uncheck, drag, keydown/keyup, iframe. Create HTML fixtures for testability.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-006", "TASK-007"],
+      "acceptanceCriteria": [
+        "Test dblclick triggers double-click event",
+        "Test check/uncheck toggles checkbox state",
+        "Test frame command scopes to iframe content",
+        "Test frame main returns to main page"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/interactions.test.ts", "test/fixtures/interactions.html", "test/fixtures/iframe.html"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-013",
+      "title": "Tests for Auto-Instance, Session Folders, Config, State",
+      "description": "Integration and E2E tests for instance isolation, per-session output, config file loading, and state save/load.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-001", "TASK-002", "TASK-008", "TASK-009"],
+      "acceptanceCriteria": [
+        "Two processes with different PPIDs get separate servers",
+        "Screenshots go to .browse/sessions/{id}/screenshot.png",
+        "state save + state load preserves cookies",
+        "Config file defaults applied and overridable"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/instance.test.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-014",
+      "title": "Update README, CLAUDE.md, Help Text",
+      "description": "Document all 10 features. Update command reference, env vars, architecture diagram, help text in cli.ts.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P3",
+      "dependsOn": ["TASK-001", "TASK-003", "TASK-006", "TASK-007", "TASK-008", "TASK-009"],
+      "acceptanceCriteria": [
+        "README documents all new flags and commands",
+        "CLI --help shows new commands and flags",
+        "CLAUDE.md reflects updated architecture",
+        "Env vars table updated"
+      ],
+      "filesToModify": ["README.md", "CLAUDE.md", "src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": [],
+    "TASK-004": [],
+    "TASK-005": [],
+    "TASK-006": [],
+    "TASK-007": [],
+    "TASK-008": [],
+    "TASK-009": ["TASK-002"],
+    "TASK-010": [],
+    "TASK-011": ["TASK-003", "TASK-004", "TASK-005"],
+    "TASK-012": ["TASK-006", "TASK-007"],
+    "TASK-013": ["TASK-001", "TASK-002", "TASK-008", "TASK-009"],
+    "TASK-014": ["TASK-001", "TASK-003", "TASK-006", "TASK-007", "TASK-008", "TASK-009"]
+  }
+}

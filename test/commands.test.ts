@@ -442,10 +442,9 @@ describe('CLI server script resolution', () => {
     expect(resolved).toBe(customPath);
   });
 
-  test('throws when server.ts cannot be found', () => {
-    expect(() => {
-      resolveServerScript({}, '$bunfs/root');
-    }).toThrow('Cannot find server.ts');
+  test('returns __compiled__ in compiled mode ($bunfs)', () => {
+    const resolved = resolveServerScript({}, '$bunfs/root');
+    expect(resolved).toBe('__compiled__');
   });
 });
 

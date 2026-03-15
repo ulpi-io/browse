@@ -6,6 +6,7 @@ import type { BrowserManager } from '../browser-manager';
 import type { SessionManager, Session } from '../session-manager';
 import { handleSnapshot } from '../snapshot';
 import { DEFAULTS } from '../constants';
+import { sanitizeName } from '../sanitize';
 import * as Diff from 'diff';
 import * as fs from 'fs';
 
@@ -100,12 +101,59 @@ export async function handleMetaCommand(
       return `Session "${id}" closed`;
     }
 
+    // ─── State Persistence ───────────────────────────────
+    case 'state': {
+      const subcommand = args[0];
+      if (!subcommand || !['save', 'load'].includes(subcommand)) {
+        throw new Error('Usage: browse state save [name] | browse state load [name]');
+      }
+      const name = sanitizeName(args[1] || 'default');
+      const statesDir = `${LOCAL_DIR}/states`;
+      const statePath = `${statesDir}/${name}.json`;
+
+      if (subcommand === 'save') {
+        const context = bm.getContext();
+        if (!context) throw new Error('No browser context');
+        const state = await context.storageState();
+        fs.mkdirSync(statesDir, { recursive: true });
+        fs.writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
+        return `State saved: ${statePath}`;
+      }
+
+      if (subcommand === 'load') {
+        if (!fs.existsSync(statePath)) {
+          throw new Error(`State file not found: ${statePath}. Run "browse state save ${name}" first.`);
+        }
+        const stateData = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        // Add cookies from saved state to current context
+        const context = bm.getContext();
+        if (!context) throw new Error('No browser context');
+        if (stateData.cookies?.length) {
+          await context.addCookies(stateData.cookies);
+        }
+        // Restore localStorage/sessionStorage for each origin
+        if (stateData.origins?.length) {
+          for (const origin of stateData.origins) {
+            if (origin.localStorage?.length) {
+              const page = bm.getPage();
+              await page.goto(origin.origin, { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
+              for (const item of origin.localStorage) {
+                await page.evaluate(([k, v]) => localStorage.setItem(k, v), [item.name, item.value]).catch(() => {});
+              }
+            }
+          }
+        }
+        return `State loaded: ${statePath}`;
+      }
+      throw new Error('Usage: browse state save [name] | browse state load [name]');
+    }
+
     // ─── Visual ────────────────────────────────────────
     case 'screenshot': {
       const page = bm.getPage();
       const annotate = args.includes('--annotate');
       const filteredArgs = args.filter(a => a !== '--annotate');
-      const screenshotPath = filteredArgs[0] || `${LOCAL_DIR}/browse-screenshot.png`;
+      const screenshotPath = filteredArgs[0] || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
 
       if (annotate) {
         const viewport = page.viewportSize() || { width: 1920, height: 1080 };
@@ -180,14 +228,14 @@ export async function handleMetaCommand(
 
     case 'pdf': {
       const page = bm.getPage();
-      const pdfPath = args[0] || `${LOCAL_DIR}/browse-page.pdf`;
+      const pdfPath = args[0] || (currentSession ? `${currentSession.outputDir}/page.pdf` : `${LOCAL_DIR}/browse-page.pdf`);
       await page.pdf({ path: pdfPath, format: 'A4' });
       return `PDF saved: ${pdfPath}`;
     }
 
     case 'responsive': {
       const page = bm.getPage();
-      const prefix = args[0] || `${LOCAL_DIR}/browse-responsive`;
+      const prefix = args[0] || (currentSession ? `${currentSession.outputDir}/responsive` : `${LOCAL_DIR}/browse-responsive`);
       const viewports = [
         { name: 'mobile', width: 375, height: 812 },
         { name: 'tablet', width: 768, height: 1024 },
@@ -229,15 +277,28 @@ export async function handleMetaCommand(
       const results: string[] = [];
       const { handleReadCommand } = await import('./read');
       const { handleWriteCommand } = await import('./write');
+      const { PolicyChecker } = await import('../policy');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','fill','select','hover','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate']);
-      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices']);
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline']);
+      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count']);
 
       const sessionBuffers = currentSession?.buffers;
+      const policy = new PolicyChecker();
 
       for (const cmd of commands) {
         const [name, ...cmdArgs] = cmd;
         try {
+          // Policy check for each sub-command — chain must not bypass policy
+          const policyResult = policy.check(name);
+          if (policyResult === 'deny') {
+            results.push(`[${name}] ERROR: Command '${name}' denied by policy`);
+            continue;
+          }
+          if (policyResult === 'confirm') {
+            results.push(`[${name}] ERROR: Command '${name}' requires confirmation (policy)`);
+            continue;
+          }
+
           let result: string;
           if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm);
           else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm, sessionBuffers);
@@ -350,6 +411,116 @@ export async function handleMetaCommand(
       }
 
       return output.join('\n');
+    }
+
+    // ─── Auth Vault ─────────────────────────────────────
+    case 'auth': {
+      const subcommand = args[0];
+      const { AuthVault } = await import('../auth-vault');
+      const vault = new AuthVault(LOCAL_DIR);
+
+      switch (subcommand) {
+        case 'save': {
+          const [, name, url, username] = args;
+          // Password: from arg, env var, or --password-stdin flag
+          let password: string | undefined = args[4];
+          if (password === '--password-stdin') password = undefined;
+          if (!password && process.env.BROWSE_AUTH_PASSWORD) {
+            password = process.env.BROWSE_AUTH_PASSWORD;
+          }
+          if (!password && args.includes('--password-stdin')) {
+            password = (await Bun.stdin.text()).trim();
+          }
+          if (!name || !url || !username || !password) {
+            throw new Error(
+              'Usage: browse auth save <name> <url> <username> <password>\n' +
+              '       browse auth save <name> <url> <username> --password-stdin\n' +
+              '       BROWSE_AUTH_PASSWORD=secret browse auth save <name> <url> <username>'
+            );
+          }
+          // Parse optional selector flags
+          let userSel: string | undefined;
+          let passSel: string | undefined;
+          let submitSel: string | undefined;
+          for (let i = 4; i < args.length; i++) {
+            if (args[i] === '--user-sel' && args[i+1]) { userSel = args[++i]; }
+            else if (args[i] === '--pass-sel' && args[i+1]) { passSel = args[++i]; }
+            else if (args[i] === '--submit-sel' && args[i+1]) { submitSel = args[++i]; }
+          }
+          const selectors = (userSel || passSel || submitSel) ? { username: userSel, password: passSel, submit: submitSel } : undefined;
+          vault.save(name, url, username, password, selectors);
+          return `Credentials saved: ${name}`;
+        }
+        case 'login': {
+          const name = args[1];
+          if (!name) throw new Error('Usage: browse auth login <name>');
+          return await vault.login(name, bm);
+        }
+        case 'list': {
+          const creds = vault.list();
+          if (creds.length === 0) return '(no saved credentials)';
+          return creds.map(c => `  ${c.name} — ${c.url} (${c.username})`).join('\n');
+        }
+        case 'delete': {
+          const name = args[1];
+          if (!name) throw new Error('Usage: browse auth delete <name>');
+          vault.delete(name);
+          return `Credentials deleted: ${name}`;
+        }
+        default:
+          throw new Error('Usage: browse auth save|login|list|delete [args...]');
+      }
+    }
+
+    // ─── HAR Recording ────────────────────────────────
+    case 'har': {
+      const subcommand = args[0];
+      if (!subcommand) throw new Error('Usage: browse har start | browse har stop [path]');
+
+      if (subcommand === 'start') {
+        bm.startHarRecording();
+        return 'HAR recording started';
+      }
+
+      if (subcommand === 'stop') {
+        const recording = bm.stopHarRecording();
+        if (!recording) throw new Error('No active HAR recording. Run "browse har start" first.');
+
+        const sessionBuffers = currentSession?.buffers || bm.getBuffers();
+        const { formatAsHar } = await import('../har');
+        const har = formatAsHar(sessionBuffers.networkBuffer, recording.startTime);
+
+        const harPath = args[1] || (currentSession
+          ? `${currentSession.outputDir}/recording.har`
+          : `${LOCAL_DIR}/browse-recording.har`);
+
+        fs.writeFileSync(harPath, JSON.stringify(har, null, 2));
+        const entryCount = (har as any).log.entries.length;
+        return `HAR saved: ${harPath} (${entryCount} entries)`;
+      }
+
+      throw new Error('Usage: browse har start | browse har stop [path]');
+    }
+
+    // ─── iframe Targeting ─────────────────────────────
+    case 'frame': {
+      if (args[0] === 'main' || args[0] === 'top') {
+        bm.resetFrame();
+        return 'Switched to main frame';
+      }
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse frame <selector> | browse frame main');
+      // Verify the iframe exists and is accessible
+      const page = bm.getPage();
+      const frameEl = page.locator(selector);
+      const count = await frameEl.count();
+      if (count === 0) throw new Error(`iframe not found: ${selector}`);
+      const handle = await frameEl.elementHandle({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      if (!handle) throw new Error(`iframe not found: ${selector}`);
+      const frame = await handle.contentFrame();
+      if (!frame) throw new Error(`Element ${selector} is not an iframe`);
+      bm.setFrame(selector);
+      return `Switched to frame: ${selector}`;
     }
 
     default:

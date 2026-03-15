@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><head><title>Interaction Tests</title></head>
+<body>
+  <h1>Interaction Test Page</h1>
+
+  <button id="dbl-btn" ondblclick="this.textContent='double-clicked'">Double Click Me</button>
+
+  <input type="checkbox" id="cb1" />
+  <label for="cb1">Checkbox</label>
+
+  <input type="text" id="focus-input" placeholder="Focus me" />
+
+  <input type="text" id="value-input" value="prefilled" />
+
+  <div id="drag-src" draggable="true" style="width:50px;height:50px;background:red;">Drag</div>
+  <div id="drag-tgt" style="width:100px;height:100px;background:blue;">Drop Here</div>
+
+  <div class="item">Item 1</div>
+  <div class="item">Item 2</div>
+  <div class="item">Item 3</div>
+
+  <div id="highlight-target">Highlight me</div>
+
+  <div style="height:3000px;">Spacer for scroll testing</div>
+  <div id="bottom-marker">Bottom</div>
+</body>
+</html>
