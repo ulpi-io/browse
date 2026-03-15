@@ -172,15 +172,21 @@ bun install -g @ulpi/browse
 
 Requires [Bun](https://bun.sh). Chromium is installed automatically via Playwright.
 
-### Claude Code Skill (optional)
+### Claude Code Skill
 
-Install the browse skill into your project so Claude Code uses it automatically:
+Install via [skills.sh](https://skills.sh) (works across Claude Code, Cursor, Cline, Windsurf, and 15+ agents):
+
+```bash
+npx skills add https://github.com/ulpi-io/skills --skill browse
+```
+
+Or install directly into your project:
 
 ```bash
 browse install-skill
 ```
 
-This copies the skill definition to `.claude/skills/browse/SKILL.md` and adds all browse commands to `.claude/settings.json` permissions — no more approval prompts.
+Both copy the skill definition to `.claude/skills/browse/SKILL.md` and add all browse commands to permissions — no more approval prompts.
 
 ## Real-World Example: E-Commerce Flow
 

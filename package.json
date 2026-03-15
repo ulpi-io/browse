@@ -6,6 +6,7 @@
     "url": "https://github.com/ulpi-io/browse"
   },
   "dependencies": {
+    "@ulpi/browse": "^0.1.0",
     "diff": "^7.0.0",
     "playwright": "^1.58.2"
   },
