@@ -465,7 +465,7 @@ Recording:      har start | har stop [path]
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
-Auth:           auth save <name> <url> <user> <pass>
+Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
 State:          state save [name] | state load [name]
 Server:         status | cookie <n>=<v> | header <n>:<v>

@@ -276,15 +276,28 @@ export async function handleMetaCommand(
       const results: string[] = [];
       const { handleReadCommand } = await import('./read');
       const { handleWriteCommand } = await import('./write');
+      const { PolicyChecker } = await import('../policy');
 
       const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline']);
       const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices','value','count']);
 
       const sessionBuffers = currentSession?.buffers;
+      const policy = new PolicyChecker();
 
       for (const cmd of commands) {
         const [name, ...cmdArgs] = cmd;
         try {
+          // Policy check for each sub-command — chain must not bypass policy
+          const policyResult = policy.check(name);
+          if (policyResult === 'deny') {
+            results.push(`[${name}] ERROR: Command '${name}' denied by policy`);
+            continue;
+          }
+          if (policyResult === 'confirm') {
+            results.push(`[${name}] ERROR: Command '${name}' requires confirmation (policy)`);
+            continue;
+          }
+
           let result: string;
           if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm);
           else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm, sessionBuffers);
@@ -407,9 +420,21 @@ export async function handleMetaCommand(
 
       switch (subcommand) {
         case 'save': {
-          const [, name, url, username, password] = args;
+          const [, name, url, username] = args;
+          // Password: from arg, env var, or --password-stdin flag
+          let password = args[4];
+          if (!password && process.env.BROWSE_AUTH_PASSWORD) {
+            password = process.env.BROWSE_AUTH_PASSWORD;
+          }
+          if (!password && args.includes('--password-stdin')) {
+            password = (await Bun.stdin.text()).trim();
+          }
           if (!name || !url || !username || !password) {
-            throw new Error('Usage: browse auth save <name> <url> <username> <password>');
+            throw new Error(
+              'Usage: browse auth save <name> <url> <username> <password>\n' +
+              '       browse auth save <name> <url> <username> --password-stdin\n' +
+              '       BROWSE_AUTH_PASSWORD=secret browse auth save <name> <url> <username>'
+            );
           }
           vault.save(name, url, username, password);
           return `Credentials saved: ${name}`;
