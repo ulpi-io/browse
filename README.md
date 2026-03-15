@@ -241,7 +241,30 @@ browse [--session <id>] <command>
 
 Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
 
-We've since added: session multiplexing for parallel agents, cursor-interactive detection (`-C`), device emulation, snapshot-diff, annotated screenshots, safe retry classification, concurrency-safe server spawning, TreeWalker-based text extraction, dialog handling, file upload, per-tab ref scoping, and restructured it as a standalone npm package.
+### Added beyond gstack
+
+**New commands:**
+- `emulate` / `devices` — device emulation with 100+ devices (iPhone, Pixel, iPad, custom descriptors)
+- `snapshot -C` — cursor-interactive detection (cursor:pointer, onclick, tabindex, data-action)
+- `snapshot-diff` — before/after comparison with ref-number stripping
+- `dialog` / `dialog-accept` / `dialog-dismiss` — dialog handling with prompt value support
+- `state` — element state inspection (visible, enabled, checked, focused, bounding box)
+- `upload` — file upload to input elements
+- `sessions` / `session-close` — multi-agent session multiplexing
+- `screenshot --annotate` — numbered badge overlay with legend
+
+**Architectural improvements:**
+- Session multiplexing — multiple agents share one Chromium via isolated BrowserContexts
+- Per-tab ref scoping — refs belong to the tab that created them, cross-tab usage throws clear error
+- Per-tab snapshot baselines — `snapshot-diff` compares the correct baseline after tab switches
+- Safe retry classification — read commands auto-retry after crash, write commands don't (prevents double form submissions)
+- Concurrency-safe server spawning — file lock with stale detection prevents race conditions
+- Network correlation via WeakMap — accurate request/response pairing even with duplicate URLs
+- Content-Length based sizing — avoids reading response bodies into memory
+- TreeWalker text extraction — `text` command never triggers MutationObservers
+- Tab creation rollback — failed `newTab(url)` closes the page instead of leaving orphan tabs
+- Context recreation with rollback — `emulate`/`useragent` preserve cookies and all tab URLs, rollback on failure
+- Crash callback — server flushes buffers and cleans state file before exit
 
 ## License
 
