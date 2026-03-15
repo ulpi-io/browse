@@ -11,7 +11,8 @@
     "bin/",
     "src/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "BENCHMARKS.md"
   ],
   "scripts": {
     "build": "bun build --compile src/cli.ts --outfile dist/browse",

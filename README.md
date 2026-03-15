@@ -2,18 +2,21 @@
 
 **Give AI agents eyes and hands on the web — without burning tokens on raw HTML.**
 
-When an AI agent needs to browse the web, the naive approach is dumping full page HTML into the context window. A typical page is 200-500KB of HTML. That's **50,000-125,000 tokens per page load** — most of it irrelevant noise (CSS classes, SVG paths, tracking scripts).
+When an AI agent needs to browse the web, the naive approach is dumping full page HTML into the context window. A typical e-commerce page is **1.2 MB of HTML — ~415,000 tokens** of CSS classes, SVG paths, and tracking scripts. Even a GitHub repo page is 300KB / ~100,000 tokens.
 
-`@ulpi/browse` solves this with a structured accessibility snapshot that compresses a full page into a **compact, actionable representation** — typically **50-200x smaller** than raw HTML — with ref-based annotations that let the agent interact with any element in a single command.
+`@ulpi/browse` solves this with a structured accessibility snapshot that compresses a full page into a **compact, actionable representation** — with ref-based annotations that let the agent interact with any element in a single command.
 
-## The Problem
+## The Problem (Measured)
 
 ```
-Raw HTML of mumzworld.com homepage:     ~400KB  → ~100,000 tokens
-browse snapshot -i (interactive only):  ~2KB    → ~500 tokens
+                                        Size        ~Tokens
+Playwright page.content() (mumzworld)   1.2 MB      ~415,000
+Playwright page.content() (github)      297 KB      ~101,000
+browse snapshot -i (mumzworld)          5.4 KB        ~1,379    ← 301x smaller
+browse snapshot -i (github)             4.2 KB        ~1,083    ←  94x smaller
 ```
 
-That's a **200x reduction**. And unlike raw HTML, every element in the snapshot is directly actionable.
+**5-300x fewer tokens.** And unlike raw HTML, every element in the snapshot is directly clickable by ref. See [BENCHMARKS.md](BENCHMARKS.md) for full data across multiple sites.
 
 ## What Makes This Different
 
@@ -82,14 +85,14 @@ Write commands are **not** retried (to avoid double form submissions). Read comm
 
 Every command is designed to return **structured, minimal output** — not raw browser dumps:
 
-| Command | What raw Playwright gives you | What `browse` gives you |
-|---------|-------------------------------|------------------------|
-| `text` | Full `page.content()` (~400KB) | Visible text only, no HTML (~2-5KB) |
-| `forms` | Nothing built-in | Structured JSON: fields, types, values, options |
-| `links` | Nothing built-in | `Link Text → URL` (one per line) |
-| `network` | Event stream you'd have to wire up | `GET /api/data → 200 (45ms, 1.2KB)` |
-| `perf` | Raw PerformanceNavigationTiming | `ttfb 120ms / load 850ms` |
-| `snapshot` | Raw ARIA tree (verbose) | Compact tree with actionable refs |
+| What you need | Raw Playwright | `browse` | Token savings |
+|---------------|----------------|----------|---------------|
+| Page content | `page.content()` → 1.2MB | `text` → 2.5KB | **~640x** |
+| Interactive elements | `ariaSnapshot()` → 15KB, no refs | `snapshot -i` → 5.4KB + refs | **~3x** + actionable |
+| Form fields | Write your own evaluator | `forms` → structured JSON | N/A |
+| All links | Write your own evaluator | `links` → `Text → URL` | N/A |
+| Network log | Wire up event listeners | `network` → one-liner per request | N/A |
+| Click element | Construct CSS/XPath selector | `click @e3` | Zero selector tokens |
 
 ## Install
 
@@ -128,8 +131,8 @@ browse click @e52
 # → redirected to sign-in page
 ```
 
-**Total tokens consumed by the agent for this 12-step flow: ~3,000.**
-With raw HTML, the same flow would consume **~500,000+ tokens** (loading full HTML at each step).
+**Total tokens consumed by the agent for this 12-step flow: ~15,000** (snapshot -i at each step).
+With `page.content()` at each step: **~4,000,000+ tokens** — 270x more.
 
 ## Command Reference
 
