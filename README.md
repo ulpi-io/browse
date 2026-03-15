@@ -92,7 +92,7 @@ $ browse snapshot -i -C
 
 Every detected element gets a ref. `browse click @e3` just works.
 
-### 4. 40+ Purpose-Built Commands vs Generic Tools
+### 4. 58+ Purpose-Built Commands vs Generic Tools
 
 @playwright/mcp has ~15 tools. For anything beyond navigate/click/type, you write JavaScript via `browser_evaluate`. `browse` has purpose-built commands that return structured, minimal output:
 
@@ -108,6 +108,17 @@ Every detected element gets a ref. `browse click @e3` just works.
 | Snapshot diff | Not available | `snapshot-diff` |
 | Responsive screenshots | Not available | `responsive` |
 | Device emulation | Not available | `emulate iphone` |
+| Input value | `browser_evaluate` + custom JS | `value <sel>` |
+| Element count | `browser_evaluate` + custom JS | `count <sel>` |
+| iframe targeting | Not available | `frame <sel>` / `frame main` |
+| Network mocking | Not available | `route <pattern> block\|fulfill` |
+| Offline mode | Not available | `offline on\|off` |
+| State persistence | Not available | `state save\|load` |
+| Credential vault | Not available | `auth save\|login\|list` |
+| HAR recording | Not available | `har start\|stop` |
+| Domain restriction | Not available | `--allowed-domains` |
+| Prompt injection defense | Not available | `--content-boundaries` |
+| JSON output mode | Not available | `--json` |
 
 ### 5. Persistent Daemon — 100ms Commands
 
@@ -167,10 +178,10 @@ For full process isolation (separate Chromium instances), use `BROWSE_PORT` to r
 ## Install
 
 ```bash
-bun install -g @ulpi/browse
+npm install -g @ulpi/browse
 ```
 
-Requires [Bun](https://bun.sh). Chromium is installed automatically via Playwright.
+Requires [Bun](https://bun.sh) runtime. Chromium is installed automatically via Playwright.
 
 ### Claude Code Skill
 
@@ -222,7 +233,7 @@ browse click @e52
 `text` | `html [sel]` | `links` | `forms` | `accessibility`
 
 ### Interaction
-`click <sel>` | `fill <sel> <val>` | `select <sel> <val>` | `hover <sel>` | `type <text>` | `press <key>` | `scroll [sel]` | `wait <sel>` | `viewport <WxH>`
+`click <sel>` | `dblclick <sel>` | `fill <sel> <val>` | `select <sel> <val>` | `hover <sel>` | `focus <sel>` | `check <sel>` | `uncheck <sel>` | `drag <src> <tgt>` | `type <text>` | `press <key>` | `keydown <key>` | `keyup <key>` | `scroll [sel|up|down]` | `wait <sel|--url|--network-idle>` | `viewport <WxH>` | `highlight <sel>` | `download <sel> [path]`
 
 ### Snapshot & Refs
 ```
@@ -244,7 +255,7 @@ After snapshot, use `@e1`, `@e2`... as selectors in any command.
 100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright built-ins.
 
 ### Inspection
-`js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `state <sel>` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
+`js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `element-state <sel>` | `value <sel>` | `count <sel>` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
 
 ### Visual
 `screenshot [path]` | `screenshot --annotate` | `pdf [path]` | `responsive [prefix]`
@@ -260,8 +271,20 @@ echo '[["goto","https://example.com"],["text"]]' | browse chain
 ### Tabs
 `tabs` | `tab <id>` | `newtab [url]` | `closetab [id]`
 
+### Frames
+`frame <sel>` | `frame main`
+
 ### Sessions
 `sessions` | `session-close <id>`
+
+### Network
+`route <pattern> block` | `route <pattern> fulfill <status> [body]` | `route clear` | `offline [on|off]`
+
+### State & Auth
+`state save [name]` | `state load [name]` | `auth save <name> <url> <user> <pass>` | `auth login <name>` | `auth list` | `auth delete <name>`
+
+### Recording
+`har start` | `har stop [path]`
 
 ### Server Control
 `status` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
@@ -293,8 +316,16 @@ browse [--session <id>] <command>
 |----------|---------|-------------|
 | `BROWSE_PORT` | auto 9400-10400 | Fixed server port |
 | `BROWSE_SESSION` | (none) | Default session ID for all commands |
+| `BROWSE_INSTANCE` | auto (PPID) | Instance ID for multi-Claude isolation |
 | `BROWSE_IDLE_TIMEOUT` | 1800000 (30m) | Idle shutdown in ms |
+| `BROWSE_TIMEOUT` | (none) | Override all command timeouts (ms) |
 | `BROWSE_LOCAL_DIR` | `.browse/` or `/tmp` | State/log directory |
+| `BROWSE_JSON` | (none) | Set to `1` for JSON output mode |
+| `BROWSE_CONTENT_BOUNDARIES` | (none) | Set to `1` for nonce-delimited output |
+| `BROWSE_ALLOWED_DOMAINS` | (none) | Comma-separated domain allowlist |
+| `BROWSE_PROXY` | (none) | Proxy server URL |
+| `BROWSE_PROXY_BYPASS` | (none) | Proxy bypass list |
+| `BROWSE_CDP_URL` | (none) | Connect to remote Chrome via CDP |
 
 ## Acknowledgments
 
