@@ -6,11 +6,35 @@
  * header, useragent, drag, keydown, keyup
  */
 
+import type { BrowserContext } from 'playwright';
 import type { BrowserManager } from '../browser-manager';
 import { resolveDevice, listDevices } from '../browser-manager';
 import type { DomainFilter } from '../domain-filter';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
+
+/**
+ * Clear all routes and re-register them in correct order:
+ * user routes first, domain filter last (Playwright checks last-registered first).
+ */
+async function rebuildRoutes(context: BrowserContext, bm: BrowserManager, domainFilter?: DomainFilter | null): Promise<void> {
+  await context.unrouteAll();
+  // User routes first (checked last by Playwright)
+  for (const r of bm.getUserRoutes()) {
+    if (r.action === 'block') {
+      await context.route(r.pattern, (route) => route.abort('blockedbyclient'));
+    } else {
+      await context.route(r.pattern, (route) => route.fulfill({ status: r.status || 200, body: r.body || '', contentType: 'text/plain' }));
+    }
+  }
+  // Domain filter last (checked first by Playwright)
+  if (domainFilter) {
+    await context.route('**/*', (route) => {
+      const url = route.request().url();
+      if (domainFilter.isAllowed(url)) { route.fallback(); } else { route.abort('blockedbyclient'); }
+    });
+  }
+}
 
 export async function handleWriteCommand(
   command: string,
@@ -64,7 +88,7 @@ export async function handleWriteCommand(
     case 'fill': {
       const [selector, ...valueParts] = args;
       const value = valueParts.join(' ');
-      if (!selector || !value) throw new Error('Usage: browse fill <selector> <value>');
+      if (!selector) throw new Error('Usage: browse fill <selector> <value>');
       const resolved = bm.resolveRef(selector);
       if ('locator' in resolved) {
         await resolved.locator.fill(value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
@@ -77,7 +101,7 @@ export async function handleWriteCommand(
     case 'select': {
       const [selector, ...valueParts] = args;
       const value = valueParts.join(' ');
-      if (!selector || !value) throw new Error('Usage: browse select <selector> <value>');
+      if (!selector) throw new Error('Usage: browse select <selector> <value>');
       const resolved = bm.resolveRef(selector);
       if ('locator' in resolved) {
         await resolved.locator.selectOption(value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
@@ -420,7 +444,7 @@ export async function handleWriteCommand(
         if (domainFilter) {
           await context.route('**/*', (route) => {
             const url = route.request().url();
-            if (domainFilter!.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+            if (domainFilter!.isAllowed(url)) { route.fallback(); } else { route.abort('blockedbyclient'); }
           });
         }
         return domainFilter ? 'All routes cleared (domain filter preserved)' : 'All routes cleared';
@@ -429,18 +453,16 @@ export async function handleWriteCommand(
       const action = args[1] || 'block';
 
       if (action === 'block') {
-        await context.route(pattern, (route) => route.abort('blockedbyclient'));
         bm.addUserRoute(pattern, 'block');
+        await rebuildRoutes(context, bm, domainFilter);
         return `Blocking requests matching: ${pattern}`;
       }
 
       if (action === 'fulfill') {
         const status = parseInt(args[2] || '200', 10);
         const body = args[3] || '';
-        await context.route(pattern, (route) =>
-          route.fulfill({ status, body, contentType: 'text/plain' })
-        );
         bm.addUserRoute(pattern, 'fulfill', status, body);
+        await rebuildRoutes(context, bm, domainFilter);
         return `Mocking requests matching: ${pattern} → ${status}${body ? ` "${body}"` : ''}`;
       }
 

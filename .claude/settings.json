@@ -53,7 +53,9 @@
       "Bash(browse restart:*)",
       "Bash(browse cookie:*)",
       "Bash(browse header:*)",
-      "Bash(browse useragent:*)"
+      "Bash(browse useragent:*)",
+      "Bash(browse sessions:*)",
+      "Bash(browse session-close:*)"
     ]
   }
 }

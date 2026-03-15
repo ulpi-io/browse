@@ -22,7 +22,7 @@ Fast headless browser CLI for AI coding agents. Persistent Chromium daemon via P
 - **Browser:** Playwright + Chromium (headless)
 - **Language:** TypeScript (ESNext, strict, bundler resolution)
 - **Tests:** `bun:test` (integration tests against real browser)
-- **Build:** `bun build --compile --external electron --external chromium-bidi` → standalone binary
+- **Build:** `bun run build` (uses `--external electron --external chromium-bidi`)
 
 ## Project Structure
 
@@ -35,14 +35,24 @@ src/browser-manager.ts     Playwright browser lifecycle (shared or owned)
 src/buffers.ts             SessionBuffers class + legacy global buffers
 src/snapshot.ts            ARIA snapshot with @ref system
 src/constants.ts           Default config values
+src/config.ts              Project config loader (browse.json)
 src/types.ts               Shared TypeScript interfaces
-src/commands/read.ts       16 read commands (per-session buffers)
-src/commands/write.ts      18 write commands (navigation/interaction)
-src/commands/meta.ts       14 meta commands (tabs, visual, chain, sessions)
+src/auth-vault.ts          AES-256-GCM encrypted credential storage
+src/domain-filter.ts       Domain allowlist (HTTP + WebSocket/EventSource/sendBeacon)
+src/har.ts                 HAR 1.2 export from network buffer
+src/png-compare.ts         Self-contained PNG decoder + pixel comparator
+src/policy.ts              Action policy gate (allow/deny/confirm per command)
+src/sanitize.ts            Path-safe name sanitization
+src/install-skill.ts       Claude Code skill installer
+src/commands/read.ts       19 read commands (per-session buffers)
+src/commands/write.ts      31 write commands (navigation/interaction)
+src/commands/meta.ts       23 meta commands (tabs, visual, chain, sessions)
 test/commands.test.ts      Integration tests
 test/snapshot.test.ts      Snapshot-specific tests
 test/sessions.test.ts      Session multiplexing isolation tests
 test/session-e2e.test.ts   E2E CLI session tests
+test/features.test.ts      Feature-specific tests (policy, auth, HAR, etc.)
+test/interactions.test.ts  Interaction command tests
 test/test-server.ts        Local HTTP fixture server
 test/fixtures/             HTML test fixtures
 ```
@@ -71,11 +81,11 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 - `BrowserManager.launch()` = own Chromium (multi-process mode)
 - `BrowserManager.launchWithBrowser(browser)` = shared Chromium (session mode)
 
-## Command Categories
+## Command Categories (73 total)
 
-- **Read** (18): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `value`, `count`, `devices`
-- **Write** (27): `goto`, `back`, `forward`, `reload`, `click`, `dblclick`, `fill`, `select`, `hover`, `focus`, `check`, `uncheck`, `type`, `press`, `keydown`, `keyup`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `emulate`, `drag`, `highlight`, `download`, `route`, `offline`, `dialog-accept`, `dialog-dismiss`
-- **Meta** (18): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `sessions`, `session-close`, `frame`, `state`, `auth`, `har`
+- **Read** (19): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `element-state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `devices`, `value`, `count`
+- **Write** (31): `goto`, `back`, `forward`, `reload`, `click`, `dblclick`, `fill`, `select`, `hover`, `focus`, `check`, `uncheck`, `type`, `press`, `keydown`, `keyup`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `dialog-accept`, `dialog-dismiss`, `emulate`, `drag`, `highlight`, `download`, `route`, `offline`
+- **Meta** (23): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `screenshot-diff`, `sessions`, `session-close`, `frame`, `state`, `find`, `auth`, `har`
 
 ## Development Rules
 
@@ -95,3 +105,6 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 - Device emulation recreates the entire browser context (Playwright limitation)
 - State files live in `.browse/` (auto-gitignored) or `/tmp` as fallback
 - Port range: 9400-10400 (1001 ports for multi-process isolation)
+- Domain filter uses `route.fallback()` for new sessions, `route.continue()` for initial setup
+- Frame targeting is per-tab via `frame <selector>` / `frame main`
+- PNG decode + pixel diff runs server-side (no external image deps)

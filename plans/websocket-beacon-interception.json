@@ -1,0 +1,85 @@
+{
+  "title": "WebSocket/Beacon/EventSource Domain Interception",
+  "branch": "feat/v0.2.0",
+  "mode": "HOLD",
+  "overview": "Close the last network interception gap vs agent-browser. Currently DomainFilter blocks HTTP requests via Playwright's context.route(), but WebSocket connections, navigator.sendBeacon(), and EventSource bypass the filter. Fix by injecting a JS init script that wraps these APIs with domain checks.",
+  "scopeChallenge": "DomainFilter already handles URL validation and HTTP blocking via Playwright route(). JS-level APIs (WebSocket, sendBeacon, EventSource) bypass this. CDP-level Fetch interception was ruled out — breaks Playwright abstraction. JS injection via addInitScript is simpler and covers all three APIs.",
+  "existingCodeLeverage": [
+    { "subProblem": "Domain matching logic", "existingCode": "src/domain-filter.ts isAllowed()", "action": "reuse" },
+    { "subProblem": "HTTP request blocking", "existingCode": "src/session-manager.ts:64 context.route()", "action": "reuse" },
+    { "subProblem": "Context recreation", "existingCode": "src/browser-manager.ts recreateContext()", "action": "extend" },
+    { "subProblem": "Test patterns", "existingCode": "test/features.test.ts", "action": "extend" }
+  ],
+  "failureModes": [
+    { "risk": "Page overrides WebSocket after our wrapper", "affectedTasks": ["TASK-001"], "mitigation": "Use Object.defineProperty with configurable: false to lock the wrapper" },
+    { "risk": "Init script runs after page JS (race)", "affectedTasks": ["TASK-001"], "mitigation": "addInitScript runs before any page JS by design (Playwright guarantee)" },
+    { "risk": "Allowed WebSocket connections break due to wrapper", "affectedTasks": ["TASK-001", "TASK-002"], "mitigation": "Wrapper must call original constructor with all args for allowed domains" },
+    { "risk": "Init script lost on context recreation", "affectedTasks": ["TASK-003"], "mitigation": "Store script on BrowserManager, re-apply in recreateContext" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "DomainFilter.generateInitScript()", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "WebSocket wrapper blocks disallowed domain", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "sendBeacon wrapper blocks disallowed domain", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "EventSource wrapper blocks disallowed domain", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "Init script survives context recreation", "coveringTask": "TASK-003", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Add generateInitScript() to DomainFilter and apply in SessionManager",
+      "description": "Add a method to DomainFilter that returns a JS string wrapping WebSocket, EventSource, and navigator.sendBeacon with domain checks. Apply via context.addInitScript() in session-manager.ts. The generated JS must replicate isAllowed() logic in pure browser JS. Wrap original constructors, check URL domain, throw Error if blocked. Pass allowed domains as JSON array embedded in script string.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "generateInitScript() returns valid JS that wraps WebSocket, EventSource, and sendBeacon",
+        "Allowed domains pass through (WebSocket to allowed host connects normally)",
+        "Blocked domains throw an Error with a message containing the blocked hostname"
+      ],
+      "filesToModify": ["src/domain-filter.ts", "src/session-manager.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Add integration tests for WebSocket/Beacon/EventSource interception",
+      "description": "Create test fixture and integration tests verifying domain filter blocks WebSocket, EventSource, and sendBeacon to disallowed domains while allowing them to allowed domains. Use page.evaluate() to verify wrappers throw for blocked domains.",
+      "type": "test",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "WebSocket to blocked domain throws error (caught in page.evaluate)",
+        "sendBeacon to blocked domain returns false or throws",
+        "EventSource to blocked domain throws error",
+        "WebSocket to allowed domain does NOT throw (constructor succeeds)"
+      ],
+      "filesToModify": ["test/features.test.ts"],
+      "filesToCreate": ["test/fixtures/websocket.html"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Preserve init script across context recreation",
+      "description": "Ensure recreateContext() re-applies the domain filter init script to the new context. Store script string on BrowserManager, call addInitScript() on new context in recreateContext(). Call manager.setInitScript(script) in session-manager.ts when setting up domain filter.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "After emulate device with domain filter active, WebSocket to blocked domain still throws",
+        "After useragent change with domain filter active, init script still applied",
+        "Without domain filter, no init script is injected (no overhead)"
+      ],
+      "filesToModify": ["src/browser-manager.ts", "src/session-manager.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-001"]
+  }
+}

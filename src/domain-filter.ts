@@ -20,7 +20,11 @@ export class DomainFilter {
    * Non-HTTP URLs (about:blank, data:, etc.) are always allowed.
    */
   isAllowed(url: string): boolean {
-    // Non-HTTP(S) URLs are always allowed
+    // Block file:// and javascript: URLs — security risk
+    if (url.startsWith('file://') || url.startsWith('javascript:')) {
+      return false;
+    }
+    // Non-HTTP(S) URLs (about:blank, data:, blob:) are always allowed
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return true;
     }
@@ -79,7 +83,9 @@ export class DomainFilter {
     // Normalize ws/wss to http/https for URL parsing
     if (str.startsWith('ws://')) str = 'http://' + str.slice(5);
     else if (str.startsWith('wss://')) str = 'https://' + str.slice(6);
-    // Non-HTTP(S) always allowed (data:, blob:, etc.)
+    // Block file:// and javascript: URLs
+    if (str.startsWith('file://') || str.startsWith('javascript:')) return false;
+    // Non-HTTP(S) always allowed (data:, blob:, about:)
     if (!str.startsWith('http://') && !str.startsWith('https://')) return true;
     var hostname;
     try { hostname = new URL(str).hostname.toLowerCase(); } catch(e) { return false; }

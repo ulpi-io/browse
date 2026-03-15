@@ -125,9 +125,9 @@ const META_COMMANDS = new Set([
   'status', 'stop', 'restart',
   'screenshot', 'pdf', 'responsive',
   'chain', 'diff',
-  'url', 'snapshot', 'snapshot-diff',
+  'url', 'snapshot', 'snapshot-diff', 'screenshot-diff',
   'sessions', 'session-close',
-  'frame', 'state',
+  'frame', 'state', 'find',
   'auth', 'har',
 ]);
 
@@ -349,7 +349,7 @@ const flushInterval = setInterval(() => {
 const sessionCleanupInterval = setInterval(async () => {
   if (!sessionManager || isShuttingDown) return;
 
-  const closed = await sessionManager.closeIdleSessions(IDLE_TIMEOUT_MS);
+  const closed = await sessionManager.closeIdleSessions(IDLE_TIMEOUT_MS, (session) => flushSessionBuffers(session, true));
   for (const id of closed) {
     console.log(`[browse] Session "${id}" idle for ${IDLE_TIMEOUT_MS / 1000}s — closed`);
   }

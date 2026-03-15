@@ -97,6 +97,33 @@ export async function handleMetaCommand(
       if (!sessionManager) throw new Error('Session management not available');
       const id = args[0];
       if (!id) throw new Error('Usage: browse session-close <id>');
+      // Flush buffers before closing so logs aren't lost
+      const closingSession = sessionManager.getAllSessions().find(s => s.id === id);
+      if (closingSession) {
+        const buffers = closingSession.buffers;
+        const consolePath = `${closingSession.outputDir}/console.log`;
+        const networkPath = `${closingSession.outputDir}/network.log`;
+        const newConsoleCount = buffers.consoleTotalAdded - buffers.lastConsoleFlushed;
+        if (newConsoleCount > 0) {
+          const count = Math.min(newConsoleCount, buffers.consoleBuffer.length);
+          const entries = buffers.consoleBuffer.slice(-count);
+          const lines = entries.map(e =>
+            `[${new Date(e.timestamp).toISOString()}] [${e.level}] ${e.text}`
+          ).join('\n') + '\n';
+          fs.appendFileSync(consolePath, lines);
+          buffers.lastConsoleFlushed = buffers.consoleTotalAdded;
+        }
+        const newNetworkCount = buffers.networkTotalAdded - buffers.lastNetworkFlushed;
+        if (newNetworkCount > 0) {
+          const count = Math.min(newNetworkCount, buffers.networkBuffer.length);
+          const entries = buffers.networkBuffer.slice(-count);
+          const lines = entries.map(e =>
+            `[${new Date(e.timestamp).toISOString()}] ${e.method} ${e.url} → ${e.status || 'pending'} (${e.duration || '?'}ms, ${e.size || '?'}B)`
+          ).join('\n') + '\n';
+          fs.appendFileSync(networkPath, lines);
+          buffers.lastNetworkFlushed = buffers.networkTotalAdded;
+        }
+      }
       await sessionManager.closeSession(id);
       return `Session "${id}" closed`;
     }
@@ -104,12 +131,41 @@ export async function handleMetaCommand(
     // ─── State Persistence ───────────────────────────────
     case 'state': {
       const subcommand = args[0];
-      if (!subcommand || !['save', 'load'].includes(subcommand)) {
-        throw new Error('Usage: browse state save [name] | browse state load [name]');
+      if (!subcommand || !['save', 'load', 'list', 'show'].includes(subcommand)) {
+        throw new Error('Usage: browse state save|load|list|show [name]');
       }
       const name = sanitizeName(args[1] || 'default');
       const statesDir = `${LOCAL_DIR}/states`;
       const statePath = `${statesDir}/${name}.json`;
+
+      if (subcommand === 'list') {
+        if (!fs.existsSync(statesDir)) return '(no saved states)';
+        const files = fs.readdirSync(statesDir).filter(f => f.endsWith('.json'));
+        if (files.length === 0) return '(no saved states)';
+        const lines: string[] = [];
+        for (const file of files) {
+          const fp = `${statesDir}/${file}`;
+          const stat = fs.statSync(fp);
+          lines.push(`  ${file.replace('.json', '')}  ${stat.size}B  ${new Date(stat.mtimeMs).toISOString()}`);
+        }
+        return lines.join('\n');
+      }
+
+      if (subcommand === 'show') {
+        if (!fs.existsSync(statePath)) {
+          throw new Error(`State file not found: ${statePath}`);
+        }
+        const data = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        const cookieCount = data.cookies?.length || 0;
+        const originCount = data.origins?.length || 0;
+        const storageItems = (data.origins || []).reduce((sum: number, o: any) => sum + (o.localStorage?.length || 0), 0);
+        return [
+          `State: ${name}`,
+          `Cookies: ${cookieCount}`,
+          `Origins: ${originCount}`,
+          `Storage items: ${storageItems}`,
+        ].join('\n');
+      }
 
       if (subcommand === 'save') {
         const context = bm.getContext();
@@ -125,27 +181,37 @@ export async function handleMetaCommand(
           throw new Error(`State file not found: ${statePath}. Run "browse state save ${name}" first.`);
         }
         const stateData = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-        // Add cookies from saved state to current context
         const context = bm.getContext();
         if (!context) throw new Error('No browser context');
+        const warnings: string[] = [];
         if (stateData.cookies?.length) {
-          await context.addCookies(stateData.cookies);
+          try {
+            await context.addCookies(stateData.cookies);
+          } catch (err: any) {
+            warnings.push(`Cookies: ${err.message}`);
+          }
         }
-        // Restore localStorage/sessionStorage for each origin
         if (stateData.origins?.length) {
           for (const origin of stateData.origins) {
             if (origin.localStorage?.length) {
-              const page = bm.getPage();
-              await page.goto(origin.origin, { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
-              for (const item of origin.localStorage) {
-                await page.evaluate(([k, v]) => localStorage.setItem(k, v), [item.name, item.value]).catch(() => {});
+              try {
+                const page = bm.getPage();
+                await page.goto(origin.origin, { waitUntil: 'domcontentloaded', timeout: 5000 });
+                for (const item of origin.localStorage) {
+                  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [item.name, item.value]);
+                }
+              } catch (err: any) {
+                warnings.push(`Storage for ${origin.origin}: ${err.message}`);
               }
             }
           }
         }
+        if (warnings.length > 0) {
+          return `State loaded: ${statePath} (${warnings.length} warning(s))\n${warnings.join('\n')}`;
+        }
         return `State loaded: ${statePath}`;
       }
-      throw new Error('Usage: browse state save [name] | browse state load [name]');
+      throw new Error('Usage: browse state save|load|list|show [name]');
     }
 
     // ─── Visual ────────────────────────────────────────
@@ -300,7 +366,7 @@ export async function handleMetaCommand(
           }
 
           let result: string;
-          if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm);
+          if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm, currentSession?.domainFilter);
           else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm, sessionBuffers);
           else                          result = await handleMetaCommand(name, cmdArgs, bm, shutdown, sessionManager, currentSession);
           results.push(`[${name}] ${result}`);
@@ -413,6 +479,48 @@ export async function handleMetaCommand(
       return output.join('\n');
     }
 
+    // ─── Screenshot Diff ──────────────────────────────
+    case 'screenshot-diff': {
+      const baseline = args[0];
+      if (!baseline) throw new Error('Usage: browse screenshot-diff <baseline> [current] [--threshold 0.1]');
+      if (!fs.existsSync(baseline)) throw new Error(`Baseline file not found: ${baseline}`);
+
+      let thresholdPct = 0.1;
+      const threshIdx = args.indexOf('--threshold');
+      if (threshIdx !== -1 && args[threshIdx + 1]) {
+        thresholdPct = parseFloat(args[threshIdx + 1]);
+      }
+
+      const baselineBuffer = fs.readFileSync(baseline);
+
+      let currentBuffer: Buffer;
+      const currentArg = args[1];
+      if (currentArg && !currentArg.startsWith('--')) {
+        if (!fs.existsSync(currentArg)) throw new Error(`Current screenshot not found: ${currentArg}`);
+        currentBuffer = fs.readFileSync(currentArg);
+      } else {
+        const page = bm.getPage();
+        currentBuffer = await page.screenshot({ fullPage: true }) as Buffer;
+      }
+
+      const { compareScreenshots } = await import('../png-compare');
+      const result = compareScreenshots(baselineBuffer, currentBuffer, thresholdPct);
+
+      const diffPath = baseline.replace(/\.[^.]+$/, '-diff.png');
+      if (!result.passed) {
+        fs.writeFileSync(diffPath, currentBuffer);
+      }
+
+      return [
+        `Pixels: ${result.totalPixels}`,
+        `Different: ${result.diffPixels}`,
+        `Mismatch: ${result.mismatchPct.toFixed(3)}%`,
+        `Threshold: ${thresholdPct}%`,
+        `Result: ${result.passed ? 'PASS' : 'FAIL'}`,
+        ...(!result.passed ? [`Diff saved: ${diffPath}`] : []),
+      ].join('\n');
+    }
+
     // ─── Auth Vault ─────────────────────────────────────
     case 'auth': {
       const subcommand = args[0];
@@ -422,14 +530,23 @@ export async function handleMetaCommand(
       switch (subcommand) {
         case 'save': {
           const [, name, url, username] = args;
-          // Password: from arg, env var, or --password-stdin flag
-          let password: string | undefined = args[4];
-          if (password === '--password-stdin') password = undefined;
+          // Parse optional selector flags first (Task 9: scan flags before positional args)
+          let userSel: string | undefined;
+          let passSel: string | undefined;
+          let submitSel: string | undefined;
+          const positionalAfterUsername: string[] = [];
+          const knownFlags = new Set(['--user-sel', '--pass-sel', '--submit-sel']);
+          for (let i = 4; i < args.length; i++) {
+            if (args[i] === '--user-sel' && args[i+1]) { userSel = args[++i]; }
+            else if (args[i] === '--pass-sel' && args[i+1]) { passSel = args[++i]; }
+            else if (args[i] === '--submit-sel' && args[i+1]) { submitSel = args[++i]; }
+            else if (!knownFlags.has(args[i])) { positionalAfterUsername.push(args[i]); }
+          }
+          // Password: from positional arg (after username), or env var
+          // (--password-stdin is handled in CLI before reaching server)
+          let password: string | undefined = positionalAfterUsername[0];
           if (!password && process.env.BROWSE_AUTH_PASSWORD) {
             password = process.env.BROWSE_AUTH_PASSWORD;
-          }
-          if (!password && args.includes('--password-stdin')) {
-            password = (await Bun.stdin.text()).trim();
           }
           if (!name || !url || !username || !password) {
             throw new Error(
@@ -437,15 +554,6 @@ export async function handleMetaCommand(
               '       browse auth save <name> <url> <username> --password-stdin\n' +
               '       BROWSE_AUTH_PASSWORD=secret browse auth save <name> <url> <username>'
             );
-          }
-          // Parse optional selector flags
-          let userSel: string | undefined;
-          let passSel: string | undefined;
-          let submitSel: string | undefined;
-          for (let i = 4; i < args.length; i++) {
-            if (args[i] === '--user-sel' && args[i+1]) { userSel = args[++i]; }
-            else if (args[i] === '--pass-sel' && args[i+1]) { passSel = args[++i]; }
-            else if (args[i] === '--submit-sel' && args[i+1]) { submitSel = args[++i]; }
           }
           const selectors = (userSel || passSel || submitSel) ? { username: userSel, password: passSel, submit: submitSel } : undefined;
           vault.save(name, url, username, password, selectors);
@@ -500,6 +608,48 @@ export async function handleMetaCommand(
       }
 
       throw new Error('Usage: browse har start | browse har stop [path]');
+    }
+
+    // ─── Semantic Locator ──────────────────────────────
+    case 'find': {
+      const root = bm.getLocatorRoot();
+      const sub = args[0];
+      if (!sub) throw new Error('Usage: browse find role|text|label|placeholder|testid <query> [name]');
+      const query = args[1];
+      if (!query) throw new Error(`Usage: browse find ${sub} <query>`);
+
+      let locator;
+      switch (sub) {
+        case 'role': {
+          const nameOpt = args[2];
+          locator = nameOpt ? root.getByRole(query as any, { name: nameOpt }) : root.getByRole(query as any);
+          break;
+        }
+        case 'text':
+          locator = root.getByText(query);
+          break;
+        case 'label':
+          locator = root.getByLabel(query);
+          break;
+        case 'placeholder':
+          locator = root.getByPlaceholder(query);
+          break;
+        case 'testid':
+          locator = root.getByTestId(query);
+          break;
+        default:
+          throw new Error(`Unknown find type: ${sub}. Use role|text|label|placeholder|testid`);
+      }
+
+      const count = await locator.count();
+      let firstText = '';
+      if (count > 0) {
+        try {
+          firstText = (await locator.first().textContent({ timeout: 2000 })) || '';
+          firstText = firstText.trim().slice(0, 100);
+        } catch {}
+      }
+      return `Found ${count} match(es)${firstText ? `: "${firstText}"` : ''}`;
     }
 
     // ─── iframe Targeting ─────────────────────────────
