@@ -1,8 +1,95 @@
 # @ulpi/browse
 
-Fast headless browser CLI — persistent Chromium daemon via Playwright.
+**Give AI agents eyes and hands on the web — without burning tokens on raw HTML.**
 
-Designed for AI coding agents. Starts a background Chromium server on first use (~100-200ms per command after that), supports 40+ commands, ref-based element selection, and auto-shutdown after idle timeout.
+When an AI agent needs to browse the web, the naive approach is dumping full page HTML into the context window. A typical page is 200-500KB of HTML. That's **50,000-125,000 tokens per page load** — most of it irrelevant noise (CSS classes, SVG paths, tracking scripts).
+
+`@ulpi/browse` solves this with a structured accessibility snapshot that compresses a full page into a **compact, actionable representation** — typically **50-200x smaller** than raw HTML — with ref-based annotations that let the agent interact with any element in a single command.
+
+## The Problem
+
+```
+Raw HTML of mumzworld.com homepage:     ~400KB  → ~100,000 tokens
+browse snapshot -i (interactive only):  ~2KB    → ~500 tokens
+```
+
+That's a **200x reduction**. And unlike raw HTML, every element in the snapshot is directly actionable.
+
+## What Makes This Different
+
+### 1. Ref-Based Element Selection — No More CSS Selector Gymnastics
+
+After a `snapshot`, every element gets a stable ref (`@e1`, `@e2`, ...) backed by a Playwright Locator. The agent doesn't need to construct fragile CSS selectors or XPaths — it just says `click @e3`.
+
+```bash
+$ browse snapshot -i
+@e1 [button] "Help 24/7"
+@e2 [link] "Mumzworld"
+  @e3 [searchbox]
+@e4 [link] "Sign In"
+@e5 [link] "Cart"
+      @e6 [link] "Sale"
+      @e7 [link] "Gear"
+      @e8 [link] "Toys"
+
+$ browse fill @e3 "strollers"
+Filled @e3
+
+$ browse press Enter
+Pressed Enter
+```
+
+No selectors. No DOM traversal. No guessing. The agent sees `@e3 [searchbox]`, fills it, done.
+
+### 2. Cursor-Interactive Detection — Catch What ARIA Misses
+
+Modern SPAs are full of `<div onclick="...">` and `<span style="cursor:pointer">` elements that are invisible to accessibility trees. The `-C` flag scans the DOM for these hidden interactive elements and gives them refs too:
+
+```bash
+$ browse snapshot -i -C
+@e1 [button] "Submit"
+@e2 [textbox] "Email"
+@e3 [link] "Sign In"
+
+[cursor-interactive]
+@e4 [div.card] "Add to cart" (cursor:pointer)
+@e5 [span.close] "Close dialog" (onclick)
+@e6 [div.tab] "Custom Tab" (tabindex)
+@e7 [div.menu] "Open Menu" (data-action)
+```
+
+The agent can now `click @e4` to add to cart — something raw Playwright accessibility APIs would miss entirely.
+
+### 3. Persistent Daemon — 100ms Commands, Not 3-Second Browser Launches
+
+Every Playwright script pays a ~2-3 second tax to launch Chromium. `browse` starts a persistent background server on first use and keeps it running. Every subsequent command is just an HTTP call to localhost:
+
+```
+First command:    ~2s  (server + Chromium startup)
+Every command after: ~100-200ms  (HTTP to localhost)
+Idle shutdown:    30 min (configurable)
+```
+
+For an agent running 20 browser commands in a session, that's **~40 seconds saved** vs launching a fresh browser each time.
+
+### 4. Crash Recovery Without Agent Logic
+
+Chromium crashed? Server died? The CLI detects it and auto-restarts transparently. The agent doesn't need try/catch/retry logic — it just works.
+
+Write commands are **not** retried (to avoid double form submissions). Read commands retry automatically. The agent gets a clear error if recovery isn't possible.
+
+### 5. Token-Efficient Output Across All Commands
+
+Every command is designed to return **structured, minimal output** — not raw browser dumps:
+
+| Command | What raw Playwright gives you | What `browse` gives you |
+|---------|-------------------------------|------------------------|
+| `text` | Full `page.content()` (~400KB) | Visible text only, no HTML (~2-5KB) |
+| `forms` | Nothing built-in | Structured JSON: fields, types, values, options |
+| `links` | Nothing built-in | `Link Text → URL` (one per line) |
+| `network` | Event stream you'd have to wire up | `GET /api/data → 200 (45ms, 1.2KB)` |
+| `perf` | Raw PerformanceNavigationTiming | `ttfb 120ms / load 850ms` |
+| `snapshot` | Raw ARIA tree (verbose) | Compact tree with actionable refs |
 
 ## Install
 
@@ -10,172 +97,114 @@ Designed for AI coding agents. Starts a background Chromium server on first use 
 bun install -g @ulpi/browse
 ```
 
-Requires [Bun](https://bun.sh) runtime. Chromium is installed automatically via Playwright on first install.
+Requires [Bun](https://bun.sh). Chromium is installed automatically via Playwright.
 
-## Quick Start
+## Real-World Example: E-Commerce Flow
+
+Here's an agent browsing mumzworld.com — search, find a product, add to cart, checkout:
 
 ```bash
-browse goto https://example.com
-browse text                        # extract page text
-browse snapshot -i                 # interactive elements with refs
-browse click @e3                   # click by ref
-browse screenshot ~/page.png       # full-page screenshot
-browse stop                        # shut down server
+# Navigate and search
+browse goto https://www.mumzworld.com
+browse snapshot -i                    # find the searchbox → @e3
+browse fill @e3 "strollers"
+browse press Enter
+
+# Find the right product (1,400 AED stroller)
+browse text                           # scan prices in results
+browse goto "https://www.mumzworld.com/en/doona-infant-car-seat..."
+
+# Add to cart
+browse snapshot -i                    # find Add to Cart → @e54
+browse click @e54
+
+# Handle the cart modal
+browse snapshot -i -s "[role=dialog]" # scope snapshot to modal only
+browse click @e3                      # "View Cart"
+
+# Checkout
+browse snapshot -i                    # find Checkout → @e52
+browse click @e52
+# → redirected to sign-in page
 ```
 
-## Commands
+**Total tokens consumed by the agent for this 12-step flow: ~3,000.**
+With raw HTML, the same flow would consume **~500,000+ tokens** (loading full HTML at each step).
+
+## Command Reference
 
 ### Navigation
-
-| Command | Description |
-|---------|-------------|
-| `goto <url>` | Navigate to URL |
-| `back` | Go back |
-| `forward` | Go forward |
-| `reload` | Reload page |
-| `url` | Print current URL |
+`goto <url>` | `back` | `forward` | `reload` | `url`
 
 ### Content Extraction
-
-| Command | Description |
-|---------|-------------|
-| `text` | Extract visible page text (no HTML) |
-| `html [selector]` | Full HTML or element innerHTML |
-| `links` | List all links with text and href |
-| `forms` | Discover form fields (JSON) |
-| `accessibility` | Raw ARIA accessibility tree |
+`text` | `html [sel]` | `links` | `forms` | `accessibility`
 
 ### Interaction
-
-| Command | Description |
-|---------|-------------|
-| `click <sel>` | Click element (CSS selector or `@ref`) |
-| `fill <sel> <value>` | Fill input field |
-| `select <sel> <value>` | Select dropdown option |
-| `hover <sel>` | Hover over element |
-| `type <text>` | Type text (focused element) |
-| `press <key>` | Press key (Enter, Tab, Escape, etc.) |
-| `scroll [sel]` | Scroll element into view or to bottom |
-| `wait <sel> [timeout]` | Wait for element to appear |
-| `viewport <WxH>` | Set viewport size (e.g., `375x812`) |
+`click <sel>` | `fill <sel> <val>` | `select <sel> <val>` | `hover <sel>` | `type <text>` | `press <key>` | `scroll [sel]` | `wait <sel>` | `viewport <WxH>`
 
 ### Snapshot & Refs
-
-```bash
-browse snapshot              # full accessibility tree with refs
-browse snapshot -i           # interactive elements only
-browse snapshot -c           # compact (remove empty structural elements)
-browse snapshot -C           # detect cursor-interactive elements (divs with cursor:pointer, onclick, tabindex)
-browse snapshot -d 3         # limit depth to 3 levels
-browse snapshot -s "#main"   # scope to CSS selector
-
-# After snapshot, use refs as selectors:
-browse click @e3
-browse fill @e4 "hello"
-browse hover @e1
-browse html @e2
-browse css @e5 color
-browse attrs @e6
 ```
+snapshot [-i] [-c] [-C] [-d N] [-s sel]
+  -i    Interactive elements only (buttons, links, inputs)
+  -c    Compact — remove empty structural nodes
+  -C    Cursor-interactive — detect hidden clickable elements
+  -d N  Limit tree depth
+  -s    Scope to CSS selector
+```
+After snapshot, use `@e1`, `@e2`... as selectors in any command.
 
 ### Snapshot Diff
-
-```bash
-browse snapshot -i           # take baseline
-# ... interact with page ...
-browse snapshot-diff         # show what changed
-```
+`snapshot-diff` — compare current page against last snapshot (strips ref numbers to avoid false positives from renumbering).
 
 ### Device Emulation
+`emulate <device>` | `emulate reset` | `devices [filter]`
 
-```bash
-browse emulate iphone        # emulate iPhone 15
-browse emulate "Pixel 7"     # emulate Pixel 7
-browse emulate reset          # back to desktop (1920x1080)
-browse devices                # list all available devices
-browse devices iphone         # filter devices
-```
+Supports 100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright built-ins.
 
 ### Inspection
-
-| Command | Description |
-|---------|-------------|
-| `js <expr>` | Evaluate JavaScript expression |
-| `eval <file>` | Evaluate JavaScript file |
-| `css <sel> <property>` | Get computed CSS property |
-| `attrs <sel>` | Get element attributes (JSON) |
-| `state <sel>` | Get element state (visible, enabled, checked, etc.) |
-| `console [--clear]` | View/clear console messages |
-| `network [--clear]` | View/clear network requests |
-| `cookies` | List cookies (JSON) |
-| `storage [set <k> <v>]` | View/set localStorage |
-| `perf` | Page load performance timings |
+`js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `state <sel>` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
 
 ### Visual
+`screenshot [path]` | `screenshot --annotate` | `pdf [path]` | `responsive [prefix]`
 
-```bash
-browse screenshot [path]          # full-page screenshot
-browse screenshot --annotate      # screenshot with numbered element badges
-browse pdf [path]                 # save page as PDF
-browse responsive [prefix]        # mobile + tablet + desktop screenshots
-```
+`--annotate` overlays numbered badges on interactive elements and returns a legend — useful for visual debugging.
 
 ### Compare
-
-```bash
-browse diff <url1> <url2>         # text diff between two pages
-```
+`diff <url1> <url2>` — text diff between two pages (uses a temp tab, preserves your session).
 
 ### Multi-Step
-
 ```bash
-echo '[["goto","https://example.com"],["text"],["screenshot","/tmp/shot.png"]]' | browse chain
+echo '[["goto","https://example.com"],["text"]]' | browse chain
 ```
 
 ### Tabs
-
-| Command | Description |
-|---------|-------------|
-| `tabs` | List all tabs |
-| `tab <id>` | Switch to tab |
-| `newtab [url]` | Open new tab |
-| `closetab [id]` | Close tab |
+`tabs` | `tab <id>` | `newtab [url]` | `closetab [id]`
 
 ### Server Control
-
-| Command | Description |
-|---------|-------------|
-| `status` | Server health, URL, tabs, PID, uptime |
-| `cookie <n>=<v>` | Set cookie |
-| `header <n>:<v>` | Set extra HTTP header |
-| `useragent <str>` | Set user agent |
-| `stop` | Shut down server |
-| `restart` | Restart server (fresh browser) |
+`status` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
 
 ## Architecture
 
 ```
 browse <command>  →  CLI (thin HTTP client)
                         ↓
-                  Server (persistent daemon on localhost)
+                  Persistent server (localhost, auto-started)
                         ↓
                   Chromium (Playwright, headless)
 ```
 
-- **First command** starts the server in the background (~2-3s)
-- **Subsequent commands** are fast (~100-200ms) — just HTTP to localhost
-- **Auto-shutdown** after 30 min idle (configurable via `BROWSE_IDLE_TIMEOUT`)
-- **Crash recovery** — CLI auto-restarts server if Chromium crashes
+- Server auto-starts on first command, stays running across commands
+- Auto-shutdown after 30 min idle (configurable)
+- State file in project `.browse/` directory (auto-gitignored)
+- Crash recovery: CLI detects dead server and restarts transparently
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `BROWSE_PORT` | Fixed server port | auto-scan 9400-9410 |
-| `BROWSE_IDLE_TIMEOUT` | Idle shutdown (ms) | 1800000 (30 min) |
-| `BROWSE_SERVER_SCRIPT` | Path to server.ts | auto-detected |
-| `BROWSE_LOCAL_DIR` | State/log directory | project `.browse/` or `/tmp` |
-| `BROWSE_STATE_FILE` | State file path | auto |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BROWSE_PORT` | auto 9400-9410 | Fixed server port |
+| `BROWSE_IDLE_TIMEOUT` | 1800000 (30m) | Idle shutdown in ms |
+| `BROWSE_LOCAL_DIR` | `.browse/` or `/tmp` | State/log directory |
 
 ## License
 
