@@ -4,11 +4,11 @@
 
 When AI agents browse the web, the bottleneck isn't Chromium — it's **what gets dumped into the context window**. [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp) sends the full accessibility snapshot on every navigate, click, and keystroke. On a real e-commerce page, that's **~16,000 tokens per action** — automatically, whether the agent needs it or not.
 
-Ten actions and you've burned **159K tokens — 79% of a 200K context window** — just on browser output. That leaves almost nothing for the agent to actually think.
+Ten actions and you've burned **146K tokens — 73% of a 200K context window** — just on browser output. That leaves almost nothing for the agent to actually think.
 
 `@ulpi/browse` flips this. Navigation returns 11 tokens. Clicks return 15 tokens. The agent requests a page snapshot **only when it needs one** — and can filter to interactive elements only, cutting another 2-6x.
 
-**Same 10 actions: 12K tokens. 6% of context. 13x less than @playwright/mcp.**
+**Same 10 actions: ~11K tokens. 6% of context. 13x less than @playwright/mcp.**
 
 ## Benchmarks (Measured)
 
@@ -35,7 +35,7 @@ And that's the per-snapshot comparison. The real gap is architectural — @playw
 |---|---:|---:|
 | Tokens on `navigate` | ~14,578 (auto-dumped) | **~11** (one-liner) |
 | Tokens on `click` | ~14,578 (auto-dumped) | **~15** (one-liner) |
-| 10-action session | ~145,780 | **~11,511** |
+| 10-action session | ~145,780 | **~11,388** |
 | Context consumed (200K) | **73%** | **6%** |
 
 The agent decides when to see the page. Most actions don't need a snapshot.
@@ -205,7 +205,7 @@ browse snapshot -i                    # find Checkout → @e52
 browse click @e52
 ```
 
-**12 steps. ~15K tokens total.** With @playwright/mcp: **~190K tokens** for the same flow.
+**12 steps. ~24K tokens total.** With @playwright/mcp: **~240K tokens** for the same flow (every action dumps a full snapshot).
 
 ## Command Reference
 
