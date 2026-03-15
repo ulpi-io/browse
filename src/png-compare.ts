@@ -100,6 +100,7 @@ export function compareScreenshots(
   baselineBuf: Buffer,
   currentBuf: Buffer,
   thresholdPct: number = 0.1,
+  colorThreshold: number = 30,
 ): CompareResult {
   const base = decodePNG(baselineBuf);
   const curr = decodePNG(currentBuf);
@@ -108,6 +109,8 @@ export function compareScreenshots(
   const h = Math.max(base.height, curr.height);
   const totalPixels = w * h;
   let diffPixels = 0;
+  // Squared color distance threshold. 0 = exact match (any difference counts).
+  const colorThreshSq = colorThreshold * colorThreshold * 3; // across R,G,B channels
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -120,7 +123,8 @@ export function compareScreenshots(
       const dr = base.data[bi] - curr.data[ci];
       const dg = base.data[bi + 1] - curr.data[ci + 1];
       const db = base.data[bi + 2] - curr.data[ci + 2];
-      if (dr * dr + dg * dg + db * db > 900) diffPixels++;
+      const distSq = dr * dr + dg * dg + db * db;
+      if (colorThreshold === 0 ? distSq > 0 : distSq > colorThreshSq) diffPixels++;
     }
   }
 

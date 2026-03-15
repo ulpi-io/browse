@@ -493,11 +493,16 @@ export async function handleMetaCommand(
 
       const baselineBuffer = fs.readFileSync(baseline);
 
+      // Find optional current image path: any non-flag arg after baseline
       let currentBuffer: Buffer;
-      const currentArg = args[1];
-      if (currentArg && !currentArg.startsWith('--')) {
-        if (!fs.existsSync(currentArg)) throw new Error(`Current screenshot not found: ${currentArg}`);
-        currentBuffer = fs.readFileSync(currentArg);
+      let currentPath: string | undefined;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--threshold') { i++; continue; }
+        if (!args[i].startsWith('--')) { currentPath = args[i]; break; }
+      }
+      if (currentPath) {
+        if (!fs.existsSync(currentPath)) throw new Error(`Current screenshot not found: ${currentPath}`);
+        currentBuffer = fs.readFileSync(currentPath);
       } else {
         const page = bm.getPage();
         currentBuffer = await page.screenshot({ fullPage: true }) as Buffer;
@@ -506,8 +511,14 @@ export async function handleMetaCommand(
       const { compareScreenshots } = await import('../png-compare');
       const result = compareScreenshots(baselineBuffer, currentBuffer, thresholdPct);
 
-      const diffPath = baseline.replace(/\.[^.]+$/, '-diff.png');
+      // Diff path: append -diff before extension, or add -diff.png if no extension
+      const extIdx = baseline.lastIndexOf('.');
+      const diffPath = extIdx > 0
+        ? baseline.slice(0, extIdx) + '-diff' + baseline.slice(extIdx)
+        : baseline + '-diff.png';
       if (!result.passed) {
+        // Write current screenshot as the "what changed" artifact
+        // (true pixel-diff image generation requires re-rendering differences)
         fs.writeFileSync(diffPath, currentBuffer);
       }
 
