@@ -22,11 +22,9 @@ const cliFlags = {
 };
 
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10);
-// Instance isolation: each parent process (e.g., Claude Code) gets its own server.
-// BROWSE_PORT takes precedence (explicit), then BROWSE_INSTANCE (env override), then PPID (auto).
-// In compiled mode ($bunfs), PPID is unstable (shell forks per invocation) — skip it.
-const IS_COMPILED = import.meta.dir.includes('$bunfs');
-const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || (BROWSE_PORT || IS_COMPILED ? '' : String(process.ppid));
+// One server per project directory by default. Sessions handle agent isolation.
+// For multiple servers on the same project: set BROWSE_INSTANCE or BROWSE_PORT.
+const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || '';
 const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : (BROWSE_INSTANCE ? `-${BROWSE_INSTANCE}` : '');
 
 /**
@@ -122,6 +120,50 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+async function listInstances(): Promise<void> {
+  try {
+    const files = fs.readdirSync(LOCAL_DIR).filter(
+      f => f.startsWith('browse-server') && f.endsWith('.json') && !f.endsWith('.lock')
+    );
+    if (files.length === 0) { console.log('(no running instances)'); return; }
+
+    let found = false;
+    for (const file of files) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(LOCAL_DIR, file), 'utf-8'));
+        if (!data.pid || !data.port) continue;
+
+        const alive = isProcessAlive(data.pid);
+        let status = 'dead';
+        let sessions = 0;
+        if (alive) {
+          try {
+            const resp = await fetch(`http://127.0.0.1:${data.port}/health`, { signal: AbortSignal.timeout(1000) });
+            if (resp.ok) {
+              const health = await resp.json() as any;
+              status = health.status === 'healthy' ? 'healthy' : 'unhealthy';
+              sessions = health.sessions || 0;
+            }
+          } catch { status = 'unreachable'; }
+        }
+
+        // Derive instance name from filename
+        const match = file.match(/^browse-server-?(.*)\.json$/);
+        const instance = match?.[1] || 'default';
+
+        console.log(`  ${instance.padEnd(15)} PID ${String(data.pid).padEnd(8)} port ${data.port}  ${status}${sessions ? `  ${sessions} session(s)` : ''}`);
+        found = true;
+
+        // Clean up dead entries
+        if (!alive) {
+          try { fs.unlinkSync(path.join(LOCAL_DIR, file)); } catch {}
+        }
+      } catch {}
+    }
+    if (!found) console.log('(no running instances)');
+  } catch { console.log('(no running instances)'); }
 }
 
 function isBrowseProcess(pid: number): boolean {
@@ -291,9 +333,10 @@ async function ensureServer(): Promise<ServerState> {
 }
 
 /**
- * Clean up orphaned browse servers:
- * 1. Remove state files with dead PIDs
- * 2. Kill live servers from other instances (old PPID-suffixed state files)
+ * Clean up orphaned browse server state files.
+ * Removes any browse-server*.json whose PID is dead.
+ * Kills live orphans (legacy PPID-suffixed files from pre-v0.2.4) if they're browse processes.
+ * Preserves intentional BROWSE_PORT instances (suffix matches port inside the file).
  */
 function cleanOrphanedServers(): void {
   try {
@@ -301,27 +344,20 @@ function cleanOrphanedServers(): void {
     for (const file of files) {
       if (!file.startsWith('browse-server') || !file.endsWith('.json') || file.endsWith('.lock')) continue;
       const filePath = path.join(LOCAL_DIR, file);
-      if (filePath === STATE_FILE) continue; // Don't touch our own state file
-      // Only clean files with PID-based suffixes. Skip port-based and non-numeric.
-      // Port-based files have a port number from a BROWSE_PORT env var.
-      // PID-based files have a process ID (typically >10000, never <1000).
-      // To distinguish: read the state file and check if the suffix matches the PID inside.
-      const suffixMatch = file.match(/browse-server-(\d+)\.json$/);
-      if (!suffixMatch) continue;
-      const suffix = parseInt(suffixMatch[1], 10);
+      if (filePath === STATE_FILE) continue;
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        if (!data.pid) continue;
-        // Port-based file: suffix matches the port inside (intentional BROWSE_PORT instance)
-        if (data.port === suffix) continue;
-        // PID-based file: suffix was a PPID from the spawning CLI
-        if (isProcessAlive(data.pid) && isBrowseProcess(data.pid)) {
+        if (!data.pid) { fs.unlinkSync(filePath); continue; }
+        // Preserve intentional BROWSE_PORT instances (suffix = port number)
+        const suffixMatch = file.match(/browse-server-(\d+)\.json$/);
+        if (suffixMatch && data.port === parseInt(suffixMatch[1], 10) && isProcessAlive(data.pid)) continue;
+        // Dead process → remove state file
+        if (!isProcessAlive(data.pid)) { fs.unlinkSync(filePath); continue; }
+        // Live orphan (legacy PPID file) → kill if it's a browse process
+        if (isBrowseProcess(data.pid)) {
           try { process.kill(data.pid, 'SIGTERM'); } catch {}
         }
-        if (!isProcessAlive(data.pid)) {
-          fs.unlinkSync(filePath);
-        }
-      } catch {}
+      } catch { try { fs.unlinkSync(filePath); } catch {} }
     }
   } catch {}
 }
@@ -529,6 +565,11 @@ export async function main() {
   cliFlags.allowedDomains = allowedDomains || '';
 
   // ─── Local commands (no server needed) ─────────────────────
+  if (args[0] === 'instances') {
+    await listInstances();
+    return;
+  }
+
   if (args[0] === 'install-skill') {
     const { installSkill } = await import('./install-skill');
     installSkill(args[1]);
@@ -566,7 +607,7 @@ Sessions:       sessions | session-close <id>
 Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
 State:          state save|load|list|show [name]
-Server:         status | cookie <n>=<v> | header <n>:<v>
+Server:         status | instances | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
 Setup:          install-skill [path]
 

@@ -361,6 +361,7 @@ browse har stop [path]         Stop and save HAR file
 ### Server management
 ```
 browse status                  Server health, uptime, session count
+browse instances               List all running browse servers (instance, PID, port, status)
 browse stop                    Shutdown server
 browse restart                 Kill + restart server
 ```
@@ -425,12 +426,14 @@ browse restart                 Kill + restart server
 
 - Persistent Chromium daemon on localhost (port 9400-10400)
 - Bearer token auth per session
-- Auto-instance: each parent process (Claude Code) gets its own server
+- One server per project directory — `--session` handles agent isolation
 - Session multiplexing: multiple agents share one Chromium via isolated BrowserContexts
+- For separate servers: set `BROWSE_INSTANCE` env var (e.g., fault isolation between teams)
+- `browse instances` — discover all running servers (PID, port, status, session count)
 - Project-local state: `.browse/` directory at project root (auto-created, self-gitignored)
   - `sessions/{id}/` — per-session screenshots, logs, PDFs
   - `states/{name}.json` — saved browser state (cookies + localStorage)
-  - `browse-server-{instance}.json` — server PID, port, auth token
+  - `browse-server.json` — server PID, port, auth token
 - Auto-shutdown when all sessions idle past 30 min
 - Chromium crash → server exits → auto-restarts on next command
 - AI-friendly error messages: Playwright errors rewritten to actionable hints
