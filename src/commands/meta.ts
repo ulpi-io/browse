@@ -423,7 +423,7 @@ export async function handleMetaCommand(
         case 'save': {
           const [, name, url, username] = args;
           // Password: from arg, env var, or --password-stdin flag
-          let password = args[4];
+          let password: string | undefined = args[4];
           if (password === '--password-stdin') password = undefined;
           if (!password && process.env.BROWSE_AUTH_PASSWORD) {
             password = process.env.BROWSE_AUTH_PASSWORD;

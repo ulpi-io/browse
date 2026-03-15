@@ -57,6 +57,7 @@ export class PolicyChecker {
   }
 
   private reload(): void {
+    if (!this.filePath) return;
     try {
       const stat = fs.statSync(this.filePath);
       if (stat.mtimeMs === this.lastMtime) return;
