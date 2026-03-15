@@ -61,6 +61,11 @@ export class SessionManager {
             const initScript = domainFilter.generateInitScript();
             await context.addInitScript(initScript);
             session.manager.setInitScript(initScript);
+            // Inject filter script into the current page immediately
+            try {
+              const page = session.manager.getPage();
+              await page.evaluate(initScript);
+            } catch {}
           }
           session.domainFilter = domainFilter;
         }

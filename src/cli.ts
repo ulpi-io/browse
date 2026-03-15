@@ -36,7 +36,10 @@ const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : (BROWSE_INSTANCE ? `-$
  * Falls back to /tmp/ if not found (e.g. running outside a project).
  */
 function resolveLocalDir(): string {
-  if (process.env.BROWSE_LOCAL_DIR) return process.env.BROWSE_LOCAL_DIR;
+  if (process.env.BROWSE_LOCAL_DIR) {
+    try { fs.mkdirSync(process.env.BROWSE_LOCAL_DIR, { recursive: true }); } catch {}
+    return process.env.BROWSE_LOCAL_DIR;
+  }
 
   let dir = process.cwd();
   for (let i = 0; i < 20; i++) {
@@ -116,6 +119,16 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isBrowseProcess(pid: number): boolean {
+  try {
+    const result = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'command=']);
+    const cmd = result.stdout.toString().trim();
+    return cmd.includes('browse') || cmd.includes('server');
   } catch {
     return false;
   }
@@ -249,16 +262,18 @@ async function ensureServer(): Promise<ServerState> {
     }
 
     // Server is alive but unhealthy (shutting down, browser crashed).
-    // Kill it so we can start fresh.
-    try { process.kill(state.pid, 'SIGTERM'); } catch {}
-    // Brief wait for graceful exit
-    const deadline = Date.now() + 3000;
-    while (Date.now() < deadline && isProcessAlive(state.pid)) {
-      await Bun.sleep(100);
-    }
-    if (isProcessAlive(state.pid)) {
-      try { process.kill(state.pid, 'SIGKILL'); } catch {}
-      await Bun.sleep(200);
+    // Kill it so we can start fresh — but only if it's actually a browse process.
+    if (isBrowseProcess(state.pid)) {
+      try { process.kill(state.pid, 'SIGTERM'); } catch {}
+      // Brief wait for graceful exit
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline && isProcessAlive(state.pid)) {
+        await Bun.sleep(100);
+      }
+      if (isProcessAlive(state.pid)) {
+        try { process.kill(state.pid, 'SIGKILL'); } catch {}
+        await Bun.sleep(200);
+      }
     }
   }
 
@@ -287,14 +302,21 @@ function cleanOrphanedServers(): void {
       if (!file.startsWith('browse-server') || !file.endsWith('.json') || file.endsWith('.lock')) continue;
       const filePath = path.join(LOCAL_DIR, file);
       if (filePath === STATE_FILE) continue; // Don't touch our own state file
+      // Only clean files with a PID-like suffix (>1000, not in port range 9400-10400)
+      const suffixMatch = file.match(/browse-server-(\d+)\.json$/);
+      if (!suffixMatch) continue; // Skip files without numeric suffix or base file
+      const suffix = parseInt(suffixMatch[1], 10);
+      if (suffix >= 9400 && suffix <= 10400) continue; // Port-based suffix — intentional BROWSE_PORT instance
+      if (suffix <= 1000) continue; // Not a valid PID
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
         if (data.pid) {
-          if (isProcessAlive(data.pid)) {
-            // Live orphan from a different instance — kill it to free the port
+          if (isProcessAlive(data.pid) && isBrowseProcess(data.pid)) {
             try { process.kill(data.pid, 'SIGTERM'); } catch {}
           }
-          fs.unlinkSync(filePath);
+          if (!isProcessAlive(data.pid)) {
+            fs.unlinkSync(filePath);
+          }
         }
       } catch {}
     }
@@ -314,7 +336,7 @@ export const SAFE_TO_RETRY = new Set([
   'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'perf', 'value', 'count',
   // Meta commands that are read-only or idempotent
-  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame',
+  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find',
 ]);
 
 // Commands that return static data independent of page state.
@@ -443,41 +465,52 @@ export async function main() {
   // Load project config (browse.json) — values serve as defaults
   const config = loadConfig();
 
-  // Extract --session flag before command parsing
+  // Find the first non-flag arg (the command) to limit global flag scanning.
+  // Only extract global flags from args BEFORE the command position.
+  function findCommandIndex(a: string[]): number {
+    for (let i = 0; i < a.length; i++) {
+      if (!a[i].startsWith('-')) return i;
+      // Skip flag values for known value-flags
+      if (a[i] === '--session' || a[i] === '--allowed-domains') i++;
+    }
+    return a.length;
+  }
+
+  // Extract --session flag (only before command)
   let sessionId: string | undefined;
   const sessionIdx = args.indexOf('--session');
-  if (sessionIdx !== -1) {
+  if (sessionIdx !== -1 && sessionIdx < findCommandIndex(args)) {
     sessionId = args[sessionIdx + 1];
     if (!sessionId || sessionId.startsWith('-')) {
       console.error('Usage: browse --session <id> <command> [args...]');
       process.exit(1);
     }
-    args.splice(sessionIdx, 2); // remove --session and its value
+    args.splice(sessionIdx, 2);
   }
   sessionId = sessionId || process.env.BROWSE_SESSION || config.session || undefined;
 
-  // Extract --json flag
+  // Extract --json flag (only before command)
   let jsonMode = false;
   const jsonIdx = args.indexOf('--json');
-  if (jsonIdx !== -1) {
+  if (jsonIdx !== -1 && jsonIdx < findCommandIndex(args)) {
     jsonMode = true;
     args.splice(jsonIdx, 1);
   }
   jsonMode = jsonMode || process.env.BROWSE_JSON === '1' || config.json === true;
 
-  // Extract --content-boundaries flag
+  // Extract --content-boundaries flag (only before command)
   let contentBoundaries = false;
   const boundIdx = args.indexOf('--content-boundaries');
-  if (boundIdx !== -1) {
+  if (boundIdx !== -1 && boundIdx < findCommandIndex(args)) {
     contentBoundaries = true;
     args.splice(boundIdx, 1);
   }
   contentBoundaries = contentBoundaries || process.env.BROWSE_CONTENT_BOUNDARIES === '1' || config.contentBoundaries === true;
 
-  // Extract --allowed-domains flag
+  // Extract --allowed-domains flag (only before command)
   let allowedDomains: string | undefined;
   const domIdx = args.indexOf('--allowed-domains');
-  if (domIdx !== -1) {
+  if (domIdx !== -1 && domIdx < findCommandIndex(args)) {
     allowedDomains = args[domIdx + 1];
     if (!allowedDomains || allowedDomains.startsWith('-')) {
       console.error('Usage: browse --allowed-domains domain1,domain2 <command> [args...]');
@@ -519,7 +552,8 @@ Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
                 value <sel> | count <sel>
 Visual:         screenshot [path] | pdf [path] | responsive [prefix]
 Snapshot:       snapshot [-i] [-c] [-C] [-d N] [-s sel]
-Compare:        diff <url1> <url2>
+Find:           find role|text|label|placeholder|testid <query> [name]
+Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
 Multi-step:     chain (reads JSON from stdin)
 Network:        offline [on|off] | route <pattern> block|fulfill
 Recording:      har start | har stop [path]
@@ -528,7 +562,7 @@ Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
 Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
-State:          state save [name] | state load [name]
+State:          state save|load|list|show [name]
 Server:         status | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
 Setup:          install-skill [path]
@@ -559,6 +593,13 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
   if (command === 'chain' && commandArgs.length === 0) {
     const stdin = await Bun.stdin.text();
     commandArgs.push(stdin.trim());
+  }
+
+  // Special case: auth --password-stdin reads in CLI before sending to server
+  if (command === 'auth' && commandArgs.includes('--password-stdin')) {
+    const stdinIdx = commandArgs.indexOf('--password-stdin');
+    const password = (await Bun.stdin.text()).trim();
+    commandArgs.splice(stdinIdx, 1, password);
   }
 
   const state = await ensureServer();

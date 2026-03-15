@@ -73,7 +73,7 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 
 ## Command Categories
 
-- **Read** (18): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `value`, `count`, `devices`
+- **Read** (18): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `element-state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `value`, `count`, `devices`
 - **Write** (27): `goto`, `back`, `forward`, `reload`, `click`, `dblclick`, `fill`, `select`, `hover`, `focus`, `check`, `uncheck`, `type`, `press`, `keydown`, `keyup`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `emulate`, `drag`, `highlight`, `download`, `route`, `offline`, `dialog-accept`, `dialog-dismiss`
 - **Meta** (18): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `sessions`, `session-close`, `frame`, `state`, `auth`, `har`
 

@@ -65,7 +65,7 @@
 | `eval` | `<file>` | Evaluate JS file |
 | `css` | `<sel> <prop>` | Get computed CSS property |
 | `attrs` | `<sel>` | Get element attributes as JSON |
-| `state` | `<sel>` | Element state (visible, enabled, checked, etc.) |
+| `element-state` | `<sel>` | Element state (visible, enabled, checked, etc.) |
 | `dialog` | — | Last dialog info |
 | `console` | `[--clear]` | Console log buffer |
 | `network` | `[--clear]` | Network request buffer |

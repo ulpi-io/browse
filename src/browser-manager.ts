@@ -139,7 +139,7 @@ export class BrowserManager {
   private currentDevice: DeviceDescriptor | null = null;
 
   // ─── iframe targeting ─────────────────────────────────────
-  private activeFrameSelector: string | null = null;
+  private activeFramePerTab: Map<number, string> = new Map();
 
   // ─── Per-session buffers ──────────────────────────────────
   private buffers: SessionBuffers;
@@ -372,21 +372,21 @@ export class BrowserManager {
    * will target this frame's content instead of the main page.
    */
   setFrame(selector: string) {
-    this.activeFrameSelector = selector;
+    this.activeFramePerTab.set(this.activeTabId, selector);
   }
 
   /**
-   * Reset to main frame — clears the active frame selector.
+   * Reset to main frame — clears the active frame selector for the current tab.
    */
   resetFrame() {
-    this.activeFrameSelector = null;
+    this.activeFramePerTab.delete(this.activeTabId);
   }
 
   /**
    * Get the current active frame selector, or null if targeting main page.
    */
   getActiveFrameSelector(): string | null {
-    return this.activeFrameSelector;
+    return this.activeFramePerTab.get(this.activeTabId) ?? null;
   }
 
   /**
@@ -394,8 +394,9 @@ export class BrowserManager {
    * Returns null if no frame is active (targeting main page).
    */
   getFrameLocator(): FrameLocator | null {
-    if (!this.activeFrameSelector) return null;
-    return this.getPage().frameLocator(this.activeFrameSelector);
+    const sel = this.getActiveFrameSelector();
+    if (!sel) return null;
+    return this.getPage().frameLocator(sel);
   }
 
   /**
@@ -404,13 +405,14 @@ export class BrowserManager {
    * Unlike FrameLocator, Frame supports evaluate(), querySelector, etc.
    */
   async getFrameContext(): Promise<Frame | null> {
-    if (!this.activeFrameSelector) return null;
+    const sel = this.getActiveFrameSelector();
+    if (!sel) return null;
     const page = this.getPage();
-    const frameEl = page.locator(this.activeFrameSelector);
+    const frameEl = page.locator(sel);
     const handle = await frameEl.elementHandle({ timeout: 5000 });
-    if (!handle) throw new Error(`Frame element not found: ${this.activeFrameSelector}`);
+    if (!handle) throw new Error(`Frame element not found: ${sel}`);
     const frame = await handle.contentFrame();
-    if (!frame) throw new Error(`Cannot access content of frame: ${this.activeFrameSelector}`);
+    if (!frame) throw new Error(`Cannot access content of frame: ${sel}`);
     return frame;
   }
 
@@ -420,8 +422,9 @@ export class BrowserManager {
    * Example: bm.getLocatorRoot().locator('button.submit')
    */
   getLocatorRoot(): Page | FrameLocator {
-    if (this.activeFrameSelector) {
-      return this.getPage().frameLocator(this.activeFrameSelector);
+    const sel = this.getActiveFrameSelector();
+    if (sel) {
+      return this.getPage().frameLocator(sel);
     }
     return this.getPage();
   }
@@ -463,8 +466,9 @@ export class BrowserManager {
       return { locator };
     }
     // When a frame is active, scope CSS selectors through the frame
-    if (this.activeFrameSelector) {
-      const frame = this.getPage().frameLocator(this.activeFrameSelector);
+    const frameSel = this.getActiveFrameSelector();
+    if (frameSel) {
+      const frame = this.getPage().frameLocator(frameSel);
       return { locator: frame.locator(selector) };
     }
     return { selector };
@@ -573,21 +577,21 @@ export class BrowserManager {
       if (this.initScript) {
         await newContext.addInitScript(this.initScript);
       }
-      // Re-apply domain filter route
-      if (this.domainFilter) {
-        const df = this.domainFilter;
-        await newContext.route('**/*', (route) => {
-          const url = route.request().url();
-          if (df.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
-        });
-      }
-      // Re-apply user routes
+      // Re-apply user routes FIRST
       for (const r of this.userRoutes) {
         if (r.action === 'block') {
           await newContext.route(r.pattern, (route) => route.abort('blockedbyclient'));
         } else {
           await newContext.route(r.pattern, (route) => route.fulfill({ status: r.status || 200, body: r.body || '', contentType: 'text/plain' }));
         }
+      }
+      // Re-apply domain filter route LAST (Playwright: last registered = checked first)
+      if (this.domainFilter) {
+        const df = this.domainFilter;
+        await newContext.route('**/*', (route) => {
+          const url = route.request().url();
+          if (df.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+        });
       }
     } catch (err) {
       await newContext.close().catch(() => {});

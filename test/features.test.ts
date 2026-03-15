@@ -64,11 +64,13 @@ describe('DomainFilter', () => {
     expect(filter.isAllowed('https://notexample.com/page')).toBe(false);
   });
 
-  test('non-HTTP URLs always allowed', () => {
+  test('non-HTTP URLs: safe ones allowed, dangerous ones blocked', () => {
     const filter = new DomainFilter(['example.com']);
     expect(filter.isAllowed('about:blank')).toBe(true);
     expect(filter.isAllowed('data:text/html,<h1>hi</h1>')).toBe(true);
-    expect(filter.isAllowed('javascript:void(0)')).toBe(true);
+    expect(filter.isAllowed('blob:https://example.com/uuid')).toBe(true);
+    expect(filter.isAllowed('javascript:void(0)')).toBe(false);
+    expect(filter.isAllowed('file:///etc/passwd')).toBe(false);
   });
 
   test('invalid URL is blocked', () => {

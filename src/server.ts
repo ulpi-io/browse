@@ -125,9 +125,9 @@ const META_COMMANDS = new Set([
   'status', 'stop', 'restart',
   'screenshot', 'pdf', 'responsive',
   'chain', 'diff',
-  'url', 'snapshot', 'snapshot-diff',
+  'url', 'snapshot', 'snapshot-diff', 'screenshot-diff',
   'sessions', 'session-close',
-  'frame', 'state',
+  'frame', 'state', 'find',
   'auth', 'har',
 ]);
 

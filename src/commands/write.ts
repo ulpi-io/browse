@@ -64,7 +64,7 @@ export async function handleWriteCommand(
     case 'fill': {
       const [selector, ...valueParts] = args;
       const value = valueParts.join(' ');
-      if (!selector || !value) throw new Error('Usage: browse fill <selector> <value>');
+      if (!selector) throw new Error('Usage: browse fill <selector> <value>');
       const resolved = bm.resolveRef(selector);
       if ('locator' in resolved) {
         await resolved.locator.fill(value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
@@ -77,7 +77,7 @@ export async function handleWriteCommand(
     case 'select': {
       const [selector, ...valueParts] = args;
       const value = valueParts.join(' ');
-      if (!selector || !value) throw new Error('Usage: browse select <selector> <value>');
+      if (!selector) throw new Error('Usage: browse select <selector> <value>');
       const resolved = bm.resolveRef(selector);
       if ('locator' in resolved) {
         await resolved.locator.selectOption(value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
@@ -431,6 +431,14 @@ export async function handleWriteCommand(
       if (action === 'block') {
         await context.route(pattern, (route) => route.abort('blockedbyclient'));
         bm.addUserRoute(pattern, 'block');
+        // Re-register domain filter route so it runs first (Playwright: last registered = first checked)
+        if (domainFilter) {
+          await context.unroute('**/*');
+          await context.route('**/*', (route) => {
+            const url = route.request().url();
+            if (domainFilter!.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+          });
+        }
         return `Blocking requests matching: ${pattern}`;
       }
 
@@ -441,6 +449,14 @@ export async function handleWriteCommand(
           route.fulfill({ status, body, contentType: 'text/plain' })
         );
         bm.addUserRoute(pattern, 'fulfill', status, body);
+        // Re-register domain filter route so it runs first
+        if (domainFilter) {
+          await context.unroute('**/*');
+          await context.route('**/*', (route) => {
+            const url = route.request().url();
+            if (domainFilter!.isAllowed(url)) { route.continue(); } else { route.abort('blockedbyclient'); }
+          });
+        }
         return `Mocking requests matching: ${pattern} → ${status}${body ? ` "${body}"` : ''}`;
       }
 

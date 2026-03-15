@@ -1,6 +1,6 @@
 ---
 name: browse
-version: 1.0.0
+version: 2.0.0
 description: |
   Fast web browsing for Claude Code via persistent headless Chromium daemon. Navigate to any URL,
   read page content, click elements, fill forms, run JavaScript, take screenshots,
@@ -53,20 +53,29 @@ If the file is missing or does not contain browse permission rules in `permissio
 "Bash(browse html:*)", "Bash(browse links:*)", "Bash(browse forms:*)",
 "Bash(browse accessibility:*)", "Bash(browse snapshot:*)",
 "Bash(browse snapshot-diff:*)", "Bash(browse click:*)",
-"Bash(browse fill:*)", "Bash(browse select:*)", "Bash(browse hover:*)",
-"Bash(browse type:*)", "Bash(browse press:*)", "Bash(browse scroll:*)",
-"Bash(browse wait:*)", "Bash(browse viewport:*)", "Bash(browse upload:*)",
+"Bash(browse dblclick:*)", "Bash(browse fill:*)", "Bash(browse select:*)",
+"Bash(browse hover:*)", "Bash(browse focus:*)",
+"Bash(browse check:*)", "Bash(browse uncheck:*)",
+"Bash(browse type:*)", "Bash(browse press:*)",
+"Bash(browse keydown:*)", "Bash(browse keyup:*)",
+"Bash(browse scroll:*)", "Bash(browse wait:*)",
+"Bash(browse viewport:*)", "Bash(browse upload:*)",
+"Bash(browse drag:*)", "Bash(browse highlight:*)", "Bash(browse download:*)",
 "Bash(browse dialog-accept:*)", "Bash(browse dialog-dismiss:*)",
 "Bash(browse js:*)", "Bash(browse eval:*)", "Bash(browse css:*)",
-"Bash(browse attrs:*)", "Bash(browse state:*)", "Bash(browse dialog:*)",
+"Bash(browse attrs:*)", "Bash(browse element-state:*)", "Bash(browse dialog:*)",
 "Bash(browse console:*)", "Bash(browse network:*)",
 "Bash(browse cookies:*)", "Bash(browse storage:*)", "Bash(browse perf:*)",
+"Bash(browse value:*)", "Bash(browse count:*)",
 "Bash(browse devices:*)", "Bash(browse emulate:*)",
 "Bash(browse screenshot:*)", "Bash(browse pdf:*)",
 "Bash(browse responsive:*)", "Bash(browse diff:*)",
 "Bash(browse chain:*)", "Bash(browse tabs:*)", "Bash(browse tab:*)",
 "Bash(browse newtab:*)", "Bash(browse closetab:*)",
+"Bash(browse frame:*)",
 "Bash(browse sessions:*)", "Bash(browse session-close:*)",
+"Bash(browse state:*)", "Bash(browse auth:*)", "Bash(browse har:*)",
+"Bash(browse route:*)", "Bash(browse offline:*)",
 "Bash(browse status:*)", "Bash(browse stop:*)", "Bash(browse restart:*)",
 "Bash(browse cookie:*)", "Bash(browse header:*)",
 "Bash(browse useragent:*)"
@@ -80,6 +89,9 @@ If the file is missing or does not contain browse permission rules in `permissio
 - The browser persists between calls — cookies, tabs, and state carry over.
 - The server auto-starts on first command. No manual setup needed.
 - Use `--session <id>` for parallel agent isolation. Each session gets its own tabs, refs, cookies.
+- Use `--json` for structured output (`{success, data, command}`).
+- Use `--content-boundaries` for prompt injection defense.
+- Use `--allowed-domains domain1,domain2` to restrict navigation.
 
 ## Quick Reference
 
@@ -91,7 +103,7 @@ browse goto https://example.com
 browse text
 
 # Take a screenshot (then Read the image)
-browse screenshot .browse/page.png
+browse screenshot .browse/sessions/default/screenshot.png
 
 # Snapshot: accessibility tree with refs
 browse snapshot -i
@@ -102,11 +114,24 @@ browse click @e3
 # Fill by ref
 browse fill @e4 "test@test.com"
 
+# Double-click, focus, check/uncheck
+browse dblclick @e3
+browse focus @e5
+browse check @e7
+browse uncheck @e7
+
+# Drag and drop
+browse drag @e1 @e2
+
 # Run JavaScript
 browse js "document.title"
 
 # Get all links
 browse links
+
+# Get input value / count elements
+browse value "[id=email]"
+browse count ".search-result"
 
 # Click by CSS selector
 browse click "button.submit"
@@ -116,17 +141,58 @@ browse fill "[id=email]" "test@test.com"
 browse fill "[id=password]" "abc123"
 browse click "button[type=submit]"
 
-# Get HTML of an element
-browse html "main"
+# Scroll
+browse scroll up
+browse scroll down
+browse scroll "[id=target]"
 
-# Get computed CSS
-browse css "body" "font-family"
-
-# Get element attributes
-browse attrs "nav"
-
-# Wait for element to appear
+# Wait for navigation or network
 browse wait ".loaded"
+browse wait --url "**/dashboard"
+browse wait --network-idle
+
+# iframe targeting
+browse frame "[id=my-iframe]"
+browse text                    # reads from inside the iframe
+browse click @e3               # clicks inside the iframe
+browse frame main              # back to main page
+
+# Highlight an element (visual debugging)
+browse highlight @e5
+
+# Download a file
+browse download @e3 ./file.pdf
+
+# Network mocking
+browse route "**/*.png" block
+browse route "**/api/data" fulfill 200 '{"mock":true}'
+browse route clear
+
+# Offline mode
+browse offline on
+browse offline off
+
+# JSON output mode
+browse --json goto https://example.com
+
+# Security: content boundaries
+browse --content-boundaries text
+
+# Security: domain restriction
+browse --allowed-domains example.com,*.cdn.example.com goto https://example.com
+
+# State persistence
+browse state save mysite
+browse state load mysite
+
+# Auth vault (credentials never visible to LLM)
+browse auth save github https://github.com/login user pass123
+browse auth login github
+
+# HAR recording
+browse har start
+browse goto https://example.com
+browse har stop ./recording.har
 
 # Device emulation
 browse emulate iphone
@@ -183,19 +249,36 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 ### Interaction
 ```
 browse click <selector>        Click element (CSS selector or @ref)
+browse dblclick <selector>     Double-click element
 browse fill <selector> <value> Fill input field
 browse select <selector> <val> Select dropdown value
 browse hover <selector>        Hover over element
+browse focus <selector>        Focus element
+browse check <selector>        Check checkbox
+browse uncheck <selector>      Uncheck checkbox
+browse drag <src> <tgt>        Drag source to target
 browse type <text>             Type into focused element
 browse press <key>             Press key (Enter, Tab, Escape, etc.)
-browse scroll [selector]       Scroll element into view, or page bottom
-browse wait <selector>         Wait for element to appear (max 15s)
+browse keydown <key>           Hold key down
+browse keyup <key>             Release key
+browse scroll [sel|up|down]    Scroll element/viewport/bottom
+browse wait <sel|--url|--network-idle>  Wait for element, URL, or network
 browse viewport <WxH>          Set viewport size (e.g. 375x812)
 browse upload <sel> <files>    Upload file(s) to a file input
+browse highlight <selector>    Highlight element (visual debugging)
+browse download <sel> [path]   Download file triggered by click
 browse dialog-accept [value]   Set dialogs to auto-accept
 browse dialog-dismiss          Set dialogs to auto-dismiss (default)
 browse emulate <device>        Emulate device (iphone, pixel, etc.)
 browse emulate reset           Reset to desktop (1920x1080)
+browse offline [on|off]        Toggle offline mode
+```
+
+### Network
+```
+browse route <pattern> block           Block matching requests
+browse route <pattern> fulfill <s> [b] Mock with status + body
+browse route clear                     Remove all routes
 ```
 
 ### Inspection
@@ -204,7 +287,9 @@ browse js <expression>         Run JS, print result
 browse eval <js-file>          Run JS file against page
 browse css <selector> <prop>   Get computed CSS property
 browse attrs <selector>        Get element attributes as JSON
-browse state <selector>        Element state (visible/enabled/checked/focused)
+browse element-state <selector> Element state (visible/enabled/checked/focused)
+browse value <selector>        Get input field value
+browse count <selector>        Count matching elements
 browse dialog                  Last dialog info or "(no dialog detected)"
 browse console [--clear]       View/clear console messages
 browse network [--clear]       View/clear network requests
@@ -216,10 +301,16 @@ browse devices [filter]        List available device names
 
 ### Visual
 ```
-browse screenshot [path]              Screenshot (default: .browse/browse-screenshot.png)
+browse screenshot [path]              Screenshot (default: .browse/sessions/{id}/screenshot.png)
 browse screenshot --annotate [path]   Screenshot with numbered badges + legend
 browse pdf [path]                     Save as PDF
 browse responsive [prefix]            Screenshots at mobile/tablet/desktop
+```
+
+### Frames (iframe targeting)
+```
+browse frame <selector>        Target an iframe (subsequent commands run inside it)
+browse frame main              Return to main page
 ```
 
 ### Compare
@@ -247,12 +338,41 @@ browse sessions                List active sessions
 browse session-close <id>      Close a session
 ```
 
+### State persistence
+```
+browse state save [name]       Save cookies + localStorage (all origins)
+browse state load [name]       Restore saved state
+```
+
+### Auth vault
+```
+browse auth save <name> <url> <user> <pass>   Save credentials (encrypted)
+browse auth login <name>                       Auto-login using saved credentials
+browse auth list                               List saved credentials
+browse auth delete <name>                      Delete credentials
+```
+
+### HAR recording
+```
+browse har start               Start recording network traffic
+browse har stop [path]         Stop and save HAR file
+```
+
 ### Server management
 ```
 browse status                  Server health, uptime, session count
 browse stop                    Shutdown server
 browse restart                 Kill + restart server
 ```
+
+## CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--session <id>` | Named session (isolates tabs, refs, cookies) |
+| `--json` | Wrap output as `{success, data, command}` |
+| `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
+| `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 
 ## Speed Rules
 
@@ -264,6 +384,8 @@ browse restart                 Kill + restart server
 6. **Use `chain` for multi-step flows.** Avoids CLI overhead per step.
 7. **Use `responsive` for layout checks.** One command = 3 viewport screenshots.
 8. **Use `--session` for parallel work.** Multiple agents can browse simultaneously without interference.
+9. **Use `value`/`count` instead of `js`.** Purpose-built commands are cleaner than `js "document.querySelector(...).value"`.
+10. **Use `frame` for iframes.** Don't try to reach into iframes with CSS — use `frame [id=x]` first.
 
 ## When to Use What
 
@@ -272,30 +394,45 @@ browse restart                 Kill + restart server
 | Read a page | `goto <url>` then `text` |
 | Interact with elements | `snapshot -i` then `click @e3` |
 | Find hidden clickables | `snapshot -i -C` then `click @e15` |
-| Check if element exists | `js "!!document.querySelector('.thing')"` |
+| Check if element exists | `count ".thing"` |
+| Get input value | `value "[id=email]"` |
 | Extract specific data | `js "document.querySelector('.price').textContent"` |
-| Visual check | `screenshot .browse/x.png` then Read the image |
+| Visual check | `screenshot .browse/sessions/default/x.png` then Read the image |
 | Fill and submit form | `snapshot -i` → `fill @e4 "val"` → `click @e5` |
+| Check/uncheck boxes | `check @e7` / `uncheck @e7` |
 | Check CSS | `css "selector" "property"` or `css @e3 "property"` |
 | Inspect DOM | `html "selector"` or `attrs @e3` |
 | Debug console errors | `console` |
 | Check network requests | `network` |
+| Mock API responses | `route "**/api/*" fulfill 200 '{"data":[]}'` |
+| Block ads/trackers | `route "**/*.doubleclick.net/*" block` |
+| Test offline behavior | `offline on` → test → `offline off` |
+| Interact in iframe | `frame "[id=payment]"` → `fill @e2 "4242..."` → `frame main` |
 | Check local dev | `goto http://127.0.0.1:3000` |
 | Compare two pages | `diff <url1> <url2>` |
-| Mobile layout check | `responsive .browse/prefix` |
+| Mobile layout check | `responsive .browse/sessions/default/resp` |
 | Test on mobile device | `emulate iphone` → `goto <url>` → `screenshot` |
+| Save/restore session | `state save mysite` / `state load mysite` |
+| Auto-login | `auth save gh https://github.com/login user pass` → `auth login gh` |
+| Record network | `har start` → browse around → `har stop ./out.har` |
 | Parallel agents | `--session agent-a <cmd>` / `--session agent-b <cmd>` |
 | Multi-step flow | `echo '[...]' \| browse chain` |
+| Secure browsing | `--allowed-domains example.com goto https://example.com` |
+| Scroll through results | `scroll down` → `text` → `scroll down` → `text` |
+| Drag and drop | `drag @e1 @e2` |
 
 ## Architecture
 
-- Persistent Chromium daemon on localhost (port 9400-9410)
+- Persistent Chromium daemon on localhost (port 9400-10400)
 - Bearer token auth per session
+- Auto-instance: each parent process (Claude Code) gets its own server
 - Session multiplexing: multiple agents share one Chromium via isolated BrowserContexts
 - Project-local state: `.browse/` directory at project root (auto-created, self-gitignored)
-  - `browse-server.json` — server PID, port, auth token
-  - `browse-console.log` — captured console messages
-  - `browse-network.log` — captured network requests
-  - `browse-screenshot.png` — default screenshot location
+  - `sessions/{id}/` — per-session screenshots, logs, PDFs
+  - `states/{name}.json` — saved browser state (cookies + localStorage)
+  - `browse-server-{instance}.json` — server PID, port, auth token
 - Auto-shutdown when all sessions idle past 30 min
 - Chromium crash → server exits → auto-restarts on next command
+- AI-friendly error messages: Playwright errors rewritten to actionable hints
+- CDP remote connection: `BROWSE_CDP_URL` to connect to existing Chrome
+- Policy enforcement: `browse-policy.json` for allow/deny/confirm rules
