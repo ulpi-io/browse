@@ -495,7 +495,8 @@ export async function handleMetaCommand(
 
       let currentBuffer: Buffer;
       const currentArg = args[1];
-      if (currentArg && !currentArg.startsWith('--') && fs.existsSync(currentArg)) {
+      if (currentArg && !currentArg.startsWith('--')) {
+        if (!fs.existsSync(currentArg)) throw new Error(`Current screenshot not found: ${currentArg}`);
         currentBuffer = fs.readFileSync(currentArg);
       } else {
         const page = bm.getPage();

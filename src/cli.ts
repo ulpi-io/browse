@@ -126,9 +126,8 @@ function isProcessAlive(pid: number): boolean {
 
 function isBrowseProcess(pid: number): boolean {
   try {
-    const result = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'command=']);
-    const cmd = result.stdout.toString().trim();
-    // Must match our specific binary/script, not generic "server" processes
+    const { execSync } = require('child_process');
+    const cmd = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf-8' }).trim();
     return cmd.includes('browse') || cmd.includes('__BROWSE_SERVER_MODE');
   } catch {
     return false;

@@ -605,6 +605,7 @@ export class BrowserManager {
     const oldNextTabId = this.nextTabId;
     const oldTabSnapshots = new Map(this.tabSnapshots);
     const oldRefMap = new Map(this.refMap);
+    const oldFramePerTab = new Map(this.activeFramePerTab);
 
     // Swap to new context
     this.context = newContext;
@@ -642,6 +643,7 @@ export class BrowserManager {
       this.nextTabId = oldNextTabId;
       this.tabSnapshots = oldTabSnapshots;
       this.refMap = oldRefMap;
+      this.activeFramePerTab = oldFramePerTab;
       throw err;
     }
 
@@ -651,6 +653,16 @@ export class BrowserManager {
       const newId = idMap.get(oldId);
       if (newId !== undefined) {
         this.tabSnapshots.set(newId, snapshot);
+      }
+    }
+
+    // Migrate activeFramePerTab: remap old tab IDs to new tab IDs
+    const oldFrames = new Map(this.activeFramePerTab);
+    this.activeFramePerTab.clear();
+    for (const [oldId, sel] of oldFrames) {
+      const newId = idMap.get(oldId);
+      if (newId !== undefined) {
+        this.activeFramePerTab.set(newId, sel);
       }
     }
 
