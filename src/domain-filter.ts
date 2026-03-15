@@ -60,4 +60,75 @@ export class DomainFilter {
     } catch {}
     return `Domain "${hostname}" is not in the allowed list: ${this.domains.join(', ')}`;
   }
+
+  /**
+   * Generate a JS init script that wraps WebSocket, EventSource, and
+   * navigator.sendBeacon with domain checks. Playwright's context.route()
+   * only covers HTTP — these JS-level APIs bypass it entirely.
+   *
+   * Injected via context.addInitScript() so it runs before any page JS.
+   */
+  generateInitScript(): string {
+    const domainsJson = JSON.stringify(this.domains);
+    return `(function() {
+  const __allowedDomains = ${domainsJson};
+
+  function __isAllowed(url) {
+    if (!url) return true;
+    var str = String(url);
+    // Normalize ws/wss to http/https for URL parsing
+    if (str.startsWith('ws://')) str = 'http://' + str.slice(5);
+    else if (str.startsWith('wss://')) str = 'https://' + str.slice(6);
+    // Non-HTTP(S) always allowed (data:, blob:, etc.)
+    if (!str.startsWith('http://') && !str.startsWith('https://')) return true;
+    var hostname;
+    try { hostname = new URL(str).hostname.toLowerCase(); } catch(e) { return false; }
+    for (var i = 0; i < __allowedDomains.length; i++) {
+      var pattern = __allowedDomains[i];
+      if (pattern.startsWith('*.')) {
+        var base = pattern.slice(2);
+        if (hostname === base || hostname.endsWith('.' + base)) return true;
+      } else {
+        if (hostname === pattern) return true;
+      }
+    }
+    return false;
+  }
+
+  // Wrap WebSocket
+  var OrigWebSocket = window.WebSocket;
+  if (OrigWebSocket) {
+    window.WebSocket = function(url, protocols) {
+      if (!__isAllowed(url)) throw new Error('WebSocket blocked by domain filter: ' + url);
+      if (protocols !== undefined) return new OrigWebSocket(url, protocols);
+      return new OrigWebSocket(url);
+    };
+    window.WebSocket.prototype = OrigWebSocket.prototype;
+    window.WebSocket.CONNECTING = OrigWebSocket.CONNECTING;
+    window.WebSocket.OPEN = OrigWebSocket.OPEN;
+    window.WebSocket.CLOSING = OrigWebSocket.CLOSING;
+    window.WebSocket.CLOSED = OrigWebSocket.CLOSED;
+  }
+
+  // Wrap EventSource
+  var OrigEventSource = window.EventSource;
+  if (OrigEventSource) {
+    window.EventSource = function(url, opts) {
+      if (!__isAllowed(url)) throw new Error('EventSource blocked by domain filter: ' + url);
+      if (opts !== undefined) return new OrigEventSource(url, opts);
+      return new OrigEventSource(url);
+    };
+    window.EventSource.prototype = OrigEventSource.prototype;
+  }
+
+  // Wrap navigator.sendBeacon
+  if (navigator.sendBeacon) {
+    var origSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function(url, data) {
+      if (!__isAllowed(url)) return false;
+      return origSendBeacon(url, data);
+    };
+  }
+})();`;
+  }
 }

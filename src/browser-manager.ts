@@ -9,6 +9,7 @@
 
 import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
 import { SessionBuffers, type LogEntry, type NetworkEntry } from './buffers';
+import type { HarRecording } from './har';
 
 /** Shorthand aliases for common devices → Playwright device names */
 const DEVICE_ALIASES: Record<string, string> = {
@@ -158,6 +159,15 @@ export class BrowserManager {
 
   // ─── Network Correlation ────────────────────────────────────
   private requestEntryMap = new WeakMap<PlaywrightRequest, NetworkEntry>();
+
+  // ─── Offline Mode ─────────────────────────────────────────
+  private offline = false;
+
+  // ─── HAR Recording ────────────────────────────────────────
+  private harRecording: HarRecording | null = null;
+
+  // ─── Init Script (domain filter JS injection) ─────────────
+  private initScript: string | null = null;
 
   // Whether this instance owns (and should close) the Browser process
   private ownsBrowser = false;
@@ -550,6 +560,12 @@ export class BrowserManager {
       if (Object.keys(this.extraHeaders).length > 0) {
         await newContext.setExtraHTTPHeaders(this.extraHeaders);
       }
+      if (this.offline) {
+        await newContext.setOffline(true);
+      }
+      if (this.initScript) {
+        await newContext.addInitScript(this.initScript);
+      }
     } catch (err) {
       await newContext.close().catch(() => {});
       throw err;
@@ -675,6 +691,42 @@ export class BrowserManager {
 
   getCurrentDevice(): DeviceDescriptor | null {
     return this.currentDevice;
+  }
+
+  // ─── Offline Mode ──────────────────────────────────────────
+  isOffline(): boolean {
+    return this.offline;
+  }
+
+  async setOffline(value: boolean): Promise<void> {
+    this.offline = value;
+    if (this.context) {
+      await this.context.setOffline(value);
+    }
+  }
+
+  // ─── HAR Recording ────────────────────────────────────────
+  startHarRecording(): void {
+    this.harRecording = { startTime: Date.now(), active: true };
+  }
+
+  stopHarRecording(): HarRecording | null {
+    const recording = this.harRecording;
+    this.harRecording = null;
+    return recording;
+  }
+
+  getHarRecording(): HarRecording | null {
+    return this.harRecording;
+  }
+
+  // ─── Init Script ───────────────────────────────────────────
+  setInitScript(script: string): void {
+    this.initScript = script;
+  }
+
+  getInitScript(): string | null {
+    return this.initScript;
   }
 
   /**

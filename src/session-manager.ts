@@ -58,9 +58,9 @@ export class SessionManager {
       const domains = allowedDomains.split(',').map(d => d.trim()).filter(Boolean);
       if (domains.length > 0) {
         domainFilter = new DomainFilter(domains);
-        // Block disallowed domains at the network level via Playwright route()
         const context = manager.getContext();
         if (context) {
+          // Block disallowed domains at the network level via Playwright route()
           await context.route('**/*', (route) => {
             const url = route.request().url();
             if (domainFilter!.isAllowed(url)) {
@@ -69,6 +69,10 @@ export class SessionManager {
               route.abort('blockedbyclient');
             }
           });
+          // Block WebSocket, EventSource, sendBeacon via JS injection
+          const initScript = domainFilter.generateInitScript();
+          await context.addInitScript(initScript);
+          manager.setInitScript(initScript);
         }
       }
     }

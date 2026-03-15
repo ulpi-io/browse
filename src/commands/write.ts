@@ -387,6 +387,22 @@ export async function handleWriteCommand(
       return `Downloaded: ${finalPath}`;
     }
 
+    case 'offline': {
+      const mode = args[0];
+      if (mode === 'on') {
+        await bm.setOffline(true);
+        return 'Offline mode: ON';
+      }
+      if (mode === 'off') {
+        await bm.setOffline(false);
+        return 'Offline mode: OFF';
+      }
+      // Toggle
+      const newState = !bm.isOffline();
+      await bm.setOffline(newState);
+      return `Offline mode: ${newState ? 'ON' : 'OFF'}`;
+    }
+
     case 'route': {
       // route <pattern> block — abort matching requests
       // route <pattern> fulfill <status> [body] — respond with custom data

@@ -277,7 +277,7 @@ export async function handleMetaCommand(
       const { handleReadCommand } = await import('./read');
       const { handleWriteCommand } = await import('./write');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route']);
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline']);
       const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','state','dialog','console','network','cookies','storage','perf','devices','value','count']);
 
       const sessionBuffers = currentSession?.buffers;
@@ -397,6 +397,72 @@ export async function handleMetaCommand(
       }
 
       return output.join('\n');
+    }
+
+    // ─── Auth Vault ─────────────────────────────────────
+    case 'auth': {
+      const subcommand = args[0];
+      const { AuthVault } = await import('../auth-vault');
+      const vault = new AuthVault(LOCAL_DIR);
+
+      switch (subcommand) {
+        case 'save': {
+          const [, name, url, username, password] = args;
+          if (!name || !url || !username || !password) {
+            throw new Error('Usage: browse auth save <name> <url> <username> <password>');
+          }
+          vault.save(name, url, username, password);
+          return `Credentials saved: ${name}`;
+        }
+        case 'login': {
+          const name = args[1];
+          if (!name) throw new Error('Usage: browse auth login <name>');
+          return await vault.login(name, bm);
+        }
+        case 'list': {
+          const creds = vault.list();
+          if (creds.length === 0) return '(no saved credentials)';
+          return creds.map(c => `  ${c.name} — ${c.url} (${c.username})`).join('\n');
+        }
+        case 'delete': {
+          const name = args[1];
+          if (!name) throw new Error('Usage: browse auth delete <name>');
+          vault.delete(name);
+          return `Credentials deleted: ${name}`;
+        }
+        default:
+          throw new Error('Usage: browse auth save|login|list|delete [args...]');
+      }
+    }
+
+    // ─── HAR Recording ────────────────────────────────
+    case 'har': {
+      const subcommand = args[0];
+      if (!subcommand) throw new Error('Usage: browse har start | browse har stop [path]');
+
+      if (subcommand === 'start') {
+        bm.startHarRecording();
+        return 'HAR recording started';
+      }
+
+      if (subcommand === 'stop') {
+        const recording = bm.stopHarRecording();
+        if (!recording) throw new Error('No active HAR recording. Run "browse har start" first.');
+
+        const sessionBuffers = currentSession?.buffers || bm.getBuffers();
+        const { formatAsHar } = await import('../har');
+        const har = formatAsHar(sessionBuffers.networkBuffer, recording.startTime);
+
+        const harPath = args[1] || (currentSession
+          ? `${currentSession.outputDir}/recording.har`
+          : `${LOCAL_DIR}/browse-recording.har`);
+
+        fs.writeFileSync(harPath, JSON.stringify(har, null, 2));
+        const entryCount = (har as any).log.entries.length;
+        return `HAR saved: ${harPath} (${entryCount} entries)`;
+      }
+
+      throw new Error('Usage: browse har start | browse har stop [path]');
     }
 
     // ─── iframe Targeting ─────────────────────────────

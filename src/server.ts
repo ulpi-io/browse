@@ -14,6 +14,7 @@ import { SessionManager, type Session } from './session-manager';
 import { handleReadCommand } from './commands/read';
 import { handleWriteCommand } from './commands/write';
 import { handleMetaCommand } from './commands/meta';
+import { PolicyChecker } from './policy';
 import { DEFAULTS } from './constants';
 import { type LogEntry, type NetworkEntry } from './buffers';
 import * as fs from 'fs';
@@ -98,6 +99,8 @@ function flushSessionBuffers(session: Session, final: boolean) {
 let sessionManager: SessionManager;
 let browser: Browser;
 let isShuttingDown = false;
+let isRemoteBrowser = false;
+const policyChecker = new PolicyChecker();
 
 // Read/write/meta command sets for routing
 const READ_COMMANDS = new Set([
@@ -114,7 +117,7 @@ const WRITE_COMMANDS = new Set([
   'viewport', 'cookie', 'header', 'useragent',
   'upload', 'dialog-accept', 'dialog-dismiss', 'emulate',
   'drag', 'keydown', 'keyup',
-  'highlight', 'download', 'route',
+  'highlight', 'download', 'route', 'offline',
 ]);
 
 const META_COMMANDS = new Set([
@@ -125,6 +128,7 @@ const META_COMMANDS = new Set([
   'url', 'snapshot', 'snapshot-diff',
   'sessions', 'session-close',
   'frame', 'state',
+  'auth', 'har',
 ]);
 
 // Find port: use BROWSE_PORT or scan range
@@ -225,6 +229,33 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
     });
   }
 
+  // Policy check
+  const policyResult = policyChecker.check(command);
+  if (policyResult === 'deny') {
+    const error = `Command '${command}' denied by policy`;
+    const hint = 'Update browse-policy.json to allow this command.';
+    if (opts.jsonMode) {
+      return new Response(JSON.stringify({ success: false, error, hint }), {
+        status: 403, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ error, hint }), {
+      status: 403, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  if (policyResult === 'confirm') {
+    const error = `Command '${command}' requires confirmation (policy). Non-interactive CLI cannot confirm.`;
+    const hint = 'Move this command to the allow list in browse-policy.json.';
+    if (opts.jsonMode) {
+      return new Response(JSON.stringify({ success: false, error, hint }), {
+        status: 403, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ error, hint }), {
+      status: 403, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     let result: string;
 
@@ -287,8 +318,8 @@ async function shutdown() {
 
   await sessionManager.closeAll();
 
-  // Close the shared browser
-  if (browser) {
+  // Close the shared browser (skip if remote — we don't own it)
+  if (browser && !isRemoteBrowser) {
     browser.removeAllListeners('disconnected');
     await browser.close().catch(() => {});
   }
@@ -332,29 +363,38 @@ const sessionCleanupInterval = setInterval(async () => {
 async function start() {
   const port = await findPort();
 
-  // Launch shared Chromium
-  const launchOptions: Record<string, any> = { headless: true };
-  const proxyServer = process.env.BROWSE_PROXY;
-  if (proxyServer) {
-    launchOptions.proxy = { server: proxyServer };
-    if (process.env.BROWSE_PROXY_BYPASS) {
-      launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
-    }
-  }
-  browser = await chromium.launch(launchOptions);
-
-  // Chromium crash → flush, cleanup, exit
-  browser.on('disconnected', () => {
-    console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
-    if (sessionManager) flushAllBuffers(sessionManager, true);
-    try {
-      const currentState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-      if (currentState.pid === process.pid || currentState.token === AUTH_TOKEN) {
-        fs.unlinkSync(STATE_FILE);
+  // Launch or connect to browser
+  const cdpUrl = process.env.BROWSE_CDP_URL;
+  if (cdpUrl) {
+    // Connect to remote Chrome via CDP
+    browser = await chromium.connectOverCDP(cdpUrl);
+    isRemoteBrowser = true;
+    console.log(`[browse] Connected to remote Chrome via CDP: ${cdpUrl}`);
+  } else {
+    // Launch local Chromium
+    const launchOptions: Record<string, any> = { headless: true };
+    const proxyServer = process.env.BROWSE_PROXY;
+    if (proxyServer) {
+      launchOptions.proxy = { server: proxyServer };
+      if (process.env.BROWSE_PROXY_BYPASS) {
+        launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
       }
-    } catch {}
-    process.exit(1);
-  });
+    }
+    browser = await chromium.launch(launchOptions);
+
+    // Chromium crash → flush, cleanup, exit (only for owned browser)
+    browser.on('disconnected', () => {
+      console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
+      if (sessionManager) flushAllBuffers(sessionManager, true);
+      try {
+        const currentState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+        if (currentState.pid === process.pid || currentState.token === AUTH_TOKEN) {
+          fs.unlinkSync(STATE_FILE);
+        }
+      } catch {}
+      process.exit(1);
+    });
+  }
 
   // Create session manager
   sessionManager = new SessionManager(browser, LOCAL_DIR);

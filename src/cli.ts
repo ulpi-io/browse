@@ -460,9 +460,13 @@ Visual:         screenshot [path] | pdf [path] | responsive [prefix]
 Snapshot:       snapshot [-i] [-c] [-C] [-d N] [-s sel]
 Compare:        diff <url1> <url2>
 Multi-step:     chain (reads JSON from stdin)
+Network:        offline [on|off] | route <pattern> block|fulfill
+Recording:      har start | har stop [path]
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
+Auth:           auth save <name> <url> <user> <pass>
+                auth login <name> | auth list | auth delete <name>
 State:          state save [name] | state load [name]
 Server:         status | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
