@@ -96,7 +96,7 @@ export class SessionManager {
           await context.route('**/*', (route) => {
             const url = route.request().url();
             if (domainFilter!.isAllowed(url)) {
-              route.continue();
+              route.fallback();
             } else {
               route.abort('blockedbyclient');
             }
