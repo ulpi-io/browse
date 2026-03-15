@@ -25,19 +25,9 @@ export class PolicyChecker {
   private confirmOverrides: Set<string> | null = null;
 
   constructor(filePath?: string) {
-    // Explicit path from env or argument
-    this.filePath = filePath || process.env.BROWSE_POLICY || null;
-
-    // Auto-discover browse-policy.json in project root
-    if (!this.filePath) {
-      const candidates = ['browse-policy.json'];
-      for (const name of candidates) {
-        if (fs.existsSync(name)) {
-          this.filePath = name;
-          break;
-        }
-      }
-    }
+    // Explicit path from env or argument, or auto-discover default location.
+    // Always set filePath so reload() can detect the file appearing later.
+    this.filePath = filePath || process.env.BROWSE_POLICY || 'browse-policy.json';
 
     // Parse BROWSE_CONFIRM_ACTIONS env var
     const confirmEnv = process.env.BROWSE_CONFIRM_ACTIONS;
@@ -51,8 +41,6 @@ export class PolicyChecker {
   }
 
   private reload(): void {
-    if (!this.filePath) return;
-
     try {
       const stat = fs.statSync(this.filePath);
       if (stat.mtimeMs === this.lastMtime) return;
@@ -61,7 +49,8 @@ export class PolicyChecker {
       const raw = fs.readFileSync(this.filePath, 'utf-8');
       this.policy = JSON.parse(raw);
     } catch {
-      // File missing or invalid — keep last-known-good policy
+      // File missing or invalid — if it was loaded before, keep last-known-good.
+      // If it never existed, policy stays null (everything allowed).
     }
   }
 

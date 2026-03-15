@@ -21,7 +21,7 @@ for target in "${targets[@]}"; do
   outfile="$OUTDIR/browse-${suffix}"
 
   echo "Building ${outfile}..."
-  bun build --compile --target="$target" "$ENTRY" --outfile "$outfile"
+  bun build --compile --external electron --external chromium-bidi --target="$target" "$ENTRY" --outfile "$outfile"
   echo "  → $(ls -lh "$outfile" | awk '{print $5}')"
 done
 

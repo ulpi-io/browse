@@ -38,7 +38,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build --compile src/cli.ts --outfile dist/browse",
+    "build": "bun build --compile --external electron --external chromium-bidi src/cli.ts --outfile dist/browse",
     "build:all": "bash scripts/build-all.sh",
     "dev": "bun run src/cli.ts",
     "server": "bun run src/server.ts",

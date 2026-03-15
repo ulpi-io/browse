@@ -24,7 +24,9 @@ const cliFlags = {
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10);
 // Instance isolation: each parent process (e.g., Claude Code) gets its own server.
 // BROWSE_PORT takes precedence (explicit), then BROWSE_INSTANCE (env override), then PPID (auto).
-const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || (BROWSE_PORT ? '' : String(process.ppid));
+// In compiled mode ($bunfs), PPID is unstable (shell forks per invocation) — skip it.
+const IS_COMPILED = import.meta.dir.includes('$bunfs');
+const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || (BROWSE_PORT || IS_COMPILED ? '' : String(process.ppid));
 const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : (BROWSE_INSTANCE ? `-${BROWSE_INSTANCE}` : '');
 
 /**
@@ -78,6 +80,11 @@ export function resolveServerScript(
     if (fs.existsSync(direct)) {
       return direct;
     }
+  }
+
+  // Compiled binary ($bunfs): server is bundled, no external file needed
+  if (metaDir.includes('$bunfs')) {
+    return '__compiled__';
   }
 
   throw new Error(
@@ -181,10 +188,15 @@ async function startServer(): Promise<ServerState> {
       }
     } catch {}
 
-    // Start server as detached background process
-    const proc = Bun.spawn(['bun', 'run', SERVER_SCRIPT], {
+    // Start server as detached background process.
+    // Compiled binary: self-spawn with __BROWSE_SERVER_MODE=1
+    // Dev mode: spawn bun with server.ts
+    const spawnCmd = SERVER_SCRIPT === '__compiled__'
+      ? [process.execPath]
+      : ['bun', 'run', SERVER_SCRIPT];
+    const proc = Bun.spawn(spawnCmd, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE },
+      env: { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE },
     });
 
     // Don't hold the CLI open
@@ -235,11 +247,54 @@ async function ensureServer(): Promise<ServerState> {
     } catch {
       // Health check failed — server is dead or unhealthy
     }
+
+    // Server is alive but unhealthy (shutting down, browser crashed).
+    // Kill it so we can start fresh.
+    try { process.kill(state.pid, 'SIGTERM'); } catch {}
+    // Brief wait for graceful exit
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && isProcessAlive(state.pid)) {
+      await Bun.sleep(100);
+    }
+    if (isProcessAlive(state.pid)) {
+      try { process.kill(state.pid, 'SIGKILL'); } catch {}
+      await Bun.sleep(200);
+    }
   }
+
+  // Clean up stale state file
+  if (state) {
+    try { fs.unlinkSync(STATE_FILE); } catch {}
+  }
+
+  // Clean up orphaned state files from other instances (e.g., old PPID-suffixed files)
+  cleanOrphanedServers();
 
   // Need to (re)start
   console.error('[browse] Starting server...');
   return startServer();
+}
+
+/**
+ * Find and kill orphaned browse server processes whose state files have stale PIDs.
+ * This handles the case where a server was started with a different PPID suffix,
+ * the CLI can't find its state file, and the zombie occupies a port forever.
+ */
+function cleanOrphanedServers(): void {
+  try {
+    const files = fs.readdirSync(LOCAL_DIR);
+    for (const file of files) {
+      if (!file.startsWith('browse-server') || !file.endsWith('.json') || file.endsWith('.lock')) continue;
+      const filePath = path.join(LOCAL_DIR, file);
+      try {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        if (data.pid && !isProcessAlive(data.pid)) {
+          // Dead server — remove state file
+          fs.unlinkSync(filePath);
+        }
+      } catch {}
+    }
+  } catch {}
 }
 
 // ─── Command Dispatch ──────────────────────────────────────────
@@ -306,22 +361,24 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
       process.stdout.write(text);
       if (!text.endsWith('\n')) process.stdout.write('\n');
 
-      // After restart succeeds, wait for old server to actually die, then start fresh
-      if (command === 'restart') {
+      // After stop/restart, wait for old server to actually die
+      if (command === 'stop' || command === 'restart') {
         const oldPid = state.pid;
-        // Wait up to 5s for graceful shutdown
         const deadline = Date.now() + 5000;
         while (Date.now() < deadline && isProcessAlive(oldPid)) {
           await Bun.sleep(100);
         }
-        // If still alive (e.g. browserManager.close() stalled), force-kill
         if (isProcessAlive(oldPid)) {
           try { process.kill(oldPid, 'SIGKILL'); } catch {}
-          // Brief wait for OS to reclaim the process and release the port
           await Bun.sleep(300);
         }
-        const newState = await startServer();
-        console.error(`[browse] Server restarted (PID: ${newState.pid})`);
+        // Clean up state file
+        try { fs.unlinkSync(STATE_FILE); } catch {}
+
+        if (command === 'restart') {
+          const newState = await startServer();
+          console.error(`[browse] Server restarted (PID: ${newState.pid})`);
+        }
       }
     } else {
       // Try to parse as JSON error
@@ -504,7 +561,9 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
   await sendCommand(state, command, commandArgs, 0, sessionId);
 }
 
-if (import.meta.main) {
+if (process.env.__BROWSE_SERVER_MODE === '1') {
+  import('./server');
+} else if (import.meta.main) {
   main().catch((err) => {
     console.error(`[browse] ${err.message}`);
     process.exit(1);

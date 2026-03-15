@@ -131,29 +131,30 @@ const META_COMMANDS = new Set([
   'auth', 'har',
 ]);
 
+// Probe if a port is free using net.createServer (not Bun.serve which fatally crashes on EADDRINUSE)
+import * as net from 'net';
+
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => { srv.close(() => resolve(true)); });
+    srv.listen(port, '127.0.0.1');
+  });
+}
+
 // Find port: use BROWSE_PORT or scan range
 async function findPort(): Promise<number> {
   if (BROWSE_PORT) {
-    try {
-      const testServer = Bun.serve({ port: BROWSE_PORT, fetch: () => new Response('ok') });
-      testServer.stop();
-      return BROWSE_PORT;
-    } catch {
-      throw new Error(`[browse] Port ${BROWSE_PORT} is in use`);
-    }
+    if (await isPortFree(BROWSE_PORT)) return BROWSE_PORT;
+    throw new Error(`[browse] Port ${BROWSE_PORT} is in use`);
   }
 
   // Scan range
   const start = parseInt(process.env.BROWSE_PORT_START || String(DEFAULTS.PORT_RANGE_START), 10);
   const end = start + (DEFAULTS.PORT_RANGE_END - DEFAULTS.PORT_RANGE_START);
   for (let port = start; port <= end; port++) {
-    try {
-      const testServer = Bun.serve({ port, fetch: () => new Response('ok') });
-      testServer.stop();
-      return port;
-    } catch {
-      continue;
-    }
+    if (await isPortFree(port)) return port;
   }
   throw new Error(`[browse] No available port in range ${start}-${end}`);
 }
@@ -408,7 +409,7 @@ async function start() {
 
       // Health check — no auth required
       if (url.pathname === '/health') {
-        const healthy = browser.isConnected();
+        const healthy = !isShuttingDown && browser.isConnected();
         return new Response(JSON.stringify({
           status: healthy ? 'healthy' : 'unhealthy',
           uptime: Math.floor((Date.now() - startTime) / 1000),
