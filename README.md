@@ -177,7 +177,7 @@ Requires [Bun](https://bun.sh). Chromium is installed automatically via Playwrig
 Install the browse skill into your project so Claude Code uses it automatically:
 
 ```bash
-browse-install-skill
+browse install-skill
 ```
 
 This copies the skill definition to `.claude/skills/browse/SKILL.md` and adds all browse commands to `.claude/settings.json` permissions — no more approval prompts.

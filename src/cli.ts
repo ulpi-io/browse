@@ -372,6 +372,13 @@ async function main() {
   }
   sessionId = sessionId || process.env.BROWSE_SESSION || undefined;
 
+  // ─── Local commands (no server needed) ─────────────────────
+  if (args[0] === 'install-skill') {
+    const { installSkill } = await import('./install-skill');
+    installSkill(args[1]);
+    return;
+  }
+
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`browse — Fast headless browser for AI coding agents
 
@@ -394,6 +401,7 @@ Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Sessions:       sessions | session-close <id>
 Server:         status | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
+Setup:          install-skill [path]
 
 Options:
   --session <id>  Use a named session (isolates tabs, refs, cookies).

@@ -1,13 +1,8 @@
-#!/usr/bin/env bun
 /**
  * browse install-skill — install the browse Claude Code skill into a project
  *
  * Copies SKILL.md to .claude/skills/browse/SKILL.md
  * and adds browse permission rules to .claude/settings.json
- *
- * Usage:
- *   browse install-skill           # install into current project
- *   browse install-skill /path     # install into specific project
  */
 
 import * as fs from 'fs';
@@ -39,20 +34,19 @@ const PERMISSIONS = [
   'Bash(browse useragent:*)',
 ];
 
-function main() {
-  const targetDir = process.argv[2] || process.cwd();
+export function installSkill(targetDir?: string) {
+  const dir = targetDir || process.cwd();
 
-  // Verify target looks like a project root
-  const hasGit = fs.existsSync(path.join(targetDir, '.git'));
-  const hasClaude = fs.existsSync(path.join(targetDir, '.claude'));
+  const hasGit = fs.existsSync(path.join(dir, '.git'));
+  const hasClaude = fs.existsSync(path.join(dir, '.claude'));
   if (!hasGit && !hasClaude) {
-    console.error(`Not a project root: ${targetDir}`);
+    console.error(`Not a project root: ${dir}`);
     console.error('Run from a directory with .git or .claude, or pass the path as an argument.');
     process.exit(1);
   }
 
   // 1. Copy SKILL.md
-  const skillDir = path.join(targetDir, '.claude', 'skills', 'browse');
+  const skillDir = path.join(dir, '.claude', 'skills', 'browse');
   fs.mkdirSync(skillDir, { recursive: true });
 
   const skillSource = path.resolve(import.meta.dir, '..', 'skill', 'SKILL.md');
@@ -65,17 +59,17 @@ function main() {
   }
 
   fs.copyFileSync(skillSource, skillDest);
-  console.log(`  Skill installed: ${path.relative(targetDir, skillDest)}`);
+  console.log(`Skill installed: ${path.relative(dir, skillDest)}`);
 
   // 2. Update .claude/settings.json with permissions
-  const settingsPath = path.join(targetDir, '.claude', 'settings.json');
+  const settingsPath = path.join(dir, '.claude', 'settings.json');
   let settings: any = {};
 
   if (fs.existsSync(settingsPath)) {
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
     } catch {
-      console.error(`  Warning: could not parse ${settingsPath}, creating fresh`);
+      console.error(`Warning: could not parse ${settingsPath}, creating fresh`);
       settings = {};
     }
   }
@@ -95,12 +89,10 @@ function main() {
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 
   if (added > 0) {
-    console.log(`  Permissions added: ${added} rules to ${path.relative(targetDir, settingsPath)}`);
+    console.log(`Permissions: ${added} rules added to ${path.relative(dir, settingsPath)}`);
   } else {
-    console.log(`  Permissions: already configured`);
+    console.log(`Permissions: already configured`);
   }
 
-  console.log('\n  Done. Claude Code will now use browse for web tasks automatically.');
+  console.log('\nDone. Claude Code will now use browse for web tasks automatically.');
 }
-
-main();

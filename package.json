@@ -10,8 +10,7 @@
     "playwright": "^1.58.2"
   },
   "bin": {
-    "browse": "bin/browse.ts",
-    "browse-install-skill": "bin/install-skill.ts"
+    "browse": "bin/browse.ts"
   },
   "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
   "engines": {
