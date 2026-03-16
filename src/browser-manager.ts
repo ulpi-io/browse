@@ -187,6 +187,10 @@ export class BrowserManager {
     return this.buffers;
   }
 
+  getBrowser(): Browser | null {
+    return this.browser;
+  }
+
   getContext(): BrowserContext | null {
     return this.context;
   }

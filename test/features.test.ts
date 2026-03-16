@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { startTestServer } from './test-server';
+import { sharedBm as bm, sharedBaseUrl as baseUrl } from './setup';
 import { BrowserManager } from '../src/browser-manager';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
@@ -22,28 +22,6 @@ import { loadConfig } from '../src/config';
 import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/png-compare';
 import { sanitizeName } from '../src/sanitize';
 import * as fs from 'fs';
-import * as path from 'path';
-
-let testServer: ReturnType<typeof startTestServer>;
-let bm: BrowserManager;
-let baseUrl: string;
-
-beforeAll(async () => {
-  testServer = startTestServer(0);
-  baseUrl = testServer.url;
-
-  bm = new BrowserManager();
-  await bm.launch();
-});
-
-afterAll(async () => {
-  try { testServer.server.stop(); } catch {}
-  // bm.close() can hang indefinitely waiting for Chromium — race with a timeout
-  await Promise.race([
-    bm.close().catch(() => {}),
-    new Promise(resolve => setTimeout(resolve, 3000)),
-  ]);
-});
 
 // ─── DomainFilter unit tests ────────────────────────────────────
 
@@ -506,7 +484,12 @@ describe('DomainFilter init script', () => {
 
   beforeAll(async () => {
     filteredBm = new BrowserManager();
-    await filteredBm.launch();
+    const sharedBrowser = bm.getBrowser();
+    if (sharedBrowser) {
+      await filteredBm.launchWithBrowser(sharedBrowser);
+    } else {
+      await filteredBm.launch();
+    }
     const filter = new DomainFilter(['127.0.0.1']);
     const ctx = filteredBm.getContext()!;
     await ctx.addInitScript(filter.generateInitScript());

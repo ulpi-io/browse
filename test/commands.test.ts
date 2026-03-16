@@ -6,8 +6,6 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { startTestServer } from './test-server';
-import { BrowserManager } from '../src/browser-manager';
 import { resolveServerScript, SAFE_TO_RETRY } from '../src/cli';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
@@ -16,27 +14,7 @@ import { consoleBuffer, networkBuffer, addConsoleEntry, addNetworkEntry, console
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 import * as path from 'path';
-
-let testServer: ReturnType<typeof startTestServer>;
-let bm: BrowserManager;
-let baseUrl: string;
-
-beforeAll(async () => {
-  testServer = startTestServer(0);
-  baseUrl = testServer.url;
-
-  bm = new BrowserManager();
-  await bm.launch();
-});
-
-afterAll(async () => {
-  try { testServer.server.stop(); } catch {}
-  // bm.close() can hang indefinitely waiting for Chromium — race with a timeout
-  await Promise.race([
-    bm.close().catch(() => {}),
-    new Promise(resolve => setTimeout(resolve, 3000)),
-  ]);
-});
+import { sharedBm as bm, sharedBaseUrl as baseUrl, sharedServer as testServer } from './setup';
 
 // ─── Navigation ─────────────────────────────────────────────────
 
