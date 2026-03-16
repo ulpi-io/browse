@@ -22,6 +22,8 @@ import { loadConfig } from '../src/config';
 import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/png-compare';
 import { sanitizeName } from '../src/sanitize';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // ─── DomainFilter unit tests ────────────────────────────────────
 
@@ -1029,4 +1031,163 @@ describe('diff command', () => {
     // Only the header lines start with +/-, content lines should match
     expect(lines.length).toBeLessThanOrEqual(2); // just the --- and +++ headers
   });
+});
+
+// ─── Video Recording ─────────────────────────────────────────
+
+describe('Video Recording', () => {
+  let videoDir: string;
+
+  beforeAll(async () => {
+    videoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-video-test-'));
+    // Ensure we start from a known page
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+  });
+
+  afterAll(async () => {
+    // Stop recording if still active (defensive cleanup)
+    try { await bm.stopVideoRecording(); } catch {}
+    // Reset emulation if changed
+    try { await handleWriteCommand('emulate', ['reset'], bm); } catch {}
+    // Clean up temp directory
+    try { fs.rmSync(videoDir, { recursive: true, force: true }); } catch {}
+  });
+
+  test('start recording, navigate, stop produces WebM files', async () => {
+    const dir = path.join(videoDir, 'happy-path');
+    await bm.startVideoRecording(dir);
+
+    // Navigate to generate video content
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    // Small delay so the video codec captures at least one frame
+    await Bun.sleep(500);
+
+    const result = await bm.stopVideoRecording();
+    expect(result).not.toBeNull();
+    expect(result!.paths.length).toBeGreaterThan(0);
+    expect(result!.dir).toBe(dir);
+    for (const p of result!.paths) {
+      expect(fs.existsSync(p)).toBe(true);
+      expect(fs.statSync(p).size).toBeGreaterThan(0);
+    }
+  }, 30000);
+
+  test('status: active while recording, inactive after stop', async () => {
+    const dir = path.join(videoDir, 'status-check');
+    expect(bm.getVideoRecording()).toBeNull();
+
+    await bm.startVideoRecording(dir);
+    const recording = bm.getVideoRecording();
+    expect(recording).not.toBeNull();
+    expect(recording!.dir).toBe(dir);
+    expect(recording!.startedAt).toBeGreaterThan(0);
+
+    await bm.stopVideoRecording();
+    expect(bm.getVideoRecording()).toBeNull();
+  }, 30000);
+
+  test('double start throws "already active"', async () => {
+    const dir = path.join(videoDir, 'double-start');
+    await bm.startVideoRecording(dir);
+
+    try {
+      await bm.startVideoRecording(path.join(videoDir, 'double-start-2'));
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('already active');
+    }
+
+    await bm.stopVideoRecording();
+  }, 30000);
+
+  test('stop without start returns null', async () => {
+    // Ensure no recording is active
+    expect(bm.getVideoRecording()).toBeNull();
+    const result = await bm.stopVideoRecording();
+    expect(result).toBeNull();
+  });
+
+  test('screenshot works during recording', async () => {
+    const dir = path.join(videoDir, 'screenshot-during');
+    await bm.startVideoRecording(dir);
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+
+    const screenshotPath = path.join(videoDir, 'during-recording.png');
+    const result = await handleMetaCommand('screenshot', [screenshotPath], bm, async () => {});
+    expect(result).toContain('Screenshot saved');
+    expect(fs.existsSync(screenshotPath)).toBe(true);
+    expect(fs.statSync(screenshotPath).size).toBeGreaterThan(0);
+
+    await bm.stopVideoRecording();
+  }, 30000);
+
+  test('emulate during recording keeps recording active and produces video', async () => {
+    const dir = path.join(videoDir, 'emulate-during');
+    await bm.startVideoRecording(dir);
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+
+    // Emulate a device -- this recreates the context
+    await handleWriteCommand('emulate', ['iPhone 15'], bm);
+
+    // Recording should still be active (auto-injected via recreateContext)
+    const recording = bm.getVideoRecording();
+    expect(recording).not.toBeNull();
+    expect(recording!.dir).toBe(dir);
+
+    await Bun.sleep(300);
+    const result = await bm.stopVideoRecording();
+    expect(result).not.toBeNull();
+    expect(result!.paths.length).toBeGreaterThan(0);
+    for (const p of result!.paths) {
+      expect(fs.existsSync(p)).toBe(true);
+      expect(fs.statSync(p).size).toBeGreaterThan(0);
+    }
+    // Reset to desktop for subsequent tests
+    await handleWriteCommand('emulate', ['reset'], bm);
+  }, 30000);
+
+  test('video command handler: start, status, stop via handleMetaCommand', async () => {
+    const dir = path.join(videoDir, 'meta-handler');
+
+    const startResult = await handleMetaCommand('video', ['start', dir], bm, async () => {});
+    expect(startResult).toContain('Video recording started');
+    expect(startResult).toContain(dir);
+
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+
+    const statusResult = await handleMetaCommand('video', ['status'], bm, async () => {});
+    expect(statusResult).toContain('active');
+    expect(statusResult).toContain(dir);
+
+    await Bun.sleep(300);
+    const stopResult = await handleMetaCommand('video', ['stop'], bm, async () => {});
+    expect(stopResult).toContain('Video saved');
+    expect(stopResult).toContain('.webm');
+    expect(stopResult).toMatch(/\d+\.\d+s/); // duration like "1.2s"
+
+    // Status should now show inactive
+    const afterStatus = await handleMetaCommand('video', ['status'], bm, async () => {});
+    expect(afterStatus).toContain('No active');
+  }, 30000);
+
+  test('video stop via handler throws when not recording', async () => {
+    try {
+      await handleMetaCommand('video', ['stop'], bm, async () => {});
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('No active video recording');
+    }
+  });
+
+  test('video files use tab-N.webm naming convention', async () => {
+    const dir = path.join(videoDir, 'naming');
+    await bm.startVideoRecording(dir);
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await Bun.sleep(300);
+
+    const result = await bm.stopVideoRecording();
+    expect(result).not.toBeNull();
+    // Should have at least one file named tab-N.webm
+    expect(result!.paths.some(p => /tab-\d+\.webm$/.test(p))).toBe(true);
+  }, 30000);
 });

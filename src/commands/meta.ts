@@ -619,6 +619,36 @@ export async function handleMetaCommand(
       throw new Error('Usage: browse har start | browse har stop [path]');
     }
 
+    // ─── Video Recording ─────────────────────────────────
+    case 'video': {
+      const subcommand = args[0];
+      if (!subcommand) throw new Error('Usage: browse video start [dir] | browse video stop | browse video status');
+
+      if (subcommand === 'start') {
+        const dir = args[1] || (currentSession
+          ? `${currentSession.outputDir}`
+          : `${LOCAL_DIR}`);
+        await bm.startVideoRecording(dir);
+        return `Video recording started — output dir: ${dir}`;
+      }
+
+      if (subcommand === 'stop') {
+        const result = await bm.stopVideoRecording();
+        if (!result) throw new Error('No active video recording. Run "browse video start" first.');
+        const duration = ((Date.now() - result.startedAt) / 1000).toFixed(1);
+        return `Video saved: ${result.paths.join(', ')} (${duration}s)`;
+      }
+
+      if (subcommand === 'status') {
+        const recording = bm.getVideoRecording();
+        if (!recording) return 'No active video recording';
+        const duration = ((Date.now() - recording.startedAt) / 1000).toFixed(1);
+        return `Video recording active — dir: ${recording.dir}, duration: ${duration}s`;
+      }
+
+      throw new Error('Usage: browse video start [dir] | browse video stop | browse video status');
+    }
+
     // ─── Semantic Locator ──────────────────────────────
     case 'find': {
       const root = bm.getLocatorRoot();

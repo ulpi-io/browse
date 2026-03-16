@@ -167,6 +167,9 @@ export class BrowserManager {
   // ─── HAR Recording ────────────────────────────────────────
   private harRecording: HarRecording | null = null;
 
+  // ─── Video Recording ────────────────────────────────────────
+  private videoRecording: { dir: string; startedAt: number } | null = null;
+
   // ─── Init Script (domain filter JS injection) ─────────────
   private initScript: string | null = null;
 
@@ -553,6 +556,17 @@ export class BrowserManager {
   private async recreateContext(contextOptions: Record<string, any>): Promise<void> {
     if (!this.browser) return;
 
+    // Auto-inject recordVideo when video recording is active (so emulateDevice/applyUserAgent pass it through)
+    if (this.videoRecording && !contextOptions.recordVideo) {
+      contextOptions = {
+        ...contextOptions,
+        recordVideo: {
+          dir: this.videoRecording.dir,
+          size: contextOptions.viewport || this.currentDevice?.viewport || { width: 1920, height: 1080 },
+        },
+      };
+    }
+
     // Save all tab URLs and which tab was active
     const tabUrls: Array<{ id: number; url: string; active: boolean }> = [];
     for (const [id, page] of this.pages) {
@@ -764,6 +778,67 @@ export class BrowserManager {
 
   getHarRecording(): HarRecording | null {
     return this.harRecording;
+  }
+
+  // ─── Video Recording ──────────────────────────────────────
+
+  async startVideoRecording(dir: string): Promise<void> {
+    if (this.videoRecording) throw new Error('Video recording already active');
+    const fs = await import('fs');
+    fs.mkdirSync(dir, { recursive: true });
+
+    this.videoRecording = { dir, startedAt: Date.now() };
+    const viewport = this.currentDevice?.viewport || { width: 1920, height: 1080 };
+    await this.recreateContext({
+      viewport,
+      ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+      ...(this.currentDevice ? {
+        deviceScaleFactor: this.currentDevice.deviceScaleFactor,
+        isMobile: this.currentDevice.isMobile,
+        hasTouch: this.currentDevice.hasTouch,
+      } : {}),
+      recordVideo: { dir, size: viewport },
+    });
+  }
+
+  async stopVideoRecording(): Promise<{ dir: string; startedAt: number; paths: string[] } | null> {
+    if (!this.videoRecording) return null;
+
+    const recording = this.videoRecording;
+    // Collect video objects before pages are closed by recreateContext
+    const videos: Array<{ video: any; tabId: number }> = [];
+    for (const [id, page] of this.pages) {
+      const video = page.video();
+      if (video) videos.push({ video, tabId: id });
+    }
+
+    // Clear state BEFORE recreateContext so auto-injection doesn't add recordVideo
+    this.videoRecording = null;
+
+    const viewport = this.currentDevice?.viewport || { width: 1920, height: 1080 };
+    await this.recreateContext({
+      viewport,
+      ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+      ...(this.currentDevice ? {
+        deviceScaleFactor: this.currentDevice.deviceScaleFactor,
+        isMobile: this.currentDevice.isMobile,
+        hasTouch: this.currentDevice.hasTouch,
+      } : {}),
+    });
+
+    // Save videos with predictable names (saveAs works for both local and remote CDP)
+    const paths: string[] = [];
+    for (const { video, tabId } of videos) {
+      const target = `${recording.dir}/tab-${tabId}.webm`;
+      await video.saveAs(target);
+      paths.push(target);
+    }
+
+    return { dir: recording.dir, startedAt: recording.startedAt, paths };
+  }
+
+  getVideoRecording(): { dir: string; startedAt: number } | null {
+    return this.videoRecording;
   }
 
   // ─── Init Script ───────────────────────────────────────────

@@ -116,6 +116,7 @@ Every detected element gets a ref. `browse click @e3` just works.
 | State persistence | Not available | `state save\|load` |
 | Credential vault | Not available | `auth save\|login\|list` |
 | HAR recording | Not available | `har start\|stop` |
+| Video recording | Not available | `video start [dir]\|stop\|status` |
 | Clipboard access | Not available | `clipboard [write <text>]` |
 | Element finding | Not available | `find role\|text\|label\|placeholder\|testid` |
 | DevTools inspect | Not available | `inspect` |
@@ -291,7 +292,7 @@ echo '[["goto","https://example.com"],["text"]]' | browse chain
 `state save [name]` | `state load [name]` | `state list` | `state show [name]` | `auth save <name> <url> <user> <pass>` | `auth login <name>` | `auth list` | `auth delete <name>`
 
 ### Recording
-`har start` | `har stop [path]`
+`har start` | `har stop [path]` | `video start [dir]` | `video stop` | `video status`
 
 ### Debug
 `inspect` — open DevTools debugger (requires `BROWSE_DEBUG_PORT`).
@@ -384,6 +385,7 @@ Inspired by and originally derived from the `/browse` skill in [gstack](https://
 - `offline on/off` — offline mode toggle
 - `state save/load` — persist and restore cookies + localStorage (all origins)
 - `har start/stop` — HAR recording and export
+- `video start/stop/status` — video recording (WebM, compositor-level, works with remote CDP)
 - `screenshot-diff` — pixel-level visual regression testing
 - `find role/text/label/placeholder/testid` — semantic element locators
 

@@ -612,6 +612,7 @@ Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
 Multi-step:     chain (reads JSON from stdin)
 Network:        offline [on|off] | route <pattern> block|fulfill
 Recording:      har start | har stop [path]
+                video start [dir] | video stop | video status
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>

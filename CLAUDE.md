@@ -46,7 +46,7 @@ src/sanitize.ts            Path-safe name sanitization
 src/install-skill.ts       Claude Code skill installer
 src/commands/read.ts       19 read commands (per-session buffers)
 src/commands/write.ts      31 write commands (navigation/interaction)
-src/commands/meta.ts       23 meta commands (tabs, visual, chain, sessions)
+src/commands/meta.ts       25 meta commands (tabs, visual, chain, sessions)
 test/commands.test.ts      Integration tests
 test/snapshot.test.ts      Snapshot-specific tests
 test/sessions.test.ts      Session multiplexing isolation tests
@@ -81,11 +81,11 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 - `BrowserManager.launch()` = own Chromium (multi-process mode)
 - `BrowserManager.launchWithBrowser(browser)` = shared Chromium (session mode)
 
-## Command Categories (75 total)
+## Command Categories (76 total)
 
 - **Read** (20): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `element-state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `devices`, `value`, `count`, `clipboard`
 - **Write** (31): `goto`, `back`, `forward`, `reload`, `click`, `dblclick`, `fill`, `select`, `hover`, `focus`, `check`, `uncheck`, `type`, `press`, `keydown`, `keyup`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `dialog-accept`, `dialog-dismiss`, `emulate`, `drag`, `highlight`, `download`, `route`, `offline`
-- **Meta** (24): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `screenshot-diff`, `sessions`, `session-close`, `frame`, `state`, `find`, `auth`, `har`, `inspect`
+- **Meta** (25): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `screenshot-diff`, `sessions`, `session-close`, `frame`, `state`, `find`, `auth`, `har`, `inspect`, `video`
 
 ## Development Rules
 

@@ -22,7 +22,7 @@
 | `src/install-skill.ts` | Claude Code skill installer (copies SKILL.md, adds permissions) |
 | `src/commands/read.ts` | 19 read commands (no side effects, per-session buffers) |
 | `src/commands/write.ts` | 31 write commands (navigation, interaction, routing) |
-| `src/commands/meta.ts` | 23 meta commands (tabs, screenshots, chain, auth, HAR) |
+| `src/commands/meta.ts` | 25 meta commands (tabs, screenshots, chain, auth, HAR, video) |
 | `src/bun.d.ts` | Bun type declarations |
 | `src/diff.d.ts` | diff module type declarations |
 
@@ -144,7 +144,7 @@
 | `route` | `<pattern> block\|fulfill` | Intercept network requests |
 | `offline` | `[on\|off]` | Toggle offline mode |
 
-### Meta Commands (23) — tabs, server, visual, chain, auth, HAR
+### Meta Commands (25) — tabs, server, visual, chain, auth, HAR, video
 
 | Command | Args | Purpose |
 |---------|------|---------|
@@ -171,6 +171,8 @@
 | `find` | `role\|text\|label\|placeholder\|testid <query>` | Find elements by role, text, label, etc. |
 | `auth` | `save\|login\|list\|delete <args>` | Credential vault operations |
 | `har` | `start\|stop [path]` | HAR recording (start/stop + export) |
+| `video` | `start [dir]\|stop\|status` | Video recording (start/stop/status) |
+| `inspect` | -- | DevTools inspect (requires BROWSE_DEBUG_PORT) |
 
 ## Constants (DEFAULTS)
 

@@ -129,7 +129,7 @@ const META_COMMANDS = new Set([
   'url', 'snapshot', 'snapshot-diff', 'screenshot-diff',
   'sessions', 'session-close',
   'frame', 'state', 'find',
-  'auth', 'har', 'inspect',
+  'auth', 'har', 'video', 'inspect',
 ]);
 
 // Probe if a port is free using net.createServer (not Bun.serve which fatally crashes on EADDRINUSE)
