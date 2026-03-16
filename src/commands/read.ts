@@ -317,6 +317,7 @@ export async function handleReadCommand(
     case 'clipboard': {
       if (args[0] === 'write') {
         const text = args.slice(1).join(' ');
+        if (!text) throw new Error('Usage: browse clipboard write <text>');
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
         await evalCtx.evaluate((t) => navigator.clipboard.writeText(t), text);
         return `Clipboard set: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}`;
