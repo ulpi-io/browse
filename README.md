@@ -92,7 +92,7 @@ $ browse snapshot -i -C
 
 Every detected element gets a ref. `browse click @e3` just works.
 
-### 4. 58+ Purpose-Built Commands vs Generic Tools
+### 4. 75 Purpose-Built Commands vs Generic Tools
 
 @playwright/mcp has ~15 tools. For anything beyond navigate/click/type, you write JavaScript via `browser_evaluate`. `browse` has purpose-built commands that return structured, minimal output:
 
@@ -116,6 +116,9 @@ Every detected element gets a ref. `browse click @e3` just works.
 | State persistence | Not available | `state save\|load` |
 | Credential vault | Not available | `auth save\|login\|list` |
 | HAR recording | Not available | `har start\|stop` |
+| Clipboard access | Not available | `clipboard [write <text>]` |
+| Element finding | Not available | `find role\|text\|label\|placeholder\|testid` |
+| DevTools inspect | Not available | `inspect` |
 | Domain restriction | Not available | `--allowed-domains` |
 | Prompt injection defense | Not available | `--content-boundaries` |
 | JSON output mode | Not available | `--json` |
@@ -255,13 +258,17 @@ After snapshot, use `@e1`, `@e2`... as selectors in any command.
 100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright built-ins.
 
 ### Inspection
-`js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `element-state <sel>` | `value <sel>` | `count <sel>` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
+`js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `element-state <sel>` | `value <sel>` | `count <sel>` | `clipboard [write <text>]` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
 
 ### Visual
 `screenshot [path]` | `screenshot --annotate` | `pdf [path]` | `responsive [prefix]`
 
 ### Compare
 `diff <url1> <url2>` — text diff between two pages.
+`screenshot-diff <baseline> [current]` — pixel-level visual regression testing.
+
+### Find
+`find role|text|label|placeholder|testid <query> [name]` — semantic element locators.
 
 ### Multi-Step
 ```bash
@@ -281,13 +288,16 @@ echo '[["goto","https://example.com"],["text"]]' | browse chain
 `route <pattern> block` | `route <pattern> fulfill <status> [body]` | `route clear` | `offline [on|off]`
 
 ### State & Auth
-`state save [name]` | `state load [name]` | `auth save <name> <url> <user> <pass>` | `auth login <name>` | `auth list` | `auth delete <name>`
+`state save [name]` | `state load [name]` | `state list` | `state show [name]` | `auth save <name> <url> <user> <pass>` | `auth login <name>` | `auth list` | `auth delete <name>`
 
 ### Recording
 `har start` | `har stop [path]`
 
+### Debug
+`inspect` — open DevTools debugger (requires `BROWSE_DEBUG_PORT`).
+
 ### Server Control
-`status` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
+`status` | `instances` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
 
 ## Architecture
 
@@ -310,11 +320,22 @@ browse [--session <id>] <command>
     Chromium (Playwright, headless, shared)
 ```
 
+## CLI Options
+
+| Flag | Description |
+|------|-------------|
+| `--session <id>` | Named session (isolates tabs, refs, cookies) |
+| `--json` | Wrap output as `{success, data, command}` |
+| `--content-boundaries` | Wrap page content in nonce-delimited markers |
+| `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
+| `--headed` | Run browser in headed (visible) mode |
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BROWSE_PORT` | auto 9400-10400 | Fixed server port |
+| `BROWSE_PORT_START` | 9400 | Start of port scan range |
 | `BROWSE_SESSION` | (none) | Default session ID for all commands |
 | `BROWSE_INSTANCE` | auto (PPID) | Instance ID for multi-Claude isolation |
 | `BROWSE_IDLE_TIMEOUT` | 1800000 (30m) | Idle shutdown in ms |
@@ -323,15 +344,31 @@ browse [--session <id>] <command>
 | `BROWSE_JSON` | (none) | Set to `1` for JSON output mode |
 | `BROWSE_CONTENT_BOUNDARIES` | (none) | Set to `1` for nonce-delimited output |
 | `BROWSE_ALLOWED_DOMAINS` | (none) | Comma-separated domain allowlist |
+| `BROWSE_HEADED` | (none) | Set to `1` for headed (visible) browser mode |
 | `BROWSE_PROXY` | (none) | Proxy server URL |
 | `BROWSE_PROXY_BYPASS` | (none) | Proxy bypass list |
 | `BROWSE_CDP_URL` | (none) | Connect to remote Chrome via CDP |
+| `BROWSE_SERVER_SCRIPT` | auto-detected | Override path to server.ts |
+| `BROWSE_DEBUG_PORT` | (none) | Port for DevTools debugging (inspect command) |
+| `BROWSE_POLICY` | browse-policy.json | Path to action policy file |
+| `BROWSE_CONFIRM_ACTIONS` | (none) | Comma-separated commands requiring confirmation |
+| `BROWSE_ENCRYPTION_KEY` | auto-generated | 64-char hex AES key for credential vault |
+| `BROWSE_AUTH_PASSWORD` | (none) | Password for auth save (alt to `--password-stdin`) |
 
 ## Acknowledgments
 
 Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
 
 ## Changelog
+
+### v0.3.0 — Headed Mode, Clipboard, DevTools
+
+- `--headed` flag — run browser in visible mode for debugging and demos
+- `clipboard [write <text>]` — read and write clipboard contents
+- `inspect` command — open DevTools debugger via `BROWSE_DEBUG_PORT`
+- `screenshot --annotate` — pixel-annotated PNG with numbered badges
+- `instances` command — list all running browse servers
+- `BROWSE_DEBUG_PORT` env var for DevTools debugging
 
 ### v0.2.0 — Security, Interactions, DX
 

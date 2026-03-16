@@ -78,7 +78,10 @@ If the file is missing or does not contain browse permission rules in `permissio
 "Bash(browse route:*)", "Bash(browse offline:*)",
 "Bash(browse status:*)", "Bash(browse stop:*)", "Bash(browse restart:*)",
 "Bash(browse cookie:*)", "Bash(browse header:*)",
-"Bash(browse useragent:*)"
+"Bash(browse useragent:*)",
+"Bash(browse clipboard:*)", "Bash(browse screenshot-diff:*)",
+"Bash(browse find:*)", "Bash(browse inspect:*)",
+"Bash(browse instances:*)", "Bash(browse --headed:*)"
 ```
 
 ## IMPORTANT
@@ -201,6 +204,25 @@ browse emulate reset
 # Parallel sessions
 browse --session agent-a goto https://site1.com
 browse --session agent-b goto https://site2.com
+
+# Clipboard
+browse clipboard
+browse clipboard write "copied text"
+
+# Find elements semantically
+browse find role button
+browse find text "Submit"
+browse find testid "login-btn"
+
+# Screenshot diff (visual regression)
+browse screenshot-diff baseline.png current.png
+
+# Headed mode (visible browser)
+browse --headed goto https://example.com
+
+# State list / show
+browse state list
+browse state show mysite
 ```
 
 ## Command Reference
@@ -297,6 +319,8 @@ browse cookies                 Dump all cookies as JSON
 browse storage [set <k> <v>]   View/set localStorage
 browse perf                    Page load performance timings
 browse devices [filter]        List available device names
+browse clipboard               Read system clipboard text
+browse clipboard write <text>  Write text to system clipboard
 ```
 
 ### Visual
@@ -313,9 +337,19 @@ browse frame <selector>        Target an iframe (subsequent commands run inside 
 browse frame main              Return to main page
 ```
 
+### Find (semantic element locators)
+```
+browse find role <query>              Find elements by ARIA role
+browse find text <query>              Find elements by text content
+browse find label <query>             Find elements by label
+browse find placeholder <query>       Find elements by placeholder
+browse find testid <query>            Find elements by test ID
+```
+
 ### Compare
 ```
-browse diff <url1> <url2>      Text diff between two pages
+browse diff <url1> <url2>             Text diff between two pages
+browse screenshot-diff <base> [curr]  Pixel-diff two PNG screenshots
 ```
 
 ### Multi-step (chain)
@@ -342,6 +376,8 @@ browse session-close <id>      Close a session
 ```
 browse state save [name]       Save cookies + localStorage (all origins)
 browse state load [name]       Restore saved state
+browse state list              List saved states
+browse state show [name]       Show contents of saved state
 ```
 
 ### Auth vault
@@ -364,6 +400,7 @@ browse status                  Server health, uptime, session count
 browse instances               List all running browse servers (instance, PID, port, status)
 browse stop                    Shutdown server
 browse restart                 Kill + restart server
+browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 ```
 
 ## CLI Flags
@@ -374,6 +411,7 @@ browse restart                 Kill + restart server
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
+| `--headed` | Run browser in headed (visible) mode |
 
 ## Speed Rules
 
@@ -421,6 +459,11 @@ browse restart                 Kill + restart server
 | Secure browsing | `--allowed-domains example.com goto https://example.com` |
 | Scroll through results | `scroll down` → `text` → `scroll down` → `text` |
 | Drag and drop | `drag @e1 @e2` |
+| Read/write clipboard | `clipboard` / `clipboard write "text"` |
+| Find by accessibility | `find role button` / `find text "Submit"` |
+| Visual regression | `screenshot-diff baseline.png` |
+| Debug with DevTools | `inspect` (set BROWSE_DEBUG_PORT first) |
+| See the browser | `browse --headed goto <url>` |
 
 ## Architecture
 

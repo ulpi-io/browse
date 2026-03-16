@@ -81,11 +81,11 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 - `BrowserManager.launch()` = own Chromium (multi-process mode)
 - `BrowserManager.launchWithBrowser(browser)` = shared Chromium (session mode)
 
-## Command Categories (73 total)
+## Command Categories (75 total)
 
-- **Read** (19): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `element-state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `devices`, `value`, `count`
+- **Read** (20): `text`, `html`, `links`, `forms`, `accessibility`, `js`, `eval`, `css`, `attrs`, `element-state`, `dialog`, `console`, `network`, `cookies`, `storage`, `perf`, `devices`, `value`, `count`, `clipboard`
 - **Write** (31): `goto`, `back`, `forward`, `reload`, `click`, `dblclick`, `fill`, `select`, `hover`, `focus`, `check`, `uncheck`, `type`, `press`, `keydown`, `keyup`, `scroll`, `wait`, `viewport`, `cookie`, `header`, `useragent`, `upload`, `dialog-accept`, `dialog-dismiss`, `emulate`, `drag`, `highlight`, `download`, `route`, `offline`
-- **Meta** (23): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `screenshot-diff`, `sessions`, `session-close`, `frame`, `state`, `find`, `auth`, `har`
+- **Meta** (24): `tabs`, `tab`, `newtab`, `closetab`, `status`, `url`, `stop`, `restart`, `screenshot`, `pdf`, `responsive`, `chain`, `diff`, `snapshot`, `snapshot-diff`, `screenshot-diff`, `sessions`, `session-close`, `frame`, `state`, `find`, `auth`, `har`, `inspect`
 
 ## Development Rules
 
