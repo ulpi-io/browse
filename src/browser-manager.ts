@@ -199,11 +199,9 @@ export class BrowserManager {
     this.browser = await chromium.launch({ headless: true });
     this.ownsBrowser = true;
 
-    // Chromium crash → flush what we can, then exit
+    // Chromium crash → notify caller (server uses this to exit; tests ignore it)
     this.browser.on('disconnected', () => {
-      console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
       if (onCrash) onCrash();
-      process.exit(1);
     });
 
     this.context = await this.browser.newContext({

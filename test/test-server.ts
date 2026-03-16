@@ -14,6 +14,16 @@ export function startTestServer(port: number = 0): { server: ReturnType<typeof B
     hostname: '127.0.0.1',
     fetch(req) {
       const url = new URL(req.url);
+      // Special route: downloadable file with Content-Disposition
+      if (url.pathname === '/download/test.txt') {
+        return new Response('test file content', {
+          headers: {
+            'Content-Type': 'text/plain',
+            'Content-Disposition': 'attachment; filename="test.txt"',
+          },
+        });
+      }
+
       let filePath = url.pathname === '/' ? '/basic.html' : url.pathname;
 
       // Remove leading slash

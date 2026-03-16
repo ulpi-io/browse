@@ -387,17 +387,11 @@ async function start() {
     }
     browser = await chromium.launch(launchOptions);
 
-    // Chromium crash → flush, cleanup, exit (only for owned browser)
+    // Chromium crash → clean shutdown (only for owned browser)
     browser.on('disconnected', () => {
-      console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
-      if (sessionManager) flushAllBuffers(sessionManager, true);
-      try {
-        const currentState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-        if (currentState.pid === process.pid || currentState.token === AUTH_TOKEN) {
-          fs.unlinkSync(STATE_FILE);
-        }
-      } catch {}
-      process.exit(1);
+      if (isShuttingDown) return;
+      console.error('[browse] Chromium disconnected. Shutting down.');
+      shutdown();
     });
   }
 

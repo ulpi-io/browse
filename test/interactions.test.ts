@@ -12,6 +12,7 @@ import { BrowserManager } from '../src/browser-manager';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
+import * as fs from 'fs';
 
 let testServer: ReturnType<typeof startTestServer>;
 let bm: BrowserManager;
@@ -205,5 +206,107 @@ describe('iframe targeting', () => {
     expect(value).toBe('frame-value');
 
     bm.resetFrame();
+  });
+});
+
+// ─── find command ────────────────────────────────────────────────
+
+describe('find command', () => {
+  const shutdown = async () => {};
+
+  test('find role heading returns matches', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleMetaCommand('find', ['role', 'heading'], bm, shutdown);
+    expect(result).toContain('Found');
+    expect(result).not.toContain('Found 0');
+    expect(result).toContain('Hello World');
+  });
+
+  test('find role with name filter narrows results', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleMetaCommand('find', ['role', 'link', 'Page 1'], bm, shutdown);
+    expect(result).toContain('Found 1 match(es)');
+  });
+
+  test('find text returns matching text', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleMetaCommand('find', ['text', 'Hello World'], bm, shutdown);
+    expect(result).toContain('Found 1 match(es)');
+  });
+
+  test('find text with no matches returns zero', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleMetaCommand('find', ['text', 'nonexistent-xyz'], bm, shutdown);
+    expect(result).toBe('Found 0 match(es)');
+  });
+
+  test('find label returns labeled inputs', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const result = await handleMetaCommand('find', ['label', 'Email'], bm, shutdown);
+    expect(result).toContain('Found');
+    expect(result).not.toContain('Found 0');
+  });
+
+  test('find placeholder returns inputs with placeholder', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const result = await handleMetaCommand('find', ['placeholder', 'your@email.com'], bm, shutdown);
+    expect(result).toContain('Found 1 match(es)');
+  });
+
+  test('find testid returns matching element', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleMetaCommand('find', ['testid', 'main-content'], bm, shutdown);
+    expect(result).toContain('Found 1 match(es)');
+  });
+
+  test('find with unknown type throws error', async () => {
+    try {
+      await handleMetaCommand('find', ['invalid-type', 'query'], bm, shutdown);
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.message).toContain('Unknown find type');
+    }
+  });
+
+  test('find with no subcommand throws usage error', async () => {
+    try {
+      await handleMetaCommand('find', [], bm, shutdown);
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.message).toContain('Usage');
+    }
+  });
+});
+
+// ─── drag ────────────────────────────────────────────────────────
+
+describe('drag', () => {
+  test('drags source element to target', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/interactions.html'], bm);
+    const result = await handleWriteCommand('drag', ['#drag-src', '#drag-tgt'], bm);
+    expect(result).toContain('Dragged');
+  });
+
+  test('throws on missing args', async () => {
+    expect(handleWriteCommand('drag', [], bm)).rejects.toThrow('Usage');
+  });
+});
+
+// ─── download ────────────────────────────────────────────────────
+
+describe('download', () => {
+  const dlPath = `/tmp/browse-test-dl-${Date.now()}.txt`;
+  afterAll(() => { try { fs.unlinkSync(dlPath); } catch {} });
+
+  test('downloads file triggered by click', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/download-link.html'], bm);
+    const result = await handleWriteCommand('download', ['#dl-link', dlPath], bm);
+    expect(result).toContain('Downloaded');
+    expect(fs.existsSync(dlPath)).toBe(true);
+    expect(fs.readFileSync(dlPath, 'utf-8')).toBe('test file content');
+  });
+
+  test('throws on missing selector', async () => {
+    expect(handleWriteCommand('download', [], bm)).rejects.toThrow('Usage');
   });
 });
