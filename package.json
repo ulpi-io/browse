@@ -1,11 +1,12 @@
 {
   "name": "@ulpi/browse",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/ulpi-io/browse"
   },
   "dependencies": {
+    "@ulpi/browse": "^0.3.0",
     "diff": "^7.0.0",
     "playwright": "^1.58.2"
   },
@@ -38,7 +39,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build --compile --external electron --external chromium-bidi src/cli.ts --outfile dist/browse",
+    "build": "bun build --compile --external electron --external chromium-bidi src/cli.ts --outfile dist/browse && rm -f .*.bun-build",
     "build:all": "bash scripts/build-all.sh",
     "dev": "bun run src/cli.ts",
     "server": "bun run src/server.ts",
