@@ -346,7 +346,7 @@ export async function handleMetaCommand(
       const { PolicyChecker } = await import('../policy');
 
       const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline']);
-      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count']);
+      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count','clipboard']);
 
       const sessionBuffers = currentSession?.buffers;
       const policy = new PolicyChecker();
@@ -516,10 +516,8 @@ export async function handleMetaCommand(
       const diffPath = extIdx > 0
         ? baseline.slice(0, extIdx) + '-diff' + baseline.slice(extIdx)
         : baseline + '-diff.png';
-      if (!result.passed) {
-        // Write current screenshot as the "what changed" artifact
-        // (true pixel-diff image generation requires re-rendering differences)
-        fs.writeFileSync(diffPath, currentBuffer);
+      if (!result.passed && result.diffImage) {
+        fs.writeFileSync(diffPath, result.diffImage);
       }
 
       return [
@@ -528,7 +526,7 @@ export async function handleMetaCommand(
         `Mismatch: ${result.mismatchPct.toFixed(3)}%`,
         `Threshold: ${thresholdPct}%`,
         `Result: ${result.passed ? 'PASS' : 'FAIL'}`,
-        ...(!result.passed ? [`Current saved: ${diffPath}`] : []),
+        ...(!result.passed ? [`Diff saved: ${diffPath}`] : []),
       ].join('\n');
     }
 
@@ -682,6 +680,33 @@ export async function handleMetaCommand(
       if (!frame) throw new Error(`Element ${selector} is not an iframe`);
       bm.setFrame(selector);
       return `Switched to frame: ${selector}`;
+    }
+
+    // ─── DevTools Inspect ──────────────────────────────
+    case 'inspect': {
+      const debugPort = parseInt(process.env.BROWSE_DEBUG_PORT || '0', 10);
+      if (!debugPort) {
+        throw new Error(
+          'DevTools inspect requires BROWSE_DEBUG_PORT to be set.\n' +
+          'Restart with: BROWSE_DEBUG_PORT=9222 browse restart\n' +
+          'Then run: browse inspect'
+        );
+      }
+      try {
+        const resp = await fetch(`http://127.0.0.1:${debugPort}/json`, { signal: AbortSignal.timeout(2000) });
+        const pages = await resp.json() as any[];
+        const currentUrl = bm.getCurrentUrl();
+        const target = pages.find((p: any) => p.url === currentUrl) || pages[0];
+        if (!target) throw new Error('No debuggable pages found');
+        return [
+          `DevTools URL: ${target.devtoolsFrontendUrl}`,
+          `Page: ${target.title} (${target.url})`,
+          `WebSocket: ${target.webSocketDebuggerUrl}`,
+        ].join('\n');
+      } catch (err: any) {
+        if (err.message.includes('BROWSE_DEBUG_PORT')) throw err;
+        throw new Error(`Cannot reach Chrome debug port at ${debugPort}: ${err.message}`);
+      }
     }
 
     default:

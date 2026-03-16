@@ -19,6 +19,7 @@ const cliFlags = {
   json: false,
   contentBoundaries: false,
   allowedDomains: '' as string,
+  headed: false,
 };
 
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10);
@@ -251,7 +252,7 @@ async function startServer(): Promise<ServerState> {
       : ['bun', 'run', SERVER_SCRIPT];
     const proc = Bun.spawn(spawnCmd, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE },
+      env: { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}) },
     });
 
     // Don't hold the CLI open
@@ -559,10 +560,20 @@ export async function main() {
   }
   allowedDomains = allowedDomains || process.env.BROWSE_ALLOWED_DOMAINS || (config.allowedDomains ? config.allowedDomains.join(',') : undefined);
 
+  // Extract --headed flag (only before command)
+  let headed = false;
+  const headedIdx = args.indexOf('--headed');
+  if (headedIdx !== -1 && headedIdx < findCommandIndex(args)) {
+    headed = true;
+    args.splice(headedIdx, 1);
+  }
+  headed = headed || process.env.BROWSE_HEADED === '1';
+
   // Set global flags for sendCommand()
   cliFlags.json = jsonMode;
   cliFlags.contentBoundaries = contentBoundaries;
   cliFlags.allowedDomains = allowedDomains || '';
+  cliFlags.headed = headed;
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'instances') {
@@ -593,7 +604,7 @@ Device:         emulate <device> | emulate reset | devices [filter]
 Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
                 element-state <sel> | console [--clear] | network [--clear]
                 cookies | storage [set <k> <v>] | perf
-                value <sel> | count <sel>
+                value <sel> | count <sel> | clipboard [write <text>]
 Visual:         screenshot [path] | pdf [path] | responsive [prefix]
 Snapshot:       snapshot [-i] [-c] [-C] [-d N] [-s sel]
 Find:           find role|text|label|placeholder|testid <query> [name]
@@ -607,6 +618,7 @@ Sessions:       sessions | session-close <id>
 Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
 State:          state save|load|list|show [name]
+Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
 Setup:          install-skill [path]
@@ -616,6 +628,7 @@ Options:
   --json                   Wrap output as {success, data, command}
   --content-boundaries     Wrap page content in nonce-delimited markers
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
+  --headed                 Run browser in headed (visible) mode
 
 Snapshot flags:
   -i            Interactive elements only (buttons, links, inputs)

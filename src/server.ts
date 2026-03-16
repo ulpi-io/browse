@@ -26,6 +26,7 @@ export { type LogEntry, type NetworkEntry };
 
 // ─── Auth (inline) ─────────────────────────────────────────────
 const AUTH_TOKEN = crypto.randomUUID();
+const DEBUG_PORT = parseInt(process.env.BROWSE_DEBUG_PORT || '0', 10);
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10); // 0 = auto-scan
 const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || '';
 const INSTANCE_SUFFIX = BROWSE_PORT ? `-${BROWSE_PORT}` : (BROWSE_INSTANCE ? `-${BROWSE_INSTANCE}` : '');
@@ -107,7 +108,7 @@ const READ_COMMANDS = new Set([
   'text', 'html', 'links', 'forms', 'accessibility',
   'js', 'eval', 'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'storage', 'perf', 'devices',
-  'value', 'count',
+  'value', 'count', 'clipboard',
 ]);
 
 const WRITE_COMMANDS = new Set([
@@ -128,7 +129,7 @@ const META_COMMANDS = new Set([
   'url', 'snapshot', 'snapshot-diff', 'screenshot-diff',
   'sessions', 'session-close',
   'frame', 'state', 'find',
-  'auth', 'har',
+  'auth', 'har', 'inspect',
 ]);
 
 // Probe if a port is free using net.createServer (not Bun.serve which fatally crashes on EADDRINUSE)
@@ -373,7 +374,10 @@ async function start() {
     console.log(`[browse] Connected to remote Chrome via CDP: ${cdpUrl}`);
   } else {
     // Launch local Chromium
-    const launchOptions: Record<string, any> = { headless: true };
+    const launchOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
+    if (DEBUG_PORT > 0) {
+      launchOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
+    }
     const proxyServer = process.env.BROWSE_PROXY;
     if (proxyServer) {
       launchOptions.proxy = { server: proxyServer };
@@ -445,13 +449,16 @@ async function start() {
   });
 
   // Write state file
-  const state = {
+  const state: Record<string, any> = {
     pid: process.pid,
     port,
     token: AUTH_TOKEN,
     startedAt: new Date().toISOString(),
     serverPath: path.resolve(import.meta.dir, 'server.ts'),
   };
+  if (DEBUG_PORT > 0) {
+    state.debugPort = DEBUG_PORT;
+  }
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
 
   console.log(`[browse] Server running on http://127.0.0.1:${port} (PID: ${process.pid})`);

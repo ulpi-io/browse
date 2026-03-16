@@ -314,6 +314,22 @@ export async function handleReadCommand(
       return String(count);
     }
 
+    case 'clipboard': {
+      if (args[0] === 'write') {
+        const text = args.slice(1).join(' ');
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+        await evalCtx.evaluate((t) => navigator.clipboard.writeText(t), text);
+        return `Clipboard set: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}`;
+      }
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      try {
+        const text = await evalCtx.evaluate(() => navigator.clipboard.readText());
+        return text || '(empty clipboard)';
+      } catch {
+        return '(clipboard not available)';
+      }
+    }
+
     case 'devices': {
       const filter = args.join(' ').toLowerCase();
       const all = listDevices();

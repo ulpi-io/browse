@@ -1,0 +1,128 @@
+{
+  "title": "v0.3.0 — Headed Mode, Pixel Diff, Clipboard, DevTools Inspect",
+  "branch": "feat/v0.3.0",
+  "mode": "EXPANSION",
+  "overview": "Add 4 features: --headed flag, real pixel-diff image output, clipboard read/write, and browse inspect for live DevTools debugging. All leverage existing Playwright APIs.",
+  "scopeChallenge": "All 4 features build on existing infrastructure. DevTools inspect is simpler than expected — Chrome's --remote-debugging-port exposes a JSON endpoint with DevTools URLs. No WebSocket proxy needed.",
+  "existingCodeLeverage": [
+    { "subProblem": "Headed mode", "existingCode": "src/server.ts:376", "action": "extend" },
+    { "subProblem": "PNG decode", "existingCode": "src/png-compare.ts decodePNG()", "action": "reuse" },
+    { "subProblem": "PNG encode", "existingCode": "(none)", "action": "build" },
+    { "subProblem": "Clipboard", "existingCode": "Playwright page.evaluate()", "action": "reuse" },
+    { "subProblem": "DevTools URL", "existingCode": "Chrome --remote-debugging-port", "action": "build" }
+  ],
+  "failureModes": [
+    { "risk": "PNG encoder produces invalid PNG", "affectedTasks": ["TASK-002"], "mitigation": "Roundtrip test: encode(decode(x)) must match original" },
+    { "risk": "Clipboard permissions denied in headless", "affectedTasks": ["TASK-004"], "mitigation": "Grant via context.grantPermissions()" },
+    { "risk": "Debug port conflicts", "affectedTasks": ["TASK-005"], "mitigation": "Use port 0 (auto-assign)" },
+    { "risk": "--headed breaks in CI", "affectedTasks": ["TASK-001"], "mitigation": "Document: requires display" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "encodePNG roundtrip", "coveringTask": "TASK-006", "testType": "unit" },
+    { "codepath": "generateDiffImage output", "coveringTask": "TASK-006", "testType": "unit" },
+    { "codepath": "clipboard read/write", "coveringTask": "TASK-006", "testType": "integration" },
+    { "codepath": "inspect URL format", "coveringTask": "TASK-006", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Add --headed mode",
+      "description": "Add BROWSE_HEADED env var and --headed CLI flag. Change headless: true to headless: !process.env.BROWSE_HEADED in server.ts and browser-manager.ts.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": ["--headed opens visible Chrome window", "Without --headed, remains headless", "BROWSE_HEADED=1 env var works"],
+      "filesToModify": ["src/server.ts", "src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Add PNG encoder + diff image generator",
+      "description": "Add encodePNG() and generateDiffImage() to png-compare.ts. Encoder writes IHDR + unfiltered IDAT (zlib compressed) + IEND. Diff image dims unchanged pixels and highlights changed pixels in red. Update CompareResult to include diffImage.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": ["encodePNG(decodePNG(buf)) roundtrips correctly", "generateDiffImage returns valid PNG with red highlights", "Identical images return diffImage undefined"],
+      "filesToModify": ["src/png-compare.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Wire diff image into screenshot-diff command",
+      "description": "Update meta.ts screenshot-diff to write result.diffImage instead of currentBuffer. Change output label from 'Current saved' to 'Diff saved'.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": ["screenshot-diff saves red-highlighted diff image on failure", "Output says 'Diff saved'", "No diff file written when images match"],
+      "filesToModify": ["src/commands/meta.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Add clipboard read/write commands",
+      "description": "Add clipboard to READ_COMMANDS. Implement in read.ts: clipboard reads text, clipboard write <text> writes. Grant clipboard permissions on context.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": ["clipboard write then clipboard returns the text", "Fresh page clipboard returns empty or error message", "Clipboard persists across commands in same session"],
+      "filesToModify": ["src/commands/read.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Add browse inspect command for DevTools",
+      "description": "Add --remote-debugging-port=0 to Chrome launch args. Add inspect meta command that fetches http://127.0.0.1:{port}/json, finds active page, returns devtoolsFrontendUrl. User opens URL in browser for live DevTools.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": ["browse inspect returns a devtoolsFrontendUrl", "URL shows correct page", "Works in both headed and headless mode"],
+      "filesToModify": ["src/server.ts", "src/commands/meta.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Add tests for new features",
+      "description": "Integration tests: PNG roundtrip, diff image generation, clipboard read/write, inspect URL format.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-002", "TASK-004", "TASK-005"],
+      "acceptanceCriteria": ["PNG encode/decode roundtrip test passes", "Diff image test produces valid PNG", "Clipboard roundtrip test passes", "Inspect returns URL with devtools"],
+      "filesToModify": ["test/features.test.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Update help text, SKILL.md, CLAUDE.md",
+      "description": "Add --headed, clipboard, inspect to CLI help. Update SKILL.md command reference. Update CLAUDE.md counts.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P3",
+      "dependsOn": ["TASK-001", "TASK-003", "TASK-004", "TASK-005"],
+      "acceptanceCriteria": ["browse --help shows --headed, clipboard, inspect", "SKILL.md has new commands", "CLAUDE.md counts updated"],
+      "filesToModify": ["src/cli.ts", ".claude/skills/browse/SKILL.md", "CLAUDE.md"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-002"],
+    "TASK-004": [],
+    "TASK-005": [],
+    "TASK-006": ["TASK-002", "TASK-004", "TASK-005"],
+    "TASK-007": ["TASK-001", "TASK-003", "TASK-004", "TASK-005"]
+  }
+}

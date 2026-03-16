@@ -1,10 +1,11 @@
 /**
- * Self-contained PNG decoder + pixel comparator.
- * No external deps — uses only zlib.inflateSync (Node/Bun built-in).
+ * Self-contained PNG decoder, encoder + pixel comparator.
+ * No external deps — uses only zlib (Node/Bun built-in).
  * Works in both dev mode (bun run) and compiled binary ($bunfs).
  *
- * Supports: 8-bit RGB (color type 2) and RGBA (color type 6).
+ * Decoder supports: 8-bit RGB (color type 2) and RGBA (color type 6).
  * Handles all 5 PNG scanline filter types (None/Sub/Up/Average/Paeth).
+ * Encoder outputs: 8-bit RGBA (color type 6), filter None, zlib-compressed.
  */
 
 import * as zlib from 'zlib';
@@ -22,6 +23,7 @@ export interface CompareResult {
   diffPixels: number;
   mismatchPct: number;
   passed: boolean;
+  diffImage?: Buffer;
 }
 
 export function decodePNG(buf: Buffer): DecodedImage {
@@ -96,6 +98,111 @@ export function decodePNG(buf: Buffer): DecodedImage {
   return { width, height, data: pixels };
 }
 
+/**
+ * Encode a DecodedImage (RGBA pixels) into a PNG buffer.
+ * Uses filter type None (0) for simplicity — zlib handles compression.
+ */
+export function encodePNG(img: DecodedImage): Buffer {
+  // Helper: write a PNG chunk (length + type + data + CRC32)
+  function writeChunk(type: string, data: Buffer): Buffer {
+    const chunk = Buffer.alloc(12 + data.length);
+    chunk.writeUInt32BE(data.length, 0);
+    chunk.write(type, 4, 4, 'ascii');
+    data.copy(chunk, 8);
+    // CRC32 covers type + data
+    const crcData = chunk.slice(4, 8 + data.length);
+    chunk.writeUInt32BE(zlib.crc32(crcData) >>> 0, 8 + data.length);
+    return chunk;
+  }
+
+  // PNG signature
+  const signature = Buffer.from(PNG_MAGIC);
+
+  // IHDR: width(4) + height(4) + bitDepth(1) + colorType(1) + compression(1) + filter(1) + interlace(1)
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(img.width, 0);
+  ihdr.writeUInt32BE(img.height, 4);
+  ihdr[8] = 8;   // bit depth
+  ihdr[9] = 6;   // color type: RGBA
+  ihdr[10] = 0;  // compression method
+  ihdr[11] = 0;  // filter method
+  ihdr[12] = 0;  // no interlace
+
+  // IDAT: for each scanline, prepend filter byte 0 (None), then raw RGBA pixels
+  const rawStride = img.width * 4;
+  const rawData = Buffer.alloc(img.height * (1 + rawStride));
+  for (let y = 0; y < img.height; y++) {
+    const outOff = y * (1 + rawStride);
+    rawData[outOff] = 0; // filter type: None
+    img.data.copy(rawData, outOff + 1, y * rawStride, (y + 1) * rawStride);
+  }
+  const compressed = zlib.deflateSync(rawData);
+
+  // IEND: empty chunk
+  const iend = Buffer.alloc(0);
+
+  return Buffer.concat([
+    signature,
+    writeChunk('IHDR', ihdr),
+    writeChunk('IDAT', compressed),
+    writeChunk('IEND', iend),
+  ]);
+}
+
+/**
+ * Generate a visual diff image highlighting pixel differences.
+ * - Pixels only in one image (size mismatch): bright red (255,0,0,255)
+ * - Pixels differing beyond threshold: red-tinted (255, g/3, b/3, 255)
+ * - Pixels matching: dimmed (r/3, g/3, b/3, 128)
+ */
+export function generateDiffImage(base: DecodedImage, curr: DecodedImage, colorThreshold: number): Buffer {
+  const w = Math.max(base.width, curr.width);
+  const h = Math.max(base.height, curr.height);
+  const diffData = Buffer.alloc(w * h * 4);
+  const colorThreshSq = colorThreshold * colorThreshold * 3;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const di = (y * w + x) * 4;
+      const inBase = x < base.width && y < base.height;
+      const inCurr = x < curr.width && y < curr.height;
+
+      if (!inBase || !inCurr) {
+        // Size mismatch — bright red
+        diffData[di] = 255;
+        diffData[di + 1] = 0;
+        diffData[di + 2] = 0;
+        diffData[di + 3] = 255;
+        continue;
+      }
+
+      const bi = (y * base.width + x) * 4;
+      const ci = (y * curr.width + x) * 4;
+      const dr = base.data[bi] - curr.data[ci];
+      const dg = base.data[bi + 1] - curr.data[ci + 1];
+      const db = base.data[bi + 2] - curr.data[ci + 2];
+      const distSq = dr * dr + dg * dg + db * db;
+      const isDiff = colorThreshold === 0 ? distSq > 0 : distSq > colorThreshSq;
+
+      if (isDiff) {
+        // Different — red-tinted using current image colors
+        diffData[di] = 255;
+        diffData[di + 1] = (curr.data[ci + 1] / 3) | 0;
+        diffData[di + 2] = (curr.data[ci + 2] / 3) | 0;
+        diffData[di + 3] = 255;
+      } else {
+        // Matching — dimmed
+        diffData[di] = (curr.data[ci] / 3) | 0;
+        diffData[di + 1] = (curr.data[ci + 1] / 3) | 0;
+        diffData[di + 2] = (curr.data[ci + 2] / 3) | 0;
+        diffData[di + 3] = 128;
+      }
+    }
+  }
+
+  return encodePNG({ width: w, height: h, data: diffData });
+}
+
 export function compareScreenshots(
   baselineBuf: Buffer,
   currentBuf: Buffer,
@@ -129,10 +236,12 @@ export function compareScreenshots(
   }
 
   const mismatchPct = totalPixels > 0 ? (diffPixels / totalPixels) * 100 : 0;
-  return {
-    totalPixels,
-    diffPixels,
-    mismatchPct,
-    passed: mismatchPct <= thresholdPct,
-  };
+  const passed = mismatchPct <= thresholdPct;
+  const result: CompareResult = { totalPixels, diffPixels, mismatchPct, passed };
+
+  if (!passed) {
+    result.diffImage = generateDiffImage(base, curr, colorThreshold);
+  }
+
+  return result;
 }
