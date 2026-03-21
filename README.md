@@ -10,26 +10,33 @@ Ten actions and you've burned **146K tokens — 73% of a 200K context window** �
 
 **Same 10 actions: ~11K tokens. 6% of context. 13x less than @playwright/mcp.**
 
-## Benchmarks (Measured)
+## Benchmarks
 
-Tested on 4 e-commerce sites (mumzworld, amazon, ebay, nike) across homepage, search results, and product detail pages ([raw data](BENCHMARKS.md)):
+### vs Agent Browser & Browser-Use (Token Cost)
 
-| Site | Page | @playwright/mcp navigate | browse snapshot -i | Reduction |
-|------|------|-------------------------:|-------------------:|----------:|
-| mumzworld.com | Homepage | ~51,151 | ~15,072 | **3x** |
-| mumzworld.com | Search | ~13,860 | ~3,614 | **4x** |
-| mumzworld.com | PDP | ~10,071 | ~3,084 | **3x** |
-| amazon.com | Homepage | ~10,431 | ~2,150 | **5x** |
-| amazon.com | Search | ~19,458 | ~3,644 | **5x** |
-| ebay.com | Homepage | ~4,641 | ~1,557 | **3x** |
-| ebay.com | Search | ~35,929 | ~7,088 | **5x** |
-| ebay.com | PDP | ~1,294 | ~678 | **2x** |
-| nike.com | Homepage | ~2,495 | ~816 | **3x** |
-| nike.com | Search | ~7,998 | ~2,678 | **3x** |
-| nike.com | PDP | ~3,034 | ~989 | **3x** |
-| **TOTAL** | **11 pages** | **~160,362** | **~41,370** | **4x** |
+Tested on 3 sites across multi-step browsing flows — navigate, snapshot, scroll, search, extract text:
 
-And that's the per-snapshot comparison. The real gap is architectural — @playwright/mcp dumps a snapshot on every action (navigate, click, type). `browse` only returns ~15 tokens per action:
+**browse is 2.4-2.8x cheaper on tokens, 1.3-2.6x faster, and uses 7% of context vs 17-20%.**
+
+| Tool | Total Tokens | Total Time | Context Used (200K) |
+|------|-------------:|-----------:|--------------------:|
+| **browse** | **14,134** | **28.5s** | **7.1%** |
+| agent-browser | 39,414 | 36.2s | 19.7% |
+| browser-use | 34,281 | 72.7s | 17.1% |
+
+**Per site:**
+
+| Site | browse tokens | agent-browser tokens | browser-use tokens | browse time | agent-browser time | browser-use time |
+|------|-------:|-------------:|------------:|------:|------:|------:|
+| amazon.com | 7,531 | 11,596 | 20,508 | 10.1s | 12.9s | 21.9s |
+| bbc.com | 4,032 | 24,861 | 8,827 | 9.8s | 13.5s | 29.9s |
+| booking.com | 2,571 | 2,957 | 4,946 | 8.6s | 9.8s | 20.9s |
+
+browse uses **2.4x fewer tokens** than browser-use and **2.8x fewer** than agent-browser — and completes **2.5x faster** than browser-use across the same workflows.
+
+### vs @playwright/mcp (Architecture)
+
+@playwright/mcp dumps the full accessibility snapshot on every action (navigate, click, type). browse returns ~15 tokens per action — the agent requests a snapshot only when it needs one:
 
 | | @playwright/mcp | @ulpi/browse |
 |---|---:|---:|
@@ -241,8 +248,10 @@ browse click @e52
 
 ### Snapshot & Refs
 ```
-snapshot [-i] [-c] [-C] [-d N] [-s sel]
-  -i    Interactive elements only (buttons, links, inputs)
+snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]
+  -i    Interactive elements only — terse flat list (minimal tokens)
+  -f    Full — indented tree with props and children (use with -i)
+  -V    Viewport — only elements visible in current viewport
   -c    Compact — remove empty structural nodes
   -C    Cursor-interactive — detect hidden clickable elements
   -d N  Limit tree depth
@@ -361,6 +370,19 @@ browse [--session <id>] <command>
 Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
 
 ## Changelog
+
+### v0.7.0 — Token Optimization
+
+- `snapshot -i` now outputs terse flat list by default (no indentation, no props, names truncated to 30 chars)
+- `-f` flag for full indented ARIA tree with props/children (the old `-i` behavior)
+- `-V` flag for viewport-only snapshot — filters to elements visible in the current viewport (BBC: 189 → 28 elements, ~85% reduction)
+- `browse version` / `--version` / `-V` — print CLI version
+- 2.4-2.8x fewer tokens than browser-use and agent-browser across real-world benchmarks
+
+### v0.4.0 — Video Recording
+
+- `video start [dir]` | `video stop` | `video status` — compositor-level WebM recording
+- Works with local and remote (CDP) browsers
 
 ### v0.3.0 — Headed Mode, Clipboard, DevTools
 
