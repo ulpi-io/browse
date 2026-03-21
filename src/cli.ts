@@ -20,7 +20,11 @@ const cliFlags = {
   contentBoundaries: false,
   allowedDomains: '' as string,
   headed: false,
+  stateFile: '' as string,
 };
+
+// Track whether --state has been applied (only sent on first command)
+let stateFileApplied = false;
 
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10);
 // One server per project directory by default. Sessions handle agent isolation.
@@ -376,7 +380,7 @@ export const SAFE_TO_RETRY = new Set([
   'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'perf', 'value', 'count',
   // Meta commands that are read-only or idempotent
-  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record',
+  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record', 'cookie-import',
 ]);
 
 // Commands that return static data independent of page state.
@@ -401,6 +405,10 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   }
   if (cliFlags.allowedDomains) {
     headers['X-Browse-Allowed-Domains'] = cliFlags.allowedDomains;
+  }
+  if (cliFlags.stateFile && !stateFileApplied) {
+    headers['X-Browse-State'] = cliFlags.stateFile;
+    stateFileApplied = true;
   }
 
   try {
@@ -511,7 +519,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state') i++;
     }
     return a.length;
   }
@@ -569,11 +577,64 @@ export async function main() {
   }
   headed = headed || process.env.BROWSE_HEADED === '1';
 
+  // Extract --connect flag (only before command)
+  let connectFlag = false;
+  const connectIdx = args.indexOf('--connect');
+  if (connectIdx !== -1 && connectIdx < findCommandIndex(args)) {
+    connectFlag = true;
+    args.splice(connectIdx, 1);
+  }
+
+  // Extract --cdp <port> flag (only before command)
+  let cdpPort: number | undefined;
+  const cdpIdx = args.indexOf('--cdp');
+  if (cdpIdx !== -1 && cdpIdx < findCommandIndex(args)) {
+    const portStr = args[cdpIdx + 1];
+    if (!portStr || portStr.startsWith('-')) {
+      console.error('Usage: browse --cdp <port> <command> [args...]');
+      process.exit(1);
+    }
+    cdpPort = parseInt(portStr, 10);
+    if (!Number.isFinite(cdpPort) || cdpPort <= 0) {
+      console.error(`Invalid CDP port: ${portStr}`);
+      process.exit(1);
+    }
+    args.splice(cdpIdx, 2);
+  }
+
+  // Extract --state <path> flag (only before command)
+  let stateFile = '';
+  const stateIdx = args.indexOf('--state');
+  if (stateIdx !== -1 && stateIdx < findCommandIndex(args)) {
+    stateFile = args[stateIdx + 1] || '';
+    if (!stateFile || stateFile.startsWith('-')) {
+      console.error('Usage: browse --state <path> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(stateIdx, 2);
+  }
+
+  // Handle --connect / --cdp: blocked by Bun WebSocket bug (oven-sh/bun#9911)
+  // Bun's compiled binary sends "Connection: keep-alive" instead of "Connection: Upgrade",
+  // breaking the WebSocket handshake required by Playwright's connectOverCDP().
+  // This affects all CDP-based connections (--connect, --cdp, lightpanda).
+  // The discovery and flag logic is ready — enable when Bun fixes the bug.
+  if (connectFlag || cdpPort) {
+    console.error(
+      '--connect/--cdp are not yet supported in the compiled binary.\n' +
+      'Bun\'s WebSocket client breaks the CDP handshake (oven-sh/bun#9911).\n' +
+      'Workaround: use cookie-import to borrow auth from your browser instead:\n' +
+      '  browse cookie-import chrome --domain <your-domain>'
+    );
+    process.exit(1);
+  }
+
   // Set global flags for sendCommand()
   cliFlags.json = jsonMode;
   cliFlags.contentBoundaries = contentBoundaries;
   cliFlags.allowedDomains = allowedDomains || '';
   cliFlags.headed = headed;
+  cliFlags.stateFile = stateFile;
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') {
@@ -626,6 +687,7 @@ Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
 Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
+                cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]
 State:          state save|load|list|show [name]
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | cookie <n>=<v> | header <n>:<v>
@@ -638,6 +700,9 @@ Options:
   --content-boundaries     Wrap page content in nonce-delimited markers
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
   --headed                 Run browser in headed (visible) mode
+  --state <path>           Load state file (cookies/storage) before first command
+  --connect                Auto-discover and connect to running Chrome
+  --cdp <port>             Connect to Chrome on specific debugging port
 
 Snapshot flags:
   -i            Interactive elements only (terse flat list by default)

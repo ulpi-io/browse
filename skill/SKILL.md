@@ -190,6 +190,22 @@ browse --allowed-domains example.com,*.cdn.example.com goto https://example.com
 # State persistence
 browse state save mysite
 browse state load mysite
+browse state clean                    # delete states older than 7 days
+browse state clean --older-than 30    # custom threshold
+
+# Cookie import from real browsers (macOS — Chrome, Arc, Brave, Edge)
+browse cookie-import --list                              # show installed browsers
+browse cookie-import chrome --domain .example.com        # import cookies for a domain
+browse cookie-import arc --domain .github.com            # import from Arc
+browse cookie-import chrome --profile "Profile 1" --domain .site.com  # specific Chrome profile
+
+# Session auto-persistence (named sessions survive restarts)
+browse --session myapp goto https://app.com/login        # login...
+browse session-close myapp                               # state auto-saved (encrypted if BROWSE_ENCRYPTION_KEY set)
+browse --session myapp goto https://app.com/dashboard    # cookies auto-restored
+
+# Load state at launch
+browse --state auth.json goto https://app.com            # load cookies before first command
 
 # Auth vault (credentials never visible to LLM)
 browse auth save github https://github.com/login user pass123
@@ -415,6 +431,15 @@ browse state save [name]       Save cookies + localStorage (all origins)
 browse state load [name]       Restore saved state
 browse state list              List saved states
 browse state show [name]       Show contents of saved state
+browse state clean             Delete states older than 7 days
+browse state clean --older-than N   Custom age threshold (days)
+```
+
+### Cookie import (macOS — borrow auth from real browsers)
+```
+browse cookie-import --list                         List installed browsers
+browse cookie-import <browser> --domain <d>         Import cookies for a domain
+browse cookie-import <browser> --profile <p> --domain <d>   Specific Chrome profile
 ```
 
 ### Auth vault
@@ -461,7 +486,8 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 
 | Flag | Description |
 |------|-------------|
-| `--session <id>` | Named session (isolates tabs, refs, cookies) |
+| `--session <id>` | Named session (isolates tabs, refs, cookies — auto-persists on close) |
+| `--state <path>` | Load state file (cookies/storage) before first command |
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |

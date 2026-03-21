@@ -1,0 +1,230 @@
+{
+  "title": "Auth Persistence",
+  "branch": "feat/auth-persistence",
+  "mode": "EXPANSION",
+  "overview": "Add auth persistence features: auto-persist named sessions, import cookies from real browsers, connect to running Chrome. Builds on existing state save/load, auth-vault, and BROWSE_CDP_URL infrastructure.",
+  "scopeChallenge": "Deferred persistent profiles (--profile) because launchPersistentContext breaks session multiplexing. Auto-persist covers 90% of the auth use case. Selected EXPANSION to build all 4 phases in one pass.",
+  "existingCodeLeverage": [
+    { "subProblem": "AES-256-GCM encrypt/decrypt", "existingCode": "src/auth-vault.ts:50-96", "action": "extend" },
+    { "subProblem": "State save format", "existingCode": "src/commands/meta.ts:170-213", "action": "reuse" },
+    { "subProblem": "Session lifecycle hooks", "existingCode": "src/session-manager.ts:48-199", "action": "extend" },
+    { "subProblem": "CDP connection", "existingCode": "src/server.ts:391-396", "action": "reuse" },
+    { "subProblem": "Remote browser guard", "existingCode": "src/server.ts:105,337", "action": "reuse" },
+    { "subProblem": "Path sanitization", "existingCode": "src/sanitize.ts", "action": "reuse" },
+    { "subProblem": "CLI flag extraction", "existingCode": "src/cli.ts:519-576", "action": "reuse" }
+  ],
+  "failureModes": [
+    { "risk": "Encryption extraction breaks auth vault", "affectedTasks": ["TASK-001"], "mitigation": "Run existing auth tests after extraction. Pure refactor — same key, same algorithm, same format." },
+    { "risk": "Context already closed when saving state", "affectedTasks": ["TASK-002", "TASK-005"], "mitigation": "saveSessionState wraps in try/catch, logs warning, does not throw" },
+    { "risk": "Unreachable origin blocks session restore", "affectedTasks": ["TASK-002", "TASK-005"], "mitigation": "3s per-origin timeout, skip on failure, log warning" },
+    { "risk": "Keychain dialog blocks server", "affectedTasks": ["TASK-006"], "mitigation": "10s async timeout, error tells agent to relay click Allow to user" },
+    { "risk": "Chrome cookie DB locked (WAL)", "affectedTasks": ["TASK-006"], "mitigation": "Copy DB+WAL+SHM to temp, read copy, clean up" },
+    { "risk": "lightpanda runtime + --connect", "affectedTasks": ["TASK-009"], "mitigation": "Guard in CLI: force playwright runtime, error if lightpanda set" },
+    { "risk": "--connect kills user Chrome on shutdown", "affectedTasks": ["TASK-009"], "mitigation": "Already handled: isRemoteBrowser flag at server.ts:337 skips browser.close()" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "encryption.ts encrypt/decrypt", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "session-persist save/load roundtrip", "coveringTask": "TASK-010", "testType": "integration" },
+    { "codepath": "session-persist encrypted roundtrip", "coveringTask": "TASK-010", "testType": "integration" },
+    { "codepath": "session-persist unreachable origin", "coveringTask": "TASK-010", "testType": "integration" },
+    { "codepath": "session-persist cleanOldStates", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "SessionManager auto-persist hooks", "coveringTask": "TASK-010", "testType": "integration" },
+    { "codepath": "cookie-import chromiumEpochToUnix", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "cookie-import decryptCookieValue", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "cookie-import findInstalledBrowsers", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "cookie-import WAL copy-on-lock", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "chrome-discover discoverChrome", "coveringTask": "TASK-010", "testType": "unit" },
+    { "codepath": "--state flag loading", "coveringTask": "TASK-010", "testType": "integration" },
+    { "codepath": "--connect runtime guard", "coveringTask": "TASK-010", "testType": "unit" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Extract encryption module from auth-vault",
+      "description": "Extract resolveKey, encrypt, decrypt from src/auth-vault.ts into a new shared src/encryption.ts module. Update auth-vault.ts to import from the new module. No behavior change — pure refactor.",
+      "type": "refactor",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "src/encryption.ts exports resolveEncryptionKey, encrypt, decrypt",
+        "src/auth-vault.ts imports from encryption.ts and all existing auth tests pass",
+        "Encryption roundtrip: encrypt then decrypt returns original plaintext"
+      ],
+      "filesToModify": ["src/auth-vault.ts"],
+      "filesToCreate": ["src/encryption.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Create session-persist module",
+      "description": "Create src/session-persist.ts with saveSessionState, loadSessionState, hasPersistedState, cleanOldStates. Uses Playwright storageState format. Optional encryption via encryption.ts. 3s per-origin timeout for localStorage restore.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "Save + load roundtrip preserves cookies and localStorage",
+        "Encrypted save + load roundtrip works with a test key",
+        "Missing/corrupted state file returns false without throwing",
+        "Unreachable origin during localStorage restore is skipped (3s timeout)"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/session-persist.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Add --state CLI flag",
+      "description": "Add --state <path> flag to src/cli.ts, pass to server via X-Browse-State header. Server loads state into session context before first command. If --state + --session both present, --state loads first, session persistence merges on top.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "browse --state auth.json goto https://example.com loads cookies before navigating",
+        "--state with nonexistent file produces clear error",
+        "--state + --session both work together"
+      ],
+      "filesToModify": ["src/cli.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Add state clean subcommand",
+      "description": "Extend state case in src/commands/meta.ts to accept clean subcommand. Calls cleanOldStates from session-persist.ts. Cleans both .browse/states/ and .browse/sessions/*/state.json. Default 7 days, --older-than N for custom.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "browse state clean deletes state files older than 7 days from both directories",
+        "browse state clean --older-than 30 uses custom threshold",
+        "Recent state files are not deleted"
+      ],
+      "filesToModify": ["src/commands/meta.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Hook session persistence into SessionManager",
+      "description": "Modify src/session-manager.ts: getOrCreate calls loadSessionState if persisted state exists (skip for default). closeSession calls saveSessionState before closing (skip for default). closeAll saves all named sessions. Server shutdown path saves all. Resolve encryption key once in server startup.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "Named session cookies persist across close/reopen cycle",
+        "default session does NOT auto-persist",
+        "Server shutdown saves all named session state",
+        "Idle-timeout session close saves state before closing"
+      ],
+      "filesToModify": ["src/session-manager.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Create cookie-import module",
+      "description": "Create src/cookie-import.ts — reads and decrypts cookies from Chromium browsers on macOS. Browser registry for Chrome/Arc/Brave/Edge. Uses bun:sqlite for DB access, crypto for PBKDF2+AES-128-CBC. Copy-on-lock for WAL. 10s Keychain timeout. Actionable error messages.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "findInstalledBrowsers returns correct structure for installed browsers",
+        "chromiumEpochToUnix correctly converts timestamps",
+        "Locked DB path: copies DB+WAL+SHM to temp, reads, cleans up",
+        "Keychain timeout (10s) produces actionable error message"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/cookie-import.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Add cookie-import command handler",
+      "description": "Add cookie-import to META_COMMANDS in src/server.ts. Add handler in src/commands/meta.ts: --list shows browsers, <browser> [--domain d] [--profile p] imports cookies. Add to SAFE_TO_RETRY and help text in src/cli.ts.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-006"],
+      "acceptanceCriteria": [
+        "browse cookie-import --list shows installed browsers",
+        "browse cookie-import chrome --domain github.com imports cookies into session",
+        "cookie-import is safe to retry after server restart",
+        "Missing browser name shows helpful error"
+      ],
+      "filesToModify": ["src/server.ts", "src/commands/meta.ts", "src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Create chrome-discover module",
+      "description": "Create src/chrome-discover.ts — discovers running Chrome via DevToolsActivePort file or port probing (9222, 9229). Each probe has 2s timeout. Returns WebSocket URL or null.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Returns WebSocket URL when Chrome is running with remote debugging",
+        "Returns null when no Chrome is discoverable",
+        "Does not hang — each probe has a 2s timeout"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/chrome-discover.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-009",
+      "title": "Add --connect and --cdp CLI flags",
+      "description": "Add --connect (auto-discover) and --cdp <port> flags to src/cli.ts. --connect calls discoverChrome, sets BROWSE_CDP_URL. --cdp constructs URL directly. Both force BROWSE_RUNTIME=playwright, error if lightpanda set. Add to help text.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-008"],
+      "acceptanceCriteria": [
+        "browse --connect status discovers and connects to running Chrome",
+        "browse --cdp 9222 status connects to explicit port",
+        "--connect with BROWSE_RUNTIME=lightpanda produces clear error",
+        "Discovery failure produces actionable message"
+      ],
+      "filesToModify": ["src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-010",
+      "title": "Integration tests for all features",
+      "description": "Add tests in test/sessions.test.ts (session persist roundtrip, default no-persist, corrupted state, encrypted roundtrip, state clean, --state flag) and test/features.test.ts (chromiumEpochToUnix, decryptCookieValue with synthetic data, findInstalledBrowsers, discoverChrome, cookie import with synthetic SQLite DB).",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-005", "TASK-007", "TASK-009"],
+      "acceptanceCriteria": [
+        "All new session persistence tests pass",
+        "All cookie import unit tests pass with synthetic data",
+        "All chrome discovery tests pass",
+        "Full test suite (bun test) passes with no regressions"
+      ],
+      "filesToModify": ["test/sessions.test.ts", "test/features.test.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-002"],
+    "TASK-004": ["TASK-002"],
+    "TASK-005": ["TASK-002"],
+    "TASK-006": [],
+    "TASK-007": ["TASK-006"],
+    "TASK-008": [],
+    "TASK-009": ["TASK-008"],
+    "TASK-010": ["TASK-005", "TASK-007", "TASK-009"]
+  }
+}

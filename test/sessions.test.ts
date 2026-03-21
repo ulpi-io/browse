@@ -8,11 +8,18 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { chromium, type Browser } from 'playwright';
 import { SessionManager } from '../src/session-manager';
+import { BrowserManager } from '../src/browser-manager';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
 import { handleSnapshot } from '../src/snapshot';
 import { startTestServer } from './test-server';
+import { encrypt, decrypt, resolveEncryptionKey } from '../src/encryption';
+import { saveSessionState, loadSessionState, hasPersistedState, cleanOldStates } from '../src/session-persist';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 let testServer: ReturnType<typeof startTestServer>;
 let browser: Browser;
@@ -219,5 +226,251 @@ describe('Session lifecycle', () => {
     // With 0ms timeout, everything is "idle"
     const closedAll = await sm.closeIdleSessions(0);
     expect(closedAll.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── Session Persistence ────────────────────────────────────
+
+describe('Session Persistence', () => {
+  let tmpDir: string;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-persist-test-'));
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+  });
+
+  test('encryption roundtrip', () => {
+    const key = crypto.randomBytes(32);
+    const original = 'Hello, encrypted world! Special chars: {}[]@#$%';
+    const { ciphertext, iv, authTag } = encrypt(original, key);
+
+    // Ciphertext should differ from plaintext
+    expect(ciphertext).not.toBe(original);
+
+    const decrypted = decrypt(ciphertext, iv, authTag, key);
+    expect(decrypted).toBe(original);
+  });
+
+  test('encryption with wrong key fails', () => {
+    const key = crypto.randomBytes(32);
+    const wrongKey = crypto.randomBytes(32);
+    const { ciphertext, iv, authTag } = encrypt('secret', key);
+
+    expect(() => decrypt(ciphertext, iv, authTag, wrongKey)).toThrow();
+  });
+
+  test('resolveEncryptionKey generates and persists key', () => {
+    const keyDir = path.join(tmpDir, 'key-test');
+    fs.mkdirSync(keyDir, { recursive: true });
+
+    const key1 = resolveEncryptionKey(keyDir);
+    expect(key1).toBeInstanceOf(Buffer);
+    expect(key1.length).toBe(32);
+
+    // Calling again returns the same key (reads from file)
+    const key2 = resolveEncryptionKey(keyDir);
+    expect(key1.equals(key2)).toBe(true);
+
+    // Key file should exist
+    expect(fs.existsSync(path.join(keyDir, '.encryption-key'))).toBe(true);
+  });
+
+  test('session state save/load roundtrip', async () => {
+    const sessionDir = path.join(tmpDir, 'state-roundtrip');
+
+    // Use existing shared browser for the first context
+    const bm1 = new BrowserManager();
+    await bm1.launchWithBrowser(browser);
+    await bm1.getPage().goto(baseUrl + '/basic.html', { waitUntil: 'domcontentloaded' });
+
+    // Set a cookie on the context
+    const ctx1 = bm1.getContext()!;
+    await ctx1.addCookies([{
+      name: 'persist-test',
+      value: 'roundtrip-value',
+      domain: '127.0.0.1',
+      path: '/',
+      expires: Math.floor(Date.now() / 1000) + 3600,
+      httpOnly: false,
+      secure: false,
+      sameSite: 'Lax',
+    }]);
+
+    // Save state
+    await saveSessionState(sessionDir, ctx1);
+
+    // Create a new BrowserManager + context
+    const bm2 = new BrowserManager();
+    await bm2.launchWithBrowser(browser);
+    const ctx2 = bm2.getContext()!;
+
+    // Load state into the new context
+    const loaded = await loadSessionState(sessionDir, ctx2);
+    expect(loaded).toBe(true);
+
+    // Verify the cookie was restored
+    const cookies = await ctx2.cookies();
+    const restored = cookies.find(c => c.name === 'persist-test');
+    expect(restored).toBeDefined();
+    expect(restored!.value).toBe('roundtrip-value');
+
+    await bm1.close().catch(() => {});
+    await bm2.close().catch(() => {});
+  });
+
+  test('encrypted state roundtrip', async () => {
+    const sessionDir = path.join(tmpDir, 'state-encrypted');
+    const key = crypto.randomBytes(32);
+
+    // Create first context and set a cookie
+    const bm1 = new BrowserManager();
+    await bm1.launchWithBrowser(browser);
+    await bm1.getPage().goto(baseUrl + '/basic.html', { waitUntil: 'domcontentloaded' });
+    const ctx1 = bm1.getContext()!;
+    await ctx1.addCookies([{
+      name: 'encrypted-cookie',
+      value: 'secret-value-42',
+      domain: '127.0.0.1',
+      path: '/',
+      expires: Math.floor(Date.now() / 1000) + 3600,
+      httpOnly: false,
+      secure: false,
+      sameSite: 'Lax',
+    }]);
+
+    // Save with encryption
+    await saveSessionState(sessionDir, ctx1, key);
+
+    // Verify the file on disk is encrypted (has "encrypted" field)
+    const raw = JSON.parse(fs.readFileSync(path.join(sessionDir, 'state.json'), 'utf-8'));
+    expect(raw.encrypted).toBe(true);
+    expect(raw.iv).toBeDefined();
+    expect(raw.authTag).toBeDefined();
+    // The plaintext cookie value should NOT appear in the raw file
+    expect(JSON.stringify(raw)).not.toContain('secret-value-42');
+
+    // Load into new context with the same key
+    const bm2 = new BrowserManager();
+    await bm2.launchWithBrowser(browser);
+    const ctx2 = bm2.getContext()!;
+    const loaded = await loadSessionState(sessionDir, ctx2, key);
+    expect(loaded).toBe(true);
+
+    const cookies = await ctx2.cookies();
+    const restored = cookies.find(c => c.name === 'encrypted-cookie');
+    expect(restored).toBeDefined();
+    expect(restored!.value).toBe('secret-value-42');
+
+    await bm1.close().catch(() => {});
+    await bm2.close().catch(() => {});
+  });
+
+  test('loadSessionState returns false for encrypted file without key', async () => {
+    const sessionDir = path.join(tmpDir, 'state-nokey');
+    const key = crypto.randomBytes(32);
+
+    // Save encrypted state
+    const bm1 = new BrowserManager();
+    await bm1.launchWithBrowser(browser);
+    await bm1.getPage().goto(baseUrl + '/basic.html', { waitUntil: 'domcontentloaded' });
+    await saveSessionState(sessionDir, bm1.getContext()!, key);
+
+    // Try loading without a key
+    const bm2 = new BrowserManager();
+    await bm2.launchWithBrowser(browser);
+    const loaded = await loadSessionState(sessionDir, bm2.getContext()!);
+    expect(loaded).toBe(false);
+
+    await bm1.close().catch(() => {});
+    await bm2.close().catch(() => {});
+  });
+
+  test('missing state file returns false', async () => {
+    const emptyDir = path.join(tmpDir, 'state-empty');
+    fs.mkdirSync(emptyDir, { recursive: true });
+
+    const bm1 = new BrowserManager();
+    await bm1.launchWithBrowser(browser);
+    const loaded = await loadSessionState(emptyDir, bm1.getContext()!);
+    expect(loaded).toBe(false);
+
+    await bm1.close().catch(() => {});
+  });
+
+  test('hasPersistedState detects saved state', async () => {
+    const sessionDir = path.join(tmpDir, 'state-has');
+
+    // Before saving: no state
+    expect(hasPersistedState(sessionDir)).toBe(false);
+
+    // Save state
+    const bm1 = new BrowserManager();
+    await bm1.launchWithBrowser(browser);
+    await bm1.getPage().goto(baseUrl + '/basic.html', { waitUntil: 'domcontentloaded' });
+    await saveSessionState(sessionDir, bm1.getContext()!);
+
+    // After saving: state exists
+    expect(hasPersistedState(sessionDir)).toBe(true);
+
+    await bm1.close().catch(() => {});
+  });
+
+  test('hasPersistedState returns false for empty dir', () => {
+    const emptyDir = path.join(tmpDir, 'state-no-file');
+    fs.mkdirSync(emptyDir, { recursive: true });
+    expect(hasPersistedState(emptyDir)).toBe(false);
+  });
+
+  test('cleanOldStates deletes old files and keeps recent ones', () => {
+    const localDir = path.join(tmpDir, 'clean-test');
+    const statesDir = path.join(localDir, 'states');
+    const sessionsDir = path.join(localDir, 'sessions');
+    fs.mkdirSync(statesDir, { recursive: true });
+
+    // Create an "old" state file in states/
+    const oldFile = path.join(statesDir, 'old-session.json');
+    fs.writeFileSync(oldFile, JSON.stringify({ cookies: [] }));
+    // Backdate it by 10 days
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(oldFile, tenDaysAgo, tenDaysAgo);
+
+    // Create a "recent" state file in states/
+    const recentFile = path.join(statesDir, 'recent-session.json');
+    fs.writeFileSync(recentFile, JSON.stringify({ cookies: [] }));
+
+    // Create an "old" session state in sessions/old-sess/state.json
+    const oldSessDir = path.join(sessionsDir, 'old-sess');
+    fs.mkdirSync(oldSessDir, { recursive: true });
+    const oldSessFile = path.join(oldSessDir, 'state.json');
+    fs.writeFileSync(oldSessFile, JSON.stringify({ cookies: [] }));
+    fs.utimesSync(oldSessFile, tenDaysAgo, tenDaysAgo);
+
+    // Create a "recent" session state in sessions/new-sess/state.json
+    const newSessDir = path.join(sessionsDir, 'new-sess');
+    fs.mkdirSync(newSessDir, { recursive: true });
+    const newSessFile = path.join(newSessDir, 'state.json');
+    fs.writeFileSync(newSessFile, JSON.stringify({ cookies: [] }));
+
+    // Clean files older than 7 days
+    const result = cleanOldStates(localDir, 7);
+    expect(result.deleted).toBe(2); // old-session.json + old-sess/state.json
+
+    // Old files should be gone
+    expect(fs.existsSync(oldFile)).toBe(false);
+    expect(fs.existsSync(oldSessFile)).toBe(false);
+
+    // Recent files should still exist
+    expect(fs.existsSync(recentFile)).toBe(true);
+    expect(fs.existsSync(newSessFile)).toBe(true);
+  });
+
+  test('cleanOldStates with no state dirs returns zero', () => {
+    const emptyLocalDir = path.join(tmpDir, 'clean-empty');
+    fs.mkdirSync(emptyLocalDir, { recursive: true });
+    const result = cleanOldStates(emptyLocalDir, 7);
+    expect(result.deleted).toBe(0);
   });
 });

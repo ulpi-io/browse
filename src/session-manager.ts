@@ -11,6 +11,8 @@ import { BrowserManager } from './browser-manager';
 import { SessionBuffers } from './buffers';
 import { DomainFilter } from './domain-filter';
 import { sanitizeName } from './sanitize';
+import { saveSessionState, loadSessionState, hasPersistedState } from './session-persist';
+import { resolveEncryptionKey } from './encryption';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -35,10 +37,16 @@ export class SessionManager {
   private sessions = new Map<string, Session>();
   private browser: Browser;
   private localDir: string;
+  private encryptionKey: Buffer | undefined;
 
   constructor(browser: Browser, localDir: string = '/tmp') {
     this.browser = browser;
     this.localDir = localDir;
+    try {
+      this.encryptionKey = resolveEncryptionKey(localDir);
+    } catch {
+      // Encryption not available — persist unencrypted
+    }
   }
 
   /**
@@ -128,6 +136,16 @@ export class SessionManager {
     };
     this.sessions.set(sessionId, session);
     console.log(`[browse] Session "${sessionId}" created`);
+
+    // Auto-restore persisted state for named sessions (not "default")
+    if (sessionId !== 'default' && hasPersistedState(outputDir)) {
+      const context = manager.getContext();
+      if (context) {
+        await loadSessionState(outputDir, context, this.encryptionKey);
+        console.log(`[browse] Session "${sessionId}" state restored`);
+      }
+    }
+
     return session;
   }
 
@@ -137,6 +155,14 @@ export class SessionManager {
   async closeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session "${sessionId}" not found`);
+
+    // Auto-save state for named sessions (not "default")
+    if (sessionId !== 'default') {
+      const context = session.manager.getContext();
+      if (context) {
+        await saveSessionState(session.outputDir, context, this.encryptionKey);
+      }
+    }
 
     await session.manager.close();
     this.sessions.delete(sessionId);
@@ -154,6 +180,13 @@ export class SessionManager {
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity > maxIdleMs) {
         if (flushFn) flushFn(session);
+        // Auto-save state for named sessions (not "default")
+        if (id !== 'default') {
+          const context = session.manager.getContext();
+          if (context) {
+            await saveSessionState(session.outputDir, context, this.encryptionKey).catch(() => {});
+          }
+        }
         await session.manager.close().catch(() => {});
         this.sessions.delete(id);
         closed.push(id);
@@ -193,6 +226,13 @@ export class SessionManager {
    */
   async closeAll(): Promise<void> {
     for (const [id, session] of this.sessions) {
+      // Auto-save state for named sessions (not "default")
+      if (id !== 'default') {
+        const context = session.manager.getContext();
+        if (context) {
+          await saveSessionState(session.outputDir, context, this.encryptionKey).catch(() => {});
+        }
+      }
       await session.manager.close().catch(() => {});
     }
     this.sessions.clear();
