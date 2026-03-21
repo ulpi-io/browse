@@ -31,8 +31,9 @@ const INTERACTIVE_ROLES = new Set([
 
 interface SnapshotOptions {
   interactive?: boolean;  // -i: only interactive elements (terse flat list by default)
-  verbose?: boolean;      // -v: full indented ARIA tree with props/children (overrides -i terse default)
+  full?: boolean;         // -f: full indented ARIA tree with props/children (overrides -i terse default)
   compact?: boolean;      // -c: remove empty structural elements
+  viewport?: boolean;     // -V: only elements visible in current viewport
   depth?: number;         // -d N: limit tree depth
   selector?: string;      // -s SEL: scope to CSS selector
   cursor?: boolean;       // -C: detect cursor-interactive elements (divs with cursor:pointer, onclick, tabindex)
@@ -73,9 +74,13 @@ export function parseSnapshotArgs(args: string[]): SnapshotOptions {
       case '--compact':
         opts.compact = true;
         break;
-      case '-v':
-      case '--verbose':
-        opts.verbose = true;
+      case '-f':
+      case '--full':
+        opts.full = true;
+        break;
+      case '-V':
+      case '--viewport':
+        opts.viewport = true;
         break;
       case '-C':
       case '--cursor':
@@ -422,8 +427,8 @@ export async function handleSnapshot(
     refMap.set(ref, locator);
 
     // Format output line
-    // -i without -v: terse flat list (no indent, no props, no children)
-    const terse = opts.interactive && !opts.verbose;
+    // -i without -f: terse flat list (no indent, no props, no children)
+    const terse = opts.interactive && !opts.full;
     let outputLine: string;
     if (terse) {
       outputLine = `@${ref} [${node.role}]`;
@@ -439,6 +444,36 @@ export async function handleSnapshot(
     }
 
     output.push(outputLine);
+  }
+
+  // Viewport filter: remove elements below the visible viewport
+  if (opts.viewport) {
+    const vp = page.viewportSize();
+    if (vp) {
+      const toRemove = new Set<string>();
+      await Promise.all(
+        Array.from(refMap.entries()).map(async ([ref, loc]) => {
+          try {
+            const box = await loc.boundingBox({ timeout: 500 });
+            if (!box || box.y >= vp.height || box.y + box.height <= 0) {
+              toRemove.add(ref);
+            }
+          } catch {
+            toRemove.add(ref);
+          }
+        })
+      );
+      for (const ref of toRemove) {
+        refMap.delete(ref);
+      }
+      // Remove output lines for filtered refs
+      for (let i = output.length - 1; i >= 0; i--) {
+        const match = output[i].match(/@(e\d+)/);
+        if (match && toRemove.has(match[1])) {
+          output.splice(i, 1);
+        }
+      }
+    }
   }
 
   // Cursor-interactive detection: supplement ARIA tree with DOM-level scan

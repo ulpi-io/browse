@@ -47,15 +47,15 @@ describe('Snapshot', () => {
     }
   });
 
-  test('snapshot -i -v gives verbose indented tree', async () => {
+  test('snapshot -i -f gives full indented tree', async () => {
     await handleWriteCommand('goto', [baseUrl + '/snapshot.html'], bm);
-    const verbose = await handleMetaCommand('snapshot', ['-i', '-v'], bm, shutdown);
+    const full = await handleMetaCommand('snapshot', ['-i', '-f'], bm, shutdown);
     const terse = await handleMetaCommand('snapshot', ['-i'], bm, shutdown);
-    // Verbose should have indentation and be longer
-    expect(verbose.length).toBeGreaterThan(terse.length);
-    expect(verbose).toContain('[button]');
-    expect(verbose).toContain('[link]');
-    expect(verbose).not.toContain('[heading]');
+    // Full should have indentation and be longer
+    expect(full.length).toBeGreaterThan(terse.length);
+    expect(full).toContain('[button]');
+    expect(full).toContain('[link]');
+    expect(full).not.toContain('[heading]');
   });
 
   test('snapshot -c returns compact output', async () => {

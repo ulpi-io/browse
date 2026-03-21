@@ -612,7 +612,7 @@ Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
                 cookies | storage [set <k> <v>] | perf
                 value <sel> | count <sel> | clipboard [write <text>]
 Visual:         screenshot [path] | pdf [path] | responsive [prefix]
-Snapshot:       snapshot [-i] [-v] [-c] [-C] [-d N] [-s sel]
+Snapshot:       snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]
 Find:           find role|text|label|placeholder|testid <query> [name]
 Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
 Multi-step:     chain (reads JSON from stdin)
@@ -639,7 +639,8 @@ Options:
 
 Snapshot flags:
   -i            Interactive elements only (terse flat list by default)
-  -v            Verbose — full indented tree with props (use with -i)
+  -f            Full — indented tree with props and children (use with -i)
+  -V            Viewport — only elements visible in current viewport
   -c            Compact — remove empty structural elements
   -C            Cursor-interactive — detect divs with cursor:pointer,
                 onclick, tabindex, data-action (missed by ARIA tree)

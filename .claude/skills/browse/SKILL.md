@@ -265,7 +265,8 @@ browse accessibility      Accessibility tree snapshot (ARIA)
 ```
 browse snapshot           Full accessibility tree with @refs
 browse snapshot -i        Interactive elements only — terse flat list (minimal tokens)
-browse snapshot -i -v     Interactive elements — verbose indented tree with props
+browse snapshot -i -f     Interactive elements — full indented tree with props
+browse snapshot -i -V     Interactive elements — viewport only (skip below-fold)
 browse snapshot -c        Compact (no empty structural elements)
 browse snapshot -C        Cursor-interactive (detect divs with cursor:pointer/onclick/tabindex)
 browse snapshot -d <N>    Limit depth to N levels
