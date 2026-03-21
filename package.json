@@ -25,8 +25,7 @@
     "dist/",
     "skill/",
     "LICENSE",
-    "README.md",
-    "BENCHMARKS.md"
+    "README.md"
   ],
   "keywords": [
     "browser",
@@ -49,7 +48,7 @@
     "test": "vitest run",
     "start": "tsx src/server.ts",
     "postinstall": "npx playwright install chromium",
-    "benchmark": "tsx benchmark.ts"
+    "benchmark": "echo 'Benchmarks moved to separate repo'"
   },
   "type": "module",
   "devDependencies": {
