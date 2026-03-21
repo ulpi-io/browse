@@ -85,6 +85,25 @@ async launchPersistent(profileDir: string, onCrash?: () => void) {
 
 Also update `close()` to handle persistent mode — closing the context is enough (it closes the browser too).
 
+**IMPORTANT: `recreateContext()` guard.** Five features call `recreateContext()` which destroys and recreates the BrowserContext. This is impossible with persistent contexts. Add a guard at the top of `recreateContext()`:
+```typescript
+if (this.isPersistent) {
+  throw new Error('Cannot change device/viewport/user-agent in profile mode — profiles use a fixed browser context. Use --session instead.');
+}
+```
+This affects: `emulate`, `useragent`, `viewport` (device change), `video start`, `video stop`.
+
+Also handle **profile directory corruption** — if `launchPersistentContext()` fails on a profile dir, catch the error, log a warning, delete the corrupted profile dir, and retry once:
+```typescript
+try {
+  context = await chromium.launchPersistentContext(profileDir, opts);
+} catch (err) {
+  console.error(`[browse] Profile "${name}" corrupted, recreating...`);
+  fs.rmSync(profileDir, { recursive: true, force: true });
+  context = await chromium.launchPersistentContext(profileDir, opts);
+}
+```
+
 **Files:** `src/browser-manager.ts`
 
 **Type:** feature
@@ -94,7 +113,8 @@ Also update `close()` to handle persistent mode — closing the context is enoug
 - [ ] `launchPersistent(dir)` creates a persistent context using `chromium.launchPersistentContext()`
 - [ ] Existing pages from the profile are registered as tabs
 - [ ] `close()` works correctly — closes context (which closes Chromium)
-- [ ] `recreateContext()` (used by emulate/viewport) throws or handles persistent mode (can't recreate a persistent context)
+- [ ] `recreateContext()` throws clear error in persistent mode (guards all 5 callers: emulate, useragent, viewport, video start, video stop)
+- [ ] Corrupted profile directory is auto-recovered (delete + retry)
 
 **Agent:** nodejs-cli-senior-engineer
 
