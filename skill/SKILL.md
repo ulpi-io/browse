@@ -549,7 +549,9 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Run browser in headed (visible) mode |
-| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth) |
+| `--cdp <port>` | Connect to Chrome on a specific debugging port |
+| `--connect` | Auto-discover and connect to a running Chrome instance |
+| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda |
 
 ## Speed Rules
 

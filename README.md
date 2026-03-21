@@ -330,6 +330,7 @@ echo '[["goto","https://example.com"],["snapshot","-i"],["text"]]' | browse chai
 ```bash
 browse status                  # Server health report
 browse instances               # List all running browse servers
+browse version                 # Print CLI version
 browse doctor                  # System check (Node, Playwright, Chromium)
 browse upgrade                 # Self-update via npm
 browse stop                    # Stop server
@@ -514,6 +515,9 @@ Use browse to test the login flow. Run browse --help to see available commands.
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Show browser window (not headless) |
+| `--cdp <port>` | Connect to Chrome on a specific debugging port |
+| `--connect` | Auto-discover and connect to a running Chrome instance |
+| `--runtime <name>` | Browser runtime: playwright (default), rebrowser (stealth), lightpanda |
 
 ## Environment Variables
 
