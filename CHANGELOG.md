@@ -3,6 +3,7 @@
 ## v1.0.0 — Node.js Port
 
 - **Ported from Bun to Node.js** — zero Bun runtime dependency, runs on Node 18+
+- **Why:** Bun's WebSocket client sends `Connection: keep-alive` instead of `Connection: Upgrade`, breaking the CDP handshake required by Playwright's `connectOverCDP()`. This bug ([oven-sh/bun#9911](https://github.com/oven-sh/bun/issues/9911)) has been open since April 2024 and blocked all CDP-based features: `--connect`, `--cdp`, and LightPanda. Node.js handles WebSocket upgrades correctly.
 - **All blocked features unblocked:**
   - `--connect` — auto-discover and connect to a running Chrome instance
   - `--cdp <port>` — connect to Chrome on a specific debugging port
