@@ -1,20 +1,20 @@
 # Feature Comparison: browse vs gstack vs agent-browser vs browser-use
 
 > Generated: 2026-03-21
-> State: v0.10.0 feature parity shipped
+> State: v1.0.0 — ported to Node.js, all features unblocked
 
-Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug, **—** = not available
+Legend: **YES** = shipped, **—** = not available
 
 ## Architecture
 
 | | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| Language | TypeScript/Bun | TypeScript/Bun | Rust | Python |
+| Language | TypeScript/Node | TypeScript/Bun | Rust | Python |
 | Browser engine | Playwright | Playwright | Direct CDP | Playwright |
 | Daemon IPC | HTTP | HTTP | Unix socket | Unix socket |
 | Command latency | ~100-200ms | ~100-200ms | ~50ms | ~50ms |
-| Binary | Bun --compile (~58MB) | Bun --compile (~58MB) | Native Rust | Python package |
-| Windows | — | — | YES | YES |
+| Binary | esbuild bundle | Bun --compile (~58MB) | Native Rust | Python package |
+| Windows | YES | — | YES | YES |
 
 ## Navigation & Core Interaction
 
@@ -202,8 +202,8 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | Auto-persist named sessions | YES | — | YES (`--session-name`) | — |
 | Encrypted state at rest | YES | — | YES | — |
 | `--state <path>` load on launch | YES | — | YES | — |
-| `--connect` auto-discover Chrome | BLOCKED (bun#9911) | — | YES | YES |
-| `--cdp <port>` flag | BLOCKED (bun#9911) | — | YES | YES (`--cdp-url`) |
+| `--connect` auto-discover Chrome | YES | — | YES | YES |
+| `--cdp <port>` flag | YES | — | YES | YES (`--cdp-url`) |
 | State cleanup (`state clean`) | YES | — | YES (`state clean`) | — |
 | Persistent profile (`--profile`) | — | — | YES | YES |
 | Handoff to visible Chrome | — | YES | — | — |
@@ -287,14 +287,13 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 
 | Category | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| Total features (YES) | 136 | 60 | 136 | 51 |
-| Blocked (Bun bug) | 2 | — | — | — |
+| Total features (YES) | 138 | 60 | 136 | 51 |
+| Blocked | 0 | — | — | — |
 
 ## Top Remaining Gaps
 
-1. **`--connect`/`--cdp`** — code ready, blocked by Bun WebSocket bug (oven-sh/bun#9911). Will work when Bun fixes CDP handshake.
-2. **Cloud providers** — agent-browser has 4, we have 0 (L effort)
-3. **Handoff** — gstack exclusive, unlocker for CAPTCHA/MFA (M effort)
-4. **Persistent profiles (`--profile`)** — deferred, conflicts with session multiplexing. Auto-persist covers 90% of auth use case.
-5. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
-6. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
+1. **Cloud providers** — agent-browser has 4, we have 0 (L effort)
+2. **Handoff** — gstack exclusive, unlocker for CAPTCHA/MFA (M effort)
+3. **Persistent profiles (`--profile`)** — deferred, conflicts with session multiplexing. Auto-persist covers 90% of auth use case.
+4. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
+5. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
