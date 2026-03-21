@@ -1,0 +1,200 @@
+{
+  "title": "Browser Runtime Provider Abstraction",
+  "branch": "feat/runtime-abstraction",
+  "mode": "EXPANSION",
+  "overview": "Introduce a runtime abstraction layer so the browser engine is swappable at runtime. Three runtimes: playwright (default), rebrowser (stealth), lightpanda (fast Zig-based headless). Selected via --runtime CLI flag, BROWSE_RUNTIME env var, or browse.json config.",
+  "scopeChallenge": "Playwright imported in 3 files. Launch/connect in server.ts:365-396. Standalone launch in browser-manager.ts:206. EXPANSION mode: all 3 runtimes, lightpanda process spawning, comprehensive tests, full docs.",
+  "existingCodeLeverage": [
+    { "subProblem": "Browser launch/connect", "existingCode": "src/server.ts:365-396", "action": "extend" },
+    { "subProblem": "Standalone launch (tests)", "existingCode": "src/browser-manager.ts:206", "action": "extend" },
+    { "subProblem": "CLI flag parsing", "existingCode": "src/cli.ts:510-576", "action": "extend" },
+    { "subProblem": "Config loading", "existingCode": "src/config.ts", "action": "extend" },
+    { "subProblem": "Env var passing to server", "existingCode": "src/cli.ts:255", "action": "extend" },
+    { "subProblem": "CDP connect", "existingCode": "src/server.ts:369-374", "action": "reuse" },
+    { "subProblem": "Device descriptors", "existingCode": "src/browser-manager.ts:10", "action": "reuse" }
+  ],
+  "failureModes": [
+    { "risk": "rebrowser-playwright API incompatibility", "affectedTasks": ["TASK-001", "TASK-003"], "mitigation": "Dynamic import with try/catch; version-pin in optionalDependencies" },
+    { "risk": "rebrowser-playwright doesn't work with Bun build", "affectedTasks": ["TASK-006"], "mitigation": "Test bun run build; if fails, document manual install" },
+    { "risk": "Lightpanda binary not found", "affectedTasks": ["TASK-002"], "mitigation": "Clear error with install URL; check multiple paths" },
+    { "risk": "Lightpanda CDP format differs from Chrome", "affectedTasks": ["TASK-002"], "mitigation": "Poll /json/version; handle missing webSocketDebuggerUrl" },
+    { "risk": "Lightpanda process left orphaned", "affectedTasks": ["TASK-002"], "mitigation": "close() kills child; process exit handler as safety net" },
+    { "risk": "Server spawn doesn't pass BROWSE_RUNTIME env var", "affectedTasks": ["TASK-005"], "mitigation": "Follow exact pattern of BROWSE_HEADED" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "Runtime registry (getRuntime)", "coveringTask": "TASK-007", "testType": "unit" },
+    { "codepath": "Invalid runtime error", "coveringTask": "TASK-007", "testType": "unit" },
+    { "codepath": "Lightpanda binary discovery", "coveringTask": "TASK-007", "testType": "unit" },
+    { "codepath": "Lightpanda incompatible options validation", "coveringTask": "TASK-007", "testType": "unit" },
+    { "codepath": "Server launch with runtime", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "CLI --runtime flag parsing", "coveringTask": "TASK-005", "testType": "integration" },
+    { "codepath": "Config runtime field", "coveringTask": "TASK-005", "testType": "unit" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Create runtime registry with playwright and rebrowser runtimes",
+      "description": "Create src/runtime.ts with BrowserRuntime interface and registry. Playwright and rebrowser are library runtimes returning a chromium BrowserType via dynamic import(). Rebrowser uses try/catch with install instructions on failure.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "getRuntime('playwright') returns a runtime with a valid chromium BrowserType",
+        "getRuntime('rebrowser') throws with install instructions when rebrowser-playwright is not installed",
+        "getRuntime('invalid') throws with list of available runtimes"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/runtime.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Add lightpanda process runtime",
+      "description": "Add lightpanda runtime to src/runtime.ts. Spawns lightpanda binary, polls CDP endpoint, connects Playwright. Includes findLightpanda(), free port discovery, process spawn, CDP polling, and cleanup.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "getRuntime('lightpanda') returns a runtime that spawns the binary and connects via CDP",
+        "If lightpanda binary not found, throws with install URL",
+        "close() kills the spawned lightpanda process"
+      ],
+      "filesToModify": ["src/runtime.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Wire runtime into server.ts",
+      "description": "Replace import { chromium } from 'playwright' with runtime abstraction. Read BROWSE_RUNTIME env var, call getRuntime(), use runtime.chromium for launch/connect. Store runtime for cleanup on shutdown.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "Server launches with default runtime (playwright) when BROWSE_RUNTIME is not set",
+        "Server launches with BROWSE_RUNTIME=rebrowser when rebrowser-playwright is installed",
+        "BROWSE_CDP_URL still works regardless of runtime selection"
+      ],
+      "filesToModify": ["src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Wire runtime into browser-manager.ts and update test imports",
+      "description": "Remove chromium from browser-manager.ts import. Use getRuntime() in standalone launch() method. Accept optional runtimeName parameter. Keep playwrightDevices import for device descriptors. Update test/sessions.test.ts to remove direct chromium import.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "BrowserManager.launch() works without arguments (defaults to playwright)",
+        "BrowserManager.launch(onCrash, 'rebrowser') uses rebrowser runtime",
+        "Device descriptors (playwrightDevices) continue to work for all runtimes",
+        "test/sessions.test.ts no longer imports chromium directly from playwright"
+      ],
+      "filesToModify": ["src/browser-manager.ts", "test/sessions.test.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Add --runtime CLI flag and env var propagation",
+      "description": "Add --runtime <name> as global CLI flag in cli.ts following --session pattern. Add to findCommandIndex() value-flags. Extract, merge with env/config. Pass BROWSE_RUNTIME to server spawn env. Add runtime to BrowseConfig in config.ts. Update help text.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse --runtime rebrowser goto https://example.com passes BROWSE_RUNTIME=rebrowser to server",
+        "browse.json with {\"runtime\":\"rebrowser\"} is used as default",
+        "Help text shows --runtime <name> in flags section"
+      ],
+      "filesToModify": ["src/cli.ts", "src/config.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Add rebrowser-playwright as optional dependency",
+      "description": "Add rebrowser-playwright to package.json optionalDependencies. Verify bun install and bun run build still work.",
+      "type": "chore",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "bun install succeeds",
+        "bun run build succeeds with --external flags unchanged",
+        "Base functionality works without rebrowser-playwright installed"
+      ],
+      "filesToModify": ["package.json"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Add runtime registry tests",
+      "description": "Add tests to test/features.test.ts: getRuntime() default, getRuntime('playwright'), getRuntime('invalid') error, AVAILABLE_RUNTIMES list, findLightpanda() returns null when not installed, lightpanda incompatible options validation.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "All runtime registry tests pass with bun test test/features",
+        "Tests don't require rebrowser-playwright or lightpanda to be installed",
+        "Edge case: invalid runtime name produces actionable error message"
+      ],
+      "filesToModify": ["test/features.test.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Update SKILL.md and help text documentation",
+      "description": "Update skill/SKILL.md and .claude/skills/browse/SKILL.md with --runtime flag. Add to CLI Flags table, Quick Reference examples, When to Use What table, Architecture section.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": ["TASK-005"],
+      "acceptanceCriteria": [
+        "Both SKILL.md files are in sync (identical content)",
+        "--runtime flag documented with all 3 runtime names",
+        "Examples show env var, CLI flag, and browse.json config methods"
+      ],
+      "filesToModify": ["skill/SKILL.md", ".claude/skills/browse/SKILL.md"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-009",
+      "title": "Update CLAUDE.md and reference docs",
+      "description": "Update CLAUDE.md project structure and env vars. Update exports-reference.md with runtime.ts exports, BrowserRuntime type, BROWSE_RUNTIME env var.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P3",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "runtime.ts appears in project structure and exports reference",
+        "BROWSE_RUNTIME env var is documented",
+        "All new exports listed with correct types and file paths"
+      ],
+      "filesToModify": ["CLAUDE.md", ".claude/claude-md-refs/exports-reference.md"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-001"],
+    "TASK-004": ["TASK-001"],
+    "TASK-005": [],
+    "TASK-006": [],
+    "TASK-007": ["TASK-001", "TASK-002"],
+    "TASK-008": ["TASK-005"],
+    "TASK-009": ["TASK-001"]
+  }
+}

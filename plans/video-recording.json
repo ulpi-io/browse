@@ -1,0 +1,131 @@
+{
+  "title": "Video Recording via Playwright recordVideo",
+  "branch": "feat/video-recording (create from main)",
+  "mode": "HOLD",
+  "overview": "Add video start/stop/status commands to browse CLI using Playwright's recordVideo context option. Zero CDP overhead, WebM output, no external deps. Uses existing context recreation pattern.",
+  "scopeChallenge": "Feature builds entirely on existing recreateContext() and HAR start/stop patterns. No new modules or deps needed. Context recreation with full state preservation is already battle-tested by emulate and useragent commands.",
+  "existingCodeLeverage": [
+    { "subProblem": "Context recreation with state preservation", "existingCode": "src/browser-manager.ts:553 recreateContext()", "action": "reuse" },
+    { "subProblem": "Start/stop subcommand pattern", "existingCode": "src/commands/meta.ts:593-620 HAR commands", "action": "reuse" },
+    { "subProblem": "Video state tracking", "existingCode": "src/browser-manager.ts:168 harRecording field", "action": "reuse" },
+    { "subProblem": "Default output path", "existingCode": "src/commands/meta.ts:222,297 screenshot/pdf path logic", "action": "reuse" },
+    { "subProblem": "Command registration", "existingCode": "src/server.ts:124, src/commands/meta.ts:348, src/cli.ts:591", "action": "extend" },
+    { "subProblem": "Retry safety", "existingCode": "src/cli.ts:373 SAFE_TO_RETRY", "action": "extend" }
+  ],
+  "failureModes": [
+    { "risk": "page.video() returns null if page was created before recordVideo context", "affectedTasks": ["TASK-001"], "mitigation": "recreateContext already creates new pages — video() will be set on the new pages" },
+    { "risk": "Video file not flushed until page/context close", "affectedTasks": ["TASK-001"], "mitigation": "On stop, we recreate context (which closes old pages) — Playwright flushes video on page close" },
+    { "risk": "Emulate/useragent while recording drops recordVideo option", "affectedTasks": ["TASK-001"], "mitigation": "Pass recordVideo through in recreateContext when videoRecording is active" },
+    { "risk": "Temp dir doesn't exist", "affectedTasks": ["TASK-002"], "mitigation": "Use fs.mkdirSync(dir, { recursive: true }) before starting" },
+    { "risk": "WebM file not fully written at assertion time", "affectedTasks": ["TASK-004"], "mitigation": "video.saveAs() waits for video to be finalized before resolving — no race condition" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "startVideoRecording() — context recreation with recordVideo", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "stopVideoRecording() — video path collection + context recreation", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "getVideoRecording() — state query", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "video start command handler", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "video stop command handler", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "video status command handler", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Double-start error path", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Stop-without-start error path", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Recording survives emulateDevice", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Screenshots work during recording", "coveringTask": "TASK-004", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Add video recording state and methods to BrowserManager",
+      "description": "Add videoRecording state field and startVideoRecording()/stopVideoRecording()/getVideoRecording() methods to BrowserManager. Start calls recreateContext with recordVideo option. Stop collects page.video() refs, recreateContext without recordVideo (finalizes videos), then video.saveAs(dir/tab-N.webm) for each — works local and remote CDP. Ensure emulateDevice/useragent pass recordVideo through when active.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "startVideoRecording(dir) creates a new context with recordVideo option and preserves all tabs/cookies/state",
+        "stopVideoRecording() saves videos via video.saveAs() with predictable names (tab-N.webm) and recreates context without recordVideo",
+        "Calling startVideoRecording while already recording throws error",
+        "emulateDevice while recording passes recordVideo through to new context"
+      ],
+      "filesToModify": ["src/browser-manager.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Add video command handler in meta.ts and register in server",
+      "description": "Add case 'video' to handleMetaCommand with start/stop/status subcommands following HAR pattern. Register 'video' in META_COMMANDS in server.ts.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "browse video start begins recording, returns confirmation with output directory",
+        "browse video stop returns paths of saved WebM files with duration",
+        "browse video stop without active recording throws clear error",
+        "browse video status returns recording state"
+      ],
+      "filesToModify": ["src/commands/meta.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Register video command in CLI help and verify chain support",
+      "description": "Update CLI help text in src/cli.ts to add video commands to the Recording line. Verify chain command routes video to meta handler.",
+      "type": "chore",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "browse --help shows video commands in the Recording line",
+        "chain command works with video start/stop sequence",
+        "video start is NOT in SAFE_TO_RETRY"
+      ],
+      "filesToModify": ["src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Integration tests for video recording",
+      "description": "Add tests in test/features.test.ts: happy path start/navigate/stop, status checks, double-start error, stop-without-start error, screenshots during recording, emulate during recording. Use temp dir for output.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "All 6 test cases pass with real Chromium",
+        "WebM files written to disk with non-zero size",
+        "Error cases produce clear messages",
+        "Temp video files cleaned up in afterAll"
+      ],
+      "filesToModify": ["test/features.test.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Update CLAUDE.md, SKILL.md, and exports-reference docs",
+      "description": "Update command counts (total: 75→76, Meta: 24→25, fix stale '23 meta commands' at CLAUDE.md:49 and exports-reference.md:25,147) and add video to command lists in CLAUDE.md, .claude/skills/browse/SKILL.md, and .claude/claude-md-refs/exports-reference.md. Check all count references in all three files.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "Total command count is 76 and Meta command count is 25 in CLAUDE.md",
+        "video start|stop|status appears in all three docs",
+        "No stale command counts remain (check total, meta, and per-category counts in all files)"
+      ],
+      "filesToModify": ["CLAUDE.md", ".claude/skills/browse/SKILL.md", ".claude/claude-md-refs/exports-reference.md"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-002"],
+    "TASK-004": ["TASK-002"],
+    "TASK-005": ["TASK-002"]
+  }
+}
