@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.0 — Persistent Profiles
+
+- `--profile <name>` — persistent browser profiles with full state (cookies, localStorage, IndexedDB, cache)
+- Each profile gets its own Chromium with a real user data directory
+- `profile list` | `profile delete <name>` | `profile clean` — profile management
+- Mutually exclusive with `--session` (profiles own their Chromium, sessions share one)
+- Auto-recovery: corrupted profile directories are detected and recreated
+
 ## v1.0.0 — Node.js Port
 
 - **Ported from Bun to Node.js** — zero Bun runtime dependency, runs on Node 18+

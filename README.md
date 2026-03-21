@@ -379,6 +379,16 @@ Sessions auto-close after the idle timeout (default 30 min). Without `--session`
 
 For full process isolation (separate Chromium instances), use `BROWSE_PORT` to run independent servers.
 
+### Profiles vs Sessions
+
+| | `--session` | `--profile` |
+|---|---|---|
+| Chromium | Shared (one process) | Own (one per profile) |
+| Memory | ~5MB per session | ~200MB per profile |
+| State | Ephemeral (auto-persisted cookies) | Full persistence (cookies, cache, IndexedDB) |
+| Multiplexing | Yes (parallel agents) | No (one agent per profile) |
+| Use case | Parallel browsing, lightweight | Real login state, heavy |
+
 ## Security
 
 All security features are opt-in — existing workflows are unaffected until you explicitly enable a feature.
@@ -498,6 +508,7 @@ Use browse to test the login flow. Run browse --help to see available commands.
 | Flag | Description |
 |------|-------------|
 | `--session <id>` | Named session (isolates tabs, refs, cookies) |
+| `--profile <name>` | Persistent browser profile (own Chromium, full state) |
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |

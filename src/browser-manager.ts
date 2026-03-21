@@ -7,10 +7,13 @@
  *   We do NOT try to self-heal — don't hide failure.
  */
 
+import * as path from 'path';
+import * as fs from 'fs';
 import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
 import { SessionBuffers, type LogEntry, type NetworkEntry } from './buffers';
 import type { HarRecording } from './har';
 import type { DomainFilter } from './domain-filter';
+import { sanitizeName } from './sanitize';
 
 /** Shorthand aliases for common devices → Playwright device names */
 const DEVICE_ALIASES: Record<string, string> = {
@@ -128,6 +131,56 @@ export function listDevices(): string[] {
   return [...all].sort();
 }
 
+/**
+ * Get the profile directory path for a named profile.
+ * Profiles live in .browse/profiles/<name>/
+ */
+export function getProfileDir(localDir: string, name: string): string {
+  const sanitized = sanitizeName(name);
+  if (!sanitized) throw new Error('Invalid profile name');
+  return path.join(localDir, 'profiles', sanitized);
+}
+
+/**
+ * List all profiles with metadata.
+ */
+export function listProfiles(localDir: string): Array<{ name: string; size: string; lastUsed: string }> {
+  const profilesDir = path.join(localDir, 'profiles');
+  if (!fs.existsSync(profilesDir)) return [];
+
+  return fs.readdirSync(profilesDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => {
+      const dir = path.join(profilesDir, d.name);
+      const stat = fs.statSync(dir);
+      // Approximate size by counting files
+      let totalSize = 0;
+      try {
+        const files = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
+        for (const f of files) {
+          if (f.isFile()) {
+            try { totalSize += fs.statSync(path.join((f as any).parentPath || (f as any).path || dir, f.name)).size; } catch {}
+          }
+        }
+      } catch {}
+      const sizeMB = (totalSize / 1024 / 1024).toFixed(1);
+      return {
+        name: d.name,
+        size: `${sizeMB}MB`,
+        lastUsed: stat.mtime.toISOString().split('T')[0],
+      };
+    });
+}
+
+/**
+ * Delete a profile directory.
+ */
+export function deleteProfile(localDir: string, name: string): void {
+  const dir = getProfileDir(localDir, name);
+  if (!fs.existsSync(dir)) throw new Error(`Profile "${name}" not found`);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
@@ -181,6 +234,9 @@ export class BrowserManager {
 
   // Whether this instance owns (and should close) the Browser process
   private ownsBrowser = false;
+
+  // Whether this instance uses a persistent browser context (profile mode)
+  private isPersistent = false;
 
   constructor(buffers?: SessionBuffers) {
     this.buffers = buffers || new SessionBuffers();
@@ -238,7 +294,74 @@ export class BrowserManager {
     await this.newTab();
   }
 
+  /**
+   * Launch with a persistent browser profile directory.
+   * Data (cookies, localStorage, cache) persists across restarts.
+   * The context IS the browser — closing it closes everything.
+   */
+  async launchPersistent(profileDir: string, onCrash?: () => void) {
+    let context: BrowserContext;
+    try {
+      context = await chromium.launchPersistentContext(profileDir, {
+        headless: process.env.BROWSE_HEADED !== '1',
+        viewport: { width: 1920, height: 1080 },
+        ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+      });
+    } catch (err: any) {
+      // Profile might be corrupted — delete and retry once
+      if (err.message?.includes('Failed to launch') || err.message?.includes('Target closed')) {
+        const fs = await import('fs');
+        console.error(`[browse] Profile directory corrupted, recreating: ${profileDir}`);
+        fs.rmSync(profileDir, { recursive: true, force: true });
+        context = await chromium.launchPersistentContext(profileDir, {
+          headless: process.env.BROWSE_HEADED !== '1',
+          viewport: { width: 1920, height: 1080 },
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    this.context = context;
+    this.browser = context.browser();
+    this.isPersistent = true;
+    this.ownsBrowser = true;
+
+    // Crash handler
+    if (this.browser) {
+      this.browser.on('disconnected', () => {
+        if (onCrash) onCrash();
+      });
+    }
+
+    // Register existing pages as tabs, or create first tab
+    const pages = context.pages();
+    if (pages.length > 0) {
+      for (const page of pages) {
+        const tabId = this.nextTabId++;
+        this.wirePageEvents(page);
+        this.pages.set(tabId, page);
+        this.activeTabId = tabId;
+      }
+    } else {
+      await this.newTab();
+    }
+  }
+
   async close() {
+    // Persistent contexts: closing the context closes browser + all pages
+    if (this.isPersistent) {
+      this.pages.clear();
+      this.tabSnapshots.clear();
+      this.refMap.clear();
+      if (this.context) {
+        await this.context.close().catch(() => {});
+        this.context = null;
+        this.browser = null;
+      }
+      return;
+    }
+
     // Close all pages first
     for (const [, page] of this.pages) {
       await page.close().catch(() => {});
@@ -262,6 +385,10 @@ export class BrowserManager {
 
   isHealthy(): boolean {
     return this.browser !== null && this.browser.isConnected();
+  }
+
+  getIsPersistent(): boolean {
+    return this.isPersistent;
   }
 
   // ─── Tab Management ────────────────────────────────────────
@@ -571,6 +698,11 @@ export class BrowserManager {
    * Cannot preserve: localStorage/sessionStorage (bound to old context).
    */
   private async recreateContext(contextOptions: Record<string, any>): Promise<void> {
+    if (this.isPersistent) {
+      throw new Error(
+        'Cannot change device/viewport/user-agent in profile mode — profiles use a fixed browser context. Use --session instead.'
+      );
+    }
     if (!this.browser) return;
 
     // Auto-inject recordVideo when video recording is active (so emulateDevice/applyUserAgent pass it through)

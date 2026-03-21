@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { sharedBm as bm, sharedBaseUrl as baseUrl } from './setup';
-import { BrowserManager } from '../src/browser-manager';
+import { BrowserManager, getProfileDir, listProfiles, deleteProfile } from '../src/browser-manager';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
@@ -1578,5 +1578,74 @@ describe('Doctor command', () => {
     const result = await handleMetaCommand('doctor', [], bm, async () => {});
     expect(result).toContain('Node:');
     expect(result).toContain('Playwright:');
+  });
+});
+
+// ─── Persistent Profiles ─────────────────────────────────────────
+
+describe('Persistent Profiles', () => {
+  test('launchPersistent creates context and navigates', async () => {
+    const profileDir = `/tmp/browse-test-profile-${Date.now()}`;
+    const pbm = new BrowserManager();
+    await pbm.launchPersistent(profileDir);
+    const page = pbm.getPage();
+    await page.goto(baseUrl + '/basic.html');
+    const text = await handleReadCommand('text', [], pbm);
+    expect(text).toContain('Hello World');
+    expect(pbm.getIsPersistent()).toBe(true);
+    await pbm.close();
+    fs.rmSync(profileDir, { recursive: true, force: true });
+  }, 30000);
+
+  test('recreateContext throws in persistent mode', async () => {
+    const profileDir = `/tmp/browse-test-profile-recreate-${Date.now()}`;
+    const pbm = new BrowserManager();
+    await pbm.launchPersistent(profileDir);
+    try {
+      await handleWriteCommand('emulate', ['iphone'], pbm);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('profile mode');
+    }
+    await pbm.close();
+    fs.rmSync(profileDir, { recursive: true, force: true });
+  }, 30000);
+
+  test('profile list shows created profiles', () => {
+    const testDir = `/tmp/browse-test-profiles-${Date.now()}`;
+    // Create a fake profile dir
+    const profileDir = getProfileDir(testDir, 'test-profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+    fs.writeFileSync(path.join(profileDir, 'dummy'), 'data');
+
+    const profiles = listProfiles(testDir);
+    expect(profiles.length).toBe(1);
+    expect(profiles[0].name).toBe('test-profile');
+
+    // Delete it
+    deleteProfile(testDir, 'test-profile');
+    expect(listProfiles(testDir).length).toBe(0);
+
+    // Clean up
+    fs.rmSync(testDir, { recursive: true, force: true });
+  });
+
+  test('invalid profile name throws', () => {
+    // Empty name throws
+    expect(() => getProfileDir('/tmp', '')).toThrow();
+    // Dots-only name throws (sanitizeName rejects it)
+    expect(() => getProfileDir('/tmp', '..')).toThrow();
+  });
+
+  test('path traversal in profile name is sanitized', () => {
+    // sanitizeName strips path separators and .., so this should not throw
+    // but the result should be safe (no path traversal)
+    const dir = getProfileDir('/tmp', '../escape');
+    expect(dir).not.toContain('..');
+    expect(dir).toContain('profiles');
+  });
+
+  test('profile delete non-existent throws', () => {
+    expect(() => deleteProfile('/tmp/browse-nonexistent', 'fake')).toThrow('not found');
   });
 });

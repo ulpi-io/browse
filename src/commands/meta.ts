@@ -980,6 +980,50 @@ export async function handleMetaCommand(
       throw new Error('Usage: browse record start | stop | status | export browse|replay [path]');
     }
 
+    // ─── Profile Management ────────────────────────────────
+    case 'profile': {
+      const subcommand = args[0];
+      if (!subcommand) throw new Error('Usage: browse profile list | delete <name> | clean [--older-than <days>]');
+
+      if (subcommand === 'list') {
+        const { listProfiles } = await import('../browser-manager');
+        const profiles = listProfiles(LOCAL_DIR);
+        if (profiles.length === 0) return 'No profiles found';
+        return profiles.map(p => `${p.name}  ${p.size}  last used: ${p.lastUsed}`).join('\n');
+      }
+
+      if (subcommand === 'delete') {
+        const name = args[1];
+        if (!name) throw new Error('Usage: browse profile delete <name>');
+        const { deleteProfile } = await import('../browser-manager');
+        deleteProfile(LOCAL_DIR, name);
+        return `Profile "${name}" deleted`;
+      }
+
+      if (subcommand === 'clean') {
+        const { listProfiles, deleteProfile } = await import('../browser-manager');
+        let maxDays = 7; // default
+        const olderIdx = args.indexOf('--older-than');
+        if (olderIdx !== -1 && args[olderIdx + 1]) {
+          maxDays = parseInt(args[olderIdx + 1], 10);
+          if (isNaN(maxDays)) throw new Error('Usage: browse profile clean --older-than <days>');
+        }
+        const profiles = listProfiles(LOCAL_DIR);
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - maxDays);
+        let cleaned = 0;
+        for (const p of profiles) {
+          if (new Date(p.lastUsed) < cutoff) {
+            deleteProfile(LOCAL_DIR, p.name);
+            cleaned++;
+          }
+        }
+        return cleaned > 0 ? `Cleaned ${cleaned} profile(s) older than ${maxDays} days` : 'No profiles to clean';
+      }
+
+      throw new Error('Usage: browse profile list | delete <name> | clean [--older-than <days>]');
+    }
+
     default:
       throw new Error(`Unknown meta command: ${command}`);
   }

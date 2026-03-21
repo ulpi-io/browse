@@ -71,9 +71,13 @@ function validateAuth(req: Request): boolean {
 // ─── Per-Session Buffer Flush ──────────────────────────────────
 // Flushes each session's buffers to separate log files on disk.
 
-function flushAllBuffers(sessionManager: SessionManager, final = false) {
-  for (const session of sessionManager.getAllSessions()) {
-    flushSessionBuffers(session, final);
+function flushAllBuffers(sm: SessionManager | null, final = false) {
+  if (sm) {
+    for (const session of sm.getAllSessions()) {
+      flushSessionBuffers(session, final);
+    }
+  } else if (profileSession) {
+    flushSessionBuffers(profileSession, final);
   }
 }
 
@@ -126,8 +130,9 @@ function flushSessionBuffers(session: Session, final: boolean) {
 }
 
 // ─── Server ────────────────────────────────────────────────────
-let sessionManager: SessionManager;
-let browser: Browser;
+let sessionManager: SessionManager | null = null;
+let browser: Browser | null = null;
+let profileSession: Session | null = null;
 let activeRuntime: BrowserRuntime | undefined;
 let isShuttingDown = false;
 let isRemoteBrowser = false;
@@ -163,7 +168,7 @@ const META_COMMANDS = new Set([
   'sessions', 'session-close',
   'frame', 'state', 'find',
   'auth', 'har', 'video', 'inspect', 'record', 'cookie-import',
-  'doctor', 'upgrade',
+  'doctor', 'upgrade', 'profile',
 ]);
 
 // Commands excluded from recording — meta/diagnostic commands that don't represent user actions
@@ -307,7 +312,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
     } else if (WRITE_COMMANDS.has(command)) {
       result = await handleWriteCommand(command, args, session.manager, session.domainFilter);
     } else if (META_COMMANDS.has(command)) {
-      result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager, session);
+      result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager ?? undefined, session);
     } else {
       const error = `Unknown command: ${command}`;
       const hint = `Available commands: ${[...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS].sort().join(', ')}`;
@@ -369,12 +374,17 @@ async function shutdown() {
   clearInterval(sessionCleanupInterval);
   flushAllBuffers(sessionManager, true);
 
-  await sessionManager.closeAll();
+  if (profileSession) {
+    // Profile mode: close the persistent BrowserManager (closes context + browser)
+    await profileSession.manager.close().catch(() => {});
+  } else if (sessionManager) {
+    await sessionManager.closeAll();
 
-  // Close the shared browser (skip if remote — we don't own it)
-  if (browser && !isRemoteBrowser) {
-    browser.removeAllListeners('disconnected');
-    await browser.close().catch(() => {});
+    // Close the shared browser (skip if remote — we don't own it)
+    if (browser && !isRemoteBrowser) {
+      browser.removeAllListeners('disconnected');
+      await browser.close().catch(() => {});
+    }
   }
 
   // Clean up runtime resources (e.g. lightpanda child process)
@@ -397,12 +407,24 @@ process.on('SIGINT', shutdown);
 
 // ─── Flush Timer ────────────────────────────────────────────────
 const flushInterval = setInterval(() => {
-  if (sessionManager) flushAllBuffers(sessionManager);
+  if (sessionManager || profileSession) flushAllBuffers(sessionManager);
 }, DEFAULTS.BUFFER_FLUSH_INTERVAL_MS);
 
 // ─── Session Idle Cleanup ───────────────────────────────────────
 const sessionCleanupInterval = setInterval(async () => {
-  if (!sessionManager || isShuttingDown) return;
+  if (isShuttingDown) return;
+
+  // Profile mode: single persistent session, use idle timeout on it
+  if (profileSession) {
+    const idleMs = Date.now() - profileSession.lastActivity;
+    if (idleMs > IDLE_TIMEOUT_MS) {
+      console.log(`[browse] Profile session idle for ${IDLE_TIMEOUT_MS / 1000}s — shutting down`);
+      shutdown();
+    }
+    return;
+  }
+
+  if (!sessionManager) return;
 
   const closed = await sessionManager.closeIdleSessions(IDLE_TIMEOUT_MS, (session) => flushSessionBuffers(session, true));
   for (const id of closed) {
@@ -425,46 +447,82 @@ async function start() {
   activeRuntime = runtime;
   console.log(`[browse] Runtime: ${runtime.name}`);
 
-  // Launch or connect to browser
-  const cdpUrl = process.env.BROWSE_CDP_URL;
-  if (cdpUrl) {
-    // Connect to remote Chrome via CDP
-    browser = await runtime.chromium.connectOverCDP(cdpUrl);
-    isRemoteBrowser = true;
-    console.log(`[browse] Connected to remote Chrome via CDP: ${cdpUrl}`);
-  } else if (runtime.browser) {
-    // Process runtime (e.g. lightpanda) -- browser already connected
-    browser = runtime.browser;
-    browser.on('disconnected', () => {
+  // ─── Profile Mode vs Session Mode ────────────────────────────
+  const profileName = process.env.BROWSE_PROFILE;
+
+  if (profileName) {
+    // Profile mode: persistent browser context, no session multiplexing.
+    // Data (cookies, localStorage, cache) persists across server restarts.
+    // launchPersistent() launches its own Chromium — skip the shared browser launch.
+    const { BrowserManager, getProfileDir } = await import('./browser-manager');
+    const { SessionBuffers } = await import('./buffers');
+
+    const profileDir = getProfileDir(LOCAL_DIR, profileName);
+    fs.mkdirSync(profileDir, { recursive: true });
+
+    const bm = new BrowserManager();
+    await bm.launchPersistent(profileDir, () => {
       if (isShuttingDown) return;
-      console.error('[browse] Browser disconnected. Shutting down.');
+      console.error('[browse] Chromium disconnected (profile mode). Shutting down.');
       shutdown();
     });
+
+    const outputDir = path.join(LOCAL_DIR, 'sessions', profileName);
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    profileSession = {
+      id: profileName,
+      manager: bm,
+      buffers: new SessionBuffers(),
+      domainFilter: null,
+      recording: null,
+      outputDir,
+      lastActivity: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    console.log(`[browse] Profile mode: "${profileName}" (${profileDir})`);
   } else {
-    // Launch local Chromium
-    const launchOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
-    if (DEBUG_PORT > 0) {
-      launchOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
-    }
-    const proxyServer = process.env.BROWSE_PROXY;
-    if (proxyServer) {
-      launchOptions.proxy = { server: proxyServer };
-      if (process.env.BROWSE_PROXY_BYPASS) {
-        launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+    // Normal mode: launch shared browser, session multiplexing via SessionManager
+    const cdpUrl = process.env.BROWSE_CDP_URL;
+    if (cdpUrl) {
+      // Connect to remote Chrome via CDP
+      browser = await runtime.chromium.connectOverCDP(cdpUrl);
+      isRemoteBrowser = true;
+      console.log(`[browse] Connected to remote Chrome via CDP: ${cdpUrl}`);
+    } else if (runtime.browser) {
+      // Process runtime (e.g. lightpanda) -- browser already connected
+      browser = runtime.browser;
+      browser.on('disconnected', () => {
+        if (isShuttingDown) return;
+        console.error('[browse] Browser disconnected. Shutting down.');
+        shutdown();
+      });
+    } else {
+      // Launch local Chromium
+      const launchOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
+      if (DEBUG_PORT > 0) {
+        launchOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
       }
+      const proxyServer = process.env.BROWSE_PROXY;
+      if (proxyServer) {
+        launchOptions.proxy = { server: proxyServer };
+        if (process.env.BROWSE_PROXY_BYPASS) {
+          launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+        }
+      }
+      browser = await runtime.chromium.launch(launchOptions);
+
+      // Chromium crash → clean shutdown (only for owned browser)
+      browser.on('disconnected', () => {
+        if (isShuttingDown) return;
+        console.error('[browse] Chromium disconnected. Shutting down.');
+        shutdown();
+      });
     }
-    browser = await runtime.chromium.launch(launchOptions);
 
-    // Chromium crash → clean shutdown (only for owned browser)
-    browser.on('disconnected', () => {
-      if (isShuttingDown) return;
-      console.error('[browse] Chromium disconnected. Shutting down.');
-      shutdown();
-    });
+    sessionManager = new SessionManager(browser, LOCAL_DIR);
   }
-
-  // Create session manager
-  sessionManager = new SessionManager(browser, LOCAL_DIR);
 
   const startTime = Date.now();
   const server = nodeServe({
@@ -475,11 +533,21 @@ async function start() {
 
       // Health check — no auth required
       if (url.pathname === '/health') {
-        const healthy = !isShuttingDown && browser.isConnected();
+        let healthy: boolean;
+        let sessionCount: number;
+        if (profileSession) {
+          // Profile mode: check if the BrowserManager context is still alive
+          healthy = !isShuttingDown && !!profileSession.manager.getContext();
+          sessionCount = 1;
+        } else {
+          healthy = !isShuttingDown && !!browser && browser.isConnected();
+          sessionCount = sessionManager ? sessionManager.getSessionCount() : 0;
+        }
         return new Response(JSON.stringify({
           status: healthy ? 'healthy' : 'unhealthy',
           uptime: Math.floor((Date.now() - startTime) / 1000),
-          sessions: sessionManager.getSessionCount(),
+          sessions: sessionCount,
+          ...(profileName ? { profile: profileName } : {}),
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -496,9 +564,18 @@ async function start() {
 
       if (url.pathname === '/command' && req.method === 'POST') {
         const body = await req.json();
-        const sessionId = req.headers.get('x-browse-session') || 'default';
-        const allowedDomains = req.headers.get('x-browse-allowed-domains') || undefined;
-        const session = await sessionManager.getOrCreate(sessionId, allowedDomains);
+
+        // Resolve session: profile mode uses the single persistent session,
+        // normal mode uses SessionManager with session multiplexing
+        let session: Session;
+        if (profileSession) {
+          session = profileSession;
+          session.lastActivity = Date.now();
+        } else {
+          const sessionId = req.headers.get('x-browse-session') || 'default';
+          const allowedDomains = req.headers.get('x-browse-allowed-domains') || undefined;
+          session = await sessionManager!.getOrCreate(sessionId, allowedDomains);
+        }
 
         // Load state file (cookies) if requested via --state flag
         const stateFilePath = req.headers.get('x-browse-state');
@@ -538,6 +615,9 @@ async function start() {
     startedAt: new Date().toISOString(),
     serverPath: path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'server.ts'),
   };
+  if (profileName) {
+    state.profile = profileName;
+  }
   if (DEBUG_PORT > 0) {
     state.debugPort = DEBUG_PORT;
   }

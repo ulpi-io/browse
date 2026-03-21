@@ -216,6 +216,12 @@ browse --session myapp goto https://app.com/login        # login...
 browse session-close myapp                               # state auto-saved (encrypted if BROWSE_ENCRYPTION_KEY set)
 browse --session myapp goto https://app.com/dashboard    # cookies auto-restored
 
+# Persistent profiles (full browser state, own Chromium)
+browse --profile mysite goto https://app.com       # all state persists automatically
+browse --profile mysite snapshot -i                 # still logged in next time
+browse profile list                                 # list all profiles with size
+browse profile delete old-site                      # remove a profile
+
 # Load state at launch
 browse --state auth.json goto https://app.com            # load cookies before first command
 
@@ -464,6 +470,14 @@ browse sessions                List active sessions
 browse session-close <id>      Close a session
 ```
 
+### Profiles
+```
+browse --profile <name> <cmd>             Use persistent browser profile
+browse profile list                       List profiles with disk size
+browse profile delete <name>              Delete a profile
+browse profile clean [--older-than <d>]   Remove old profiles (default: 7 days)
+```
+
 ### State persistence
 ```
 browse state save [name]       Save cookies + localStorage (all origins)
@@ -528,6 +542,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Flag | Description |
 |------|-------------|
 | `--session <id>` | Named session (isolates tabs, refs, cookies — auto-persists on close) |
+| `--profile <name>` | Persistent browser profile (own Chromium, full state) |
 | `--state <path>` | Load state file (cookies/storage) before first command |
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
@@ -598,6 +613,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Limit output size | `--max-output 5000 text` |
 | See the browser | `browse --headed goto <url>` |
 | Bypass bot detection | `--runtime rebrowser goto <url>` |
+| Persistent login state | `--profile mysite` → browse around → close → reopen (still logged in) |
 
 ## Architecture
 

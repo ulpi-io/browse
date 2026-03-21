@@ -33,6 +33,7 @@ const cliFlags = {
   stateFile: '' as string,
   maxOutput: 0,
   cdpUrl: '' as string,
+  profile: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -272,7 +273,7 @@ async function startServer(): Promise<ServerState> {
     const spawnCmd = SERVER_SCRIPT === '__self__'
       ? [process.execPath, selfPath]
       : [process.execPath, '--import', 'tsx', SERVER_SCRIPT];
-    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}) } as NodeJS.ProcessEnv;
+    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}) } as NodeJS.ProcessEnv;
     const proc = spawn(spawnCmd[0], spawnCmd.slice(1), {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: spawnEnv,
@@ -281,7 +282,7 @@ async function startServer(): Promise<ServerState> {
 
     // Don't hold the CLI open — unref process and stderr pipe
     proc.unref();
-    if (proc.stderr) proc.stderr.unref();
+    if (proc.stderr) (proc.stderr as any).unref();
 
     // Wait for state file to appear
     const start = Date.now();
@@ -545,7 +546,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile') i++;
     }
     return a.length;
   }
@@ -562,6 +563,25 @@ export async function main() {
     args.splice(sessionIdx, 2);
   }
   sessionId = sessionId || process.env.BROWSE_SESSION || config.session || undefined;
+
+  // Extract --profile flag (only before command)
+  let profileName: string | undefined;
+  const profileIdx = args.indexOf('--profile');
+  if (profileIdx !== -1 && profileIdx < findCommandIndex(args)) {
+    profileName = args[profileIdx + 1];
+    if (!profileName || profileName.startsWith('-')) {
+      console.error('Usage: browse --profile <name> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(profileIdx, 2);
+  }
+  // Also check env var
+  profileName = profileName || process.env.BROWSE_PROFILE || undefined;
+
+  if (sessionId && profileName) {
+    console.error('Cannot use --profile and --session together. Profiles use their own Chromium; sessions share one.');
+    process.exit(1);
+  }
 
   // Extract --json flag (only before command)
   let jsonMode = false;
@@ -683,6 +703,7 @@ export async function main() {
   cliFlags.stateFile = stateFile;
   cliFlags.maxOutput = maxOutput;
   cliFlags.cdpUrl = cdpUrl;
+  cliFlags.profile = profileName || '';
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') {
@@ -756,6 +777,7 @@ Setup:          install-skill [path]
 
 Options:
   --session <id>           Named session (isolates tabs, refs, cookies)
+  --profile <name>         Persistent browser profile (own Chromium, full state persistence)
   --json                   Wrap output as {success, data, command}
   --content-boundaries     Wrap page content in nonce-delimited markers
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
