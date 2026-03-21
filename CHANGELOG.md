@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.0 — Node.js Port
+
+- **Ported from Bun to Node.js** — zero Bun runtime dependency, runs on Node 18+
+- **All blocked features unblocked:**
+  - `--connect` — auto-discover and connect to a running Chrome instance
+  - `--cdp <port>` — connect to Chrome on a specific debugging port
+  - `--runtime lightpanda` — LightPanda browser engine via CDP
+- **Windows support** — Node.js runs everywhere
+- Bun.serve → thin `nodeServe()` adapter (20 lines, zero deps, same Request/Response API)
+- bun:test → vitest (same API, `pool: 'forks'` with `singleFork` for shared browser)
+- bun:sqlite → better-sqlite3 (same `.prepare().all()` API)
+- bun build --compile → esbuild bundle
+- 304 tests pass on Node.js
+
 ## v0.10.0 — Feature Parity
 
 **New commands:**
@@ -47,7 +61,7 @@
 - **Encrypted state at rest** — auto-persisted session state and manual state files are encrypted with AES-256-GCM when `BROWSE_ENCRYPTION_KEY` is set (same key as auth vault).
 - **`--state <path>` flag** — load a saved state file before the first command: `browse --state auth.json goto https://app.com`
 - **`state clean`** — garbage-collect old state files: `browse state clean` (7 days default) or `browse state clean --older-than 30`
-- **`--connect` / `--cdp` flags** — discover and connect to a running Chrome instance (code ready, blocked by Bun WebSocket bug oven-sh/bun#9911 — use `cookie-import` as workaround)
+- **`--connect` / `--cdp` flags** — discover and connect to a running Chrome instance (unblocked in v1.0.0 Node.js port)
 
 ## v0.8.0 — Command Recording & Export
 
