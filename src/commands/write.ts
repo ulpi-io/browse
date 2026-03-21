@@ -573,7 +573,7 @@ export async function handleWriteCommand(
 
     case 'mouse': {
       const sub = args[0];
-      if (!sub) throw new Error('Usage: browse mouse <move|down|up|wheel> [args]\n  move <x> <y>\n  down [left|right|middle]\n  up [left|right|middle]\n  wheel <dy> [dx]');
+      if (!sub) throw new Error('Usage: browse mouse <move|click|down|up|wheel> [args]\n  move <x> <y>\n  click <x> <y> [left|right|middle]\n  down [left|right|middle]\n  up [left|right|middle]\n  wheel <dy> [dx]');
       switch (sub) {
         case 'move': {
           const x = parseInt(args[1], 10);
@@ -599,8 +599,16 @@ export async function handleWriteCommand(
           await page.mouse.wheel(dx, dy);
           return `Mouse wheel dx=${dx} dy=${dy}`;
         }
+        case 'click': {
+          const x = parseInt(args[1], 10);
+          const y = parseInt(args[2], 10);
+          if (isNaN(x) || isNaN(y)) throw new Error('Usage: browse mouse click <x> <y> [left|right|middle]');
+          const button = (args[3] || 'left') as 'left' | 'right' | 'middle';
+          await page.mouse.click(x, y, { button });
+          return `Mouse ${button}-clicked at ${x},${y}`;
+        }
         default:
-          throw new Error(`Unknown mouse subcommand: ${sub}. Use move|down|up|wheel`);
+          throw new Error(`Unknown mouse subcommand: ${sub}. Use move|down|up|click|wheel`);
       }
     }
 

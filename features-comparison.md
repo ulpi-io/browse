@@ -41,7 +41,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | highlight | YES | — | YES | — |
 | mouse move/down/up/wheel | YES | — | YES | — |
 | tap/swipe (mobile) | YES | — | YES | — |
-| click by coordinates (x,y) | — | — | — | YES |
+| click by coordinates (x,y) | YES (`mouse click`) | — | — | YES |
 
 ## Content Extraction
 
@@ -287,7 +287,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 
 | Category | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| Total features (YES) | 135 | 60 | 136 | 51 |
+| Total features (YES) | 136 | 60 | 136 | 51 |
 | Blocked (Bun bug) | 2 | — | — | — |
 
 ## Top Remaining Gaps
