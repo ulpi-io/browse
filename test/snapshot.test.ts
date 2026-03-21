@@ -38,6 +38,26 @@ describe('Snapshot', () => {
     expect(result).not.toContain('[heading]');
   });
 
+  test('snapshot -i is terse by default (flat, no indentation)', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/snapshot.html'], bm);
+    const result = await handleMetaCommand('snapshot', ['-i'], bm, shutdown);
+    // Terse: no leading whitespace on any line
+    for (const line of result.split('\n')) {
+      expect(line).not.toMatch(/^\s+@/);
+    }
+  });
+
+  test('snapshot -i -v gives verbose indented tree', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/snapshot.html'], bm);
+    const verbose = await handleMetaCommand('snapshot', ['-i', '-v'], bm, shutdown);
+    const terse = await handleMetaCommand('snapshot', ['-i'], bm, shutdown);
+    // Verbose should have indentation and be longer
+    expect(verbose.length).toBeGreaterThan(terse.length);
+    expect(verbose).toContain('[button]');
+    expect(verbose).toContain('[link]');
+    expect(verbose).not.toContain('[heading]');
+  });
+
   test('snapshot -c returns compact output', async () => {
     await handleWriteCommand('goto', [baseUrl + '/snapshot.html'], bm);
     const full = await handleMetaCommand('snapshot', [], bm, shutdown);

@@ -30,7 +30,8 @@ const INTERACTIVE_ROLES = new Set([
 ]);
 
 interface SnapshotOptions {
-  interactive?: boolean;  // -i: only interactive elements
+  interactive?: boolean;  // -i: only interactive elements (terse flat list by default)
+  verbose?: boolean;      // -v: full indented ARIA tree with props/children (overrides -i terse default)
   compact?: boolean;      // -c: remove empty structural elements
   depth?: number;         // -d N: limit tree depth
   selector?: string;      // -s SEL: scope to CSS selector
@@ -71,6 +72,10 @@ export function parseSnapshotArgs(args: string[]): SnapshotOptions {
       case '-c':
       case '--compact':
         opts.compact = true;
+        break;
+      case '-v':
+      case '--verbose':
+        opts.verbose = true;
         break;
       case '-C':
       case '--cursor':
@@ -417,10 +422,21 @@ export async function handleSnapshot(
     refMap.set(ref, locator);
 
     // Format output line
-    let outputLine = `${indent}@${ref} [${node.role}]`;
-    if (node.name) outputLine += ` "${node.name}"`;
-    if (node.props) outputLine += ` ${node.props}`;
-    if (node.children) outputLine += `: ${node.children}`;
+    // -i without -v: terse flat list (no indent, no props, no children)
+    const terse = opts.interactive && !opts.verbose;
+    let outputLine: string;
+    if (terse) {
+      outputLine = `@${ref} [${node.role}]`;
+      if (node.name) {
+        const name = node.name.length > 30 ? node.name.slice(0, 30) + '...' : node.name;
+        outputLine += ` "${name}"`;
+      }
+    } else {
+      outputLine = `${indent}@${ref} [${node.role}]`;
+      if (node.name) outputLine += ` "${node.name}"`;
+      if (node.props) outputLine += ` ${node.props}`;
+      if (node.children) outputLine += `: ${node.children}`;
+    }
 
     output.push(outputLine);
   }

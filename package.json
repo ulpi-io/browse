@@ -1,14 +1,16 @@
 {
   "name": "@ulpi/browse",
-  "version": "0.4.0",
+  "version": "0.7.2",
   "repository": {
     "type": "git",
     "url": "https://github.com/ulpi-io/browse"
   },
   "dependencies": {
+    "@lightpanda/browser": "^1.2.0",
     "@ulpi/browse": "^0.3.0",
     "diff": "^7.0.0",
-    "playwright": "^1.58.2"
+    "playwright": "^1.58.2",
+    "playwright-core": "^1.58.2"
   },
   "bin": {
     "browse": "bin/browse.ts"
@@ -52,5 +54,8 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "rebrowser-playwright": "^1.52.0"
   }
 }

@@ -1,19 +1,19 @@
 ---
 name: browse
-version: 2.0.0
+version: 2.5.1
 description: |
-  Fast web browsing for Claude Code via persistent headless Chromium daemon. Navigate to any URL,
+  Fast web browsing for AI coding agents via persistent headless Chromium daemon. Navigate to any URL,
   read page content, click elements, fill forms, run JavaScript, take screenshots,
   inspect CSS/DOM, capture console/network logs, and more. ~100ms per command after
-  first call. Use when you need to check a website, verify a deployment, read docs,
-  or interact with any web page. No MCP, no Chrome extension — just fast CLI.
+  first call. Works with Claude Code, Cursor, Cline, Windsurf, and any agent that can run Bash.
+  No MCP, no Chrome extension — just fast CLI.
 allowed-tools:
   - Bash
   - Read
 
 ---
 
-# browse: Persistent Browser for Claude Code
+# browse: Persistent Browser for AI Coding Agents
 
 Persistent headless Chromium daemon. First call auto-starts the server (~3s).
 Every subsequent call: ~100-200ms. Auto-shuts down after 30 min idle.
@@ -74,7 +74,7 @@ If the file is missing or does not contain browse permission rules in `permissio
 "Bash(browse newtab:*)", "Bash(browse closetab:*)",
 "Bash(browse frame:*)",
 "Bash(browse sessions:*)", "Bash(browse session-close:*)",
-"Bash(browse state:*)", "Bash(browse auth:*)", "Bash(browse har:*)",
+"Bash(browse state:*)", "Bash(browse auth:*)", "Bash(browse har:*)", "Bash(browse video:*)",
 "Bash(browse route:*)", "Bash(browse offline:*)",
 "Bash(browse status:*)", "Bash(browse stop:*)", "Bash(browse restart:*)",
 "Bash(browse cookie:*)", "Bash(browse header:*)",
@@ -89,6 +89,8 @@ If the file is missing or does not contain browse permission rules in `permissio
 - Always call `browse` as a bare command (it's on PATH via global install).
 - Do NOT use shell variables like `B=...` or full paths — they break Claude Code's permission matching.
 - NEVER use `#` in CSS selectors — use `[id=foo]` instead of `#foo`. The `#` character breaks Claude Code's permission matching and triggers approval prompts.
+- After `goto`, always run `browse wait --network-idle` before reading content or taking screenshots. Pages with dynamic content, SPAs, and lazy-loaded assets need time to fully render.
+- Screenshots MUST be saved to `.browse/sessions/default/` (or `.browse/sessions/<session-id>/` when using `--session`). Use descriptive filenames like `browse screenshot .browse/sessions/default/homepage.png`. NEVER save screenshots to `/tmp` or any other location.
 - The browser persists between calls — cookies, tabs, and state carry over.
 - The server auto-starts on first command. No manual setup needed.
 - Use `--session <id>` for parallel agent isolation. Each session gets its own tabs, refs, cookies.
@@ -105,8 +107,8 @@ browse goto https://example.com
 # Read cleaned page text
 browse text
 
-# Take a screenshot (then Read the image)
-browse screenshot .browse/sessions/default/screenshot.png
+# Take a screenshot (then Read the image — saved to .browse/sessions/default/screenshot.png)
+browse screenshot
 
 # Snapshot: accessibility tree with refs
 browse snapshot -i
@@ -197,6 +199,12 @@ browse har start
 browse goto https://example.com
 browse har stop ./recording.har
 
+# Video recording
+browse video start ./videos
+browse goto https://example.com
+browse click @e3
+browse video stop
+
 # Device emulation
 browse emulate iphone
 browse emulate reset
@@ -219,6 +227,10 @@ browse screenshot-diff baseline.png current.png
 
 # Headed mode (visible browser)
 browse --headed goto https://example.com
+
+# Stealth mode (bypasses bot detection)
+# Requires: bun add rebrowser-playwright && npx rebrowser-playwright install chromium
+browse --runtime rebrowser goto https://example.com
 
 # State list / show
 browse state list
@@ -248,7 +260,8 @@ browse accessibility      Accessibility tree snapshot (ARIA)
 ### Snapshot (ref-based element selection)
 ```
 browse snapshot           Full accessibility tree with @refs
-browse snapshot -i        Interactive elements only (buttons, links, inputs)
+browse snapshot -i        Interactive elements only — terse flat list (minimal tokens)
+browse snapshot -i -v     Interactive elements — verbose indented tree with props
 browse snapshot -c        Compact (no empty structural elements)
 browse snapshot -C        Cursor-interactive (detect divs with cursor:pointer/onclick/tabindex)
 browse snapshot -d <N>    Limit depth to N levels
@@ -271,6 +284,7 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 ### Interaction
 ```
 browse click <selector>        Click element (CSS selector or @ref)
+browse click <x>,<y>           Click at page coordinates (e.g. 590,461)
 browse dblclick <selector>     Double-click element
 browse fill <selector> <value> Fill input field
 browse select <selector> <val> Select dropdown value
@@ -325,7 +339,8 @@ browse clipboard write <text>  Write text to system clipboard
 
 ### Visual
 ```
-browse screenshot [path]              Screenshot (default: .browse/sessions/{id}/screenshot.png)
+browse screenshot [path]              Viewport screenshot (default: .browse/sessions/{id}/screenshot.png)
+browse screenshot --full [path]       Full-page screenshot (entire scrollable page)
 browse screenshot --annotate [path]   Screenshot with numbered badges + legend
 browse pdf [path]                     Save as PDF
 browse responsive [prefix]            Screenshots at mobile/tablet/desktop
@@ -394,10 +409,18 @@ browse har start               Start recording network traffic
 browse har stop [path]         Stop and save HAR file
 ```
 
+### Video recording
+```
+browse video start [dir]       Start recording video (WebM, compositor-level)
+browse video stop              Stop recording and save video files
+browse video status            Check if recording is active
+```
+
 ### Server management
 ```
 browse status                  Server health, uptime, session count
 browse instances               List all running browse servers (instance, PID, port, status)
+browse version                 Print CLI version
 browse stop                    Shutdown server
 browse restart                 Kill + restart server
 browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
@@ -412,6 +435,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--headed` | Run browser in headed (visible) mode |
+| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth) |
 
 ## Speed Rules
 
@@ -436,7 +460,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Check if element exists | `count ".thing"` |
 | Get input value | `value "[id=email]"` |
 | Extract specific data | `js "document.querySelector('.price').textContent"` |
-| Visual check | `screenshot .browse/sessions/default/x.png` then Read the image |
+| Visual check | `screenshot` then `Read .browse/sessions/default/screenshot.png` |
 | Fill and submit form | `snapshot -i` → `fill @e4 "val"` → `click @e5` |
 | Check/uncheck boxes | `check @e7` / `uncheck @e7` |
 | Check CSS | `css "selector" "property"` or `css @e3 "property"` |
@@ -454,6 +478,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Save/restore session | `state save mysite` / `state load mysite` |
 | Auto-login | `auth save gh https://github.com/login user pass` → `auth login gh` |
 | Record network | `har start` → browse around → `har stop ./out.har` |
+| Record video | `video start ./vids` → browse around → `video stop` |
 | Parallel agents | `--session agent-a <cmd>` / `--session agent-b <cmd>` |
 | Multi-step flow | `echo '[...]' \| browse chain` |
 | Secure browsing | `--allowed-domains example.com goto https://example.com` |
@@ -464,6 +489,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Visual regression | `screenshot-diff baseline.png` |
 | Debug with DevTools | `inspect` (set BROWSE_DEBUG_PORT first) |
 | See the browser | `browse --headed goto <url>` |
+| Bypass bot detection | `--runtime rebrowser goto <url>` |
 
 ## Architecture
 
@@ -482,3 +508,4 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 - AI-friendly error messages: Playwright errors rewritten to actionable hints
 - CDP remote connection: `BROWSE_CDP_URL` to connect to existing Chrome
 - Policy enforcement: `browse-policy.json` for allow/deny/confirm rules
+- Two browser engines: playwright (default) and rebrowser (stealth, bypasses bot detection)

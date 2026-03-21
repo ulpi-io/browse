@@ -576,6 +576,12 @@ export async function main() {
   cliFlags.headed = headed;
 
   // ─── Local commands (no server needed) ─────────────────────
+  if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') {
+    const pkg = await import('../package.json');
+    console.log(pkg.version);
+    return;
+  }
+
   if (args[0] === 'instances') {
     await listInstances();
     return;
@@ -606,7 +612,7 @@ Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
                 cookies | storage [set <k> <v>] | perf
                 value <sel> | count <sel> | clipboard [write <text>]
 Visual:         screenshot [path] | pdf [path] | responsive [prefix]
-Snapshot:       snapshot [-i] [-c] [-C] [-d N] [-s sel]
+Snapshot:       snapshot [-i] [-v] [-c] [-C] [-d N] [-s sel]
 Find:           find role|text|label|placeholder|testid <query> [name]
 Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
 Multi-step:     chain (reads JSON from stdin)
@@ -632,7 +638,8 @@ Options:
   --headed                 Run browser in headed (visible) mode
 
 Snapshot flags:
-  -i            Interactive elements only (buttons, links, inputs)
+  -i            Interactive elements only (terse flat list by default)
+  -v            Verbose — full indented tree with props (use with -i)
   -c            Compact — remove empty structural elements
   -C            Cursor-interactive — detect divs with cursor:pointer,
                 onclick, tabindex, data-action (missed by ARIA tree)
