@@ -1,6 +1,6 @@
 {
   "name": "@ulpi/browse",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/ulpi-io/browse"
@@ -14,7 +14,7 @@
     "playwright-core": "^1.58.2"
   },
   "bin": {
-    "browse": "dist/browse.mjs"
+    "browse": "dist/browse.cjs"
   },
   "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
   "engines": {
@@ -41,7 +41,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --format=esm --platform=node --target=node18 --outfile=dist/browse.mjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --banner:js='#!/usr/bin/env node'",
+    "build": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
     "build:all": "bash scripts/build-all.sh",
     "dev": "tsx src/cli.ts",
     "server": "tsx src/server.ts",
