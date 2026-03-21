@@ -8,7 +8,7 @@
  *   - Config file loading
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { sharedBm as bm, sharedBaseUrl as baseUrl } from './setup';
 import { BrowserManager } from '../src/browser-manager';
 import { handleReadCommand } from '../src/commands/read';
@@ -336,7 +336,7 @@ describe('PolicyChecker', () => {
     expect(checker.check('goto')).toBe('allow');
 
     // Ensure mtime changes (filesystem may have 1s resolution)
-    await Bun.sleep(10);
+    await new Promise(r => setTimeout(r, 10));
     const futureTime = Date.now() + 2000;
     fs.writeFileSync(policyPath, JSON.stringify({ default: 'allow', deny: ['goto'] }));
     fs.utimesSync(policyPath, new Date(futureTime), new Date(futureTime));
@@ -1062,7 +1062,7 @@ describe('Video Recording', () => {
     // Navigate to generate video content
     await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
     // Small delay so the video codec captures at least one frame
-    await Bun.sleep(500);
+    await new Promise(r => setTimeout(r, 500));
 
     const result = await bm.stopVideoRecording();
     expect(result).not.toBeNull();
@@ -1136,7 +1136,7 @@ describe('Video Recording', () => {
     expect(recording).not.toBeNull();
     expect(recording!.dir).toBe(dir);
 
-    await Bun.sleep(300);
+    await new Promise(r => setTimeout(r, 300));
     const result = await bm.stopVideoRecording();
     expect(result).not.toBeNull();
     expect(result!.paths.length).toBeGreaterThan(0);
@@ -1161,7 +1161,7 @@ describe('Video Recording', () => {
     expect(statusResult).toContain('active');
     expect(statusResult).toContain(dir);
 
-    await Bun.sleep(300);
+    await new Promise(r => setTimeout(r, 300));
     const stopResult = await handleMetaCommand('video', ['stop'], bm, async () => {});
     expect(stopResult).toContain('Video saved');
     expect(stopResult).toContain('.webm');
@@ -1185,7 +1185,7 @@ describe('Video Recording', () => {
     const dir = path.join(videoDir, 'naming');
     await bm.startVideoRecording(dir);
     await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
-    await Bun.sleep(300);
+    await new Promise(r => setTimeout(r, 300));
 
     const result = await bm.stopVideoRecording();
     expect(result).not.toBeNull();
@@ -1576,7 +1576,7 @@ describe('Ref staleness', () => {
 describe('Doctor command', () => {
   test('doctor returns system info', async () => {
     const result = await handleMetaCommand('doctor', [], bm, async () => {});
-    expect(result).toContain('Bun:');
+    expect(result).toContain('Node:');
     expect(result).toContain('Playwright:');
   });
 });

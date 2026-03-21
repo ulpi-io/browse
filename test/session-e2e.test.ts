@@ -6,13 +6,16 @@
  * while sharing a single server instance.
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { startTestServer } from './test-server';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
-let testServer: ReturnType<typeof startTestServer>;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let testServer: Awaited<ReturnType<typeof startTestServer>>;
 let baseUrl: string;
 
 // Unique state file and port range to avoid conflicts with running servers
@@ -23,13 +26,13 @@ const CLI_PATH = path.resolve(__dirname, '../src/cli.ts');
 // Track server PID for cleanup
 let serverPid: number | null = null;
 
-beforeAll(() => {
-  testServer = startTestServer(0);
+beforeAll(async () => {
+  testServer = await startTestServer(0);
   baseUrl = testServer.url;
 });
 
 afterAll(async () => {
-  try { testServer.server.stop(); } catch {}
+  try { testServer.server.close(); } catch {}
 
   // Kill any server we spawned
   if (serverPid) {
@@ -51,13 +54,13 @@ afterAll(async () => {
 
 /**
  * Run a CLI command and return its output.
- * Spawns `bun run src/cli.ts [--session <id>] <command> [args...]`
+ * Spawns `tsx src/cli.ts [--session <id>] <command> [args...]`
  */
 function runCli(
   args: string[],
   opts: { sessionId?: string; timeout?: number } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const cliArgs = ['run', CLI_PATH];
+  const cliArgs = [CLI_PATH];
 
   if (opts.sessionId) {
     cliArgs.push('--session', opts.sessionId);
@@ -65,8 +68,8 @@ function runCli(
   cliArgs.push(...args);
 
   return new Promise((resolve) => {
-    const proc = spawn('bun', cliArgs, {
-      timeout: opts.timeout ?? 20000,
+    const proc = spawn('./node_modules/.bin/tsx', cliArgs, {
+      timeout: opts.timeout ?? 45000,
       env: {
         ...process.env,
         BROWSE_STATE_FILE: STATE_FILE,
@@ -79,6 +82,7 @@ function runCli(
     proc.stdout.on('data', (d) => stdout += d.toString());
     proc.stderr.on('data', (d) => stderr += d.toString());
     proc.on('close', (code) => {
+      if (stderr) console.log(`[e2e] ${cliArgs.join(' ')} stderr: ${stderr.trim()}`);
       // Capture server PID for cleanup
       try {
         const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
@@ -91,7 +95,7 @@ function runCli(
 
 // ─── Two CLI sessions are independent ───────────────────────────
 
-describe('Session E2E', () => {
+describe('Session E2E', { timeout: 120000 }, () => {
   test('two CLI sessions navigate to different pages with independent state', async () => {
     // Session A: navigate to basic.html
     const gotoA = await runCli(['goto', baseUrl + '/basic.html'], { sessionId: 'alpha' });
@@ -119,7 +123,7 @@ describe('Session E2E', () => {
     const textA2 = await runCli(['text'], { sessionId: 'alpha' });
     expect(textA2.code).toBe(0);
     expect(textA2.stdout).toContain('Hello World');
-  }, 60000);
+  }, 90000);
 
   // ─── Default session (no --session flag) ────────────────────────
 
@@ -133,7 +137,7 @@ describe('Session E2E', () => {
     const textDefault = await runCli(['text']);
     expect(textDefault.code).toBe(0);
     expect(textDefault.stdout).toContain('Hello World');
-  }, 30000);
+  }, 90000);
 
   // ─── Shared server (single state file) ─────────────────────────
 
@@ -156,7 +160,7 @@ describe('Session E2E', () => {
     // State file should still point to the same server PID
     const stateAfterB = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
     expect(stateAfterB.pid).toBe(pidAfterA);
-  }, 30000);
+  }, 90000);
 
   // ─── URL independence ──────────────────────────────────────────
 

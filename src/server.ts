@@ -21,6 +21,34 @@ import { type LogEntry, type NetworkEntry } from './buffers';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as http from 'http';
+import { fileURLToPath } from 'url';
+
+function nodeServe(opts: { port: number; hostname: string; fetch: (req: Request) => Promise<Response> }) {
+  const server = http.createServer(async (nodeReq, nodeRes) => {
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of nodeReq) chunks.push(Buffer.from(chunk));
+      const body = Buffer.concat(chunks);
+      const url = `http://${opts.hostname}:${opts.port}${nodeReq.url}`;
+      const req = new Request(url, {
+        method: nodeReq.method,
+        headers: nodeReq.headers as Record<string, string>,
+        body: nodeReq.method !== 'GET' && nodeReq.method !== 'HEAD' ? body : undefined,
+      });
+      const res = await opts.fetch(req);
+      const resHeaders: Record<string, string> = {};
+      res.headers.forEach((v, k) => { resHeaders[k] = v; });
+      nodeRes.writeHead(res.status, resHeaders);
+      nodeRes.end(await res.text());
+    } catch (err: any) {
+      nodeRes.writeHead(500, { 'Content-Type': 'application/json' });
+      nodeRes.end(JSON.stringify({ error: err.message || 'Internal server error' }));
+    }
+  });
+  server.listen(opts.port, opts.hostname);
+  return server;
+}
 
 // Re-export types for backward compatibility
 export { type LogEntry, type NetworkEntry };
@@ -439,7 +467,7 @@ async function start() {
   sessionManager = new SessionManager(browser, LOCAL_DIR);
 
   const startTime = Date.now();
-  const server = Bun.serve({
+  const server = nodeServe({
     port,
     hostname: '127.0.0.1',
     fetch: async (req) => {
@@ -508,7 +536,7 @@ async function start() {
     port,
     token: AUTH_TOKEN,
     startedAt: new Date().toISOString(),
-    serverPath: path.resolve(import.meta.dir, 'server.ts'),
+    serverPath: path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'server.ts'),
   };
   if (DEBUG_PORT > 0) {
     state.debugPort = DEBUG_PORT;

@@ -11,8 +11,18 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import { DEFAULTS } from './constants';
 import { loadConfig } from './config';
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 // Global CLI flags — set in main(), used by sendCommand()
 const cliFlags = {
@@ -22,6 +32,7 @@ const cliFlags = {
   headed: false,
   stateFile: '' as string,
   maxOutput: 0,
+  cdpUrl: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -72,9 +83,12 @@ const MAX_START_WAIT = 8000; // 8 seconds to start
 const LOCK_FILE = STATE_FILE + '.lock';
 const LOCK_STALE_MS = DEFAULTS.LOCK_STALE_THRESHOLD_MS;
 
+const __filename_cli = fileURLToPath(import.meta.url);
+const __dirname_cli = path.dirname(__filename_cli);
+
 export function resolveServerScript(
   env: Record<string, string | undefined> = process.env,
-  metaDir: string = import.meta.dir,
+  metaDir: string = __dirname_cli,
 ): string {
   // 1. Explicit env var override
   if (env.BROWSE_SERVER_SCRIPT) {
@@ -82,16 +96,11 @@ export function resolveServerScript(
   }
 
   // 2. server.ts adjacent to cli.ts (dev mode or installed)
-  if (metaDir.startsWith('/') && !metaDir.includes('$bunfs')) {
+  if (metaDir.startsWith('/')) {
     const direct = path.resolve(metaDir, 'server.ts');
     if (fs.existsSync(direct)) {
       return direct;
     }
-  }
-
-  // Compiled binary ($bunfs): server is bundled, no external file needed
-  if (metaDir.includes('$bunfs')) {
-    return '__compiled__';
   }
 
   throw new Error(
@@ -230,7 +239,7 @@ async function startServer(): Promise<ServerState> {
         // We now hold the lock — fall through to the spawn logic below
         break;
       }
-      await Bun.sleep(100);
+      await sleep(100);
     }
     // If we still don't hold the lock and no state file appeared, give up
     if (!fs.existsSync(LOCK_FILE) || fs.readFileSync(LOCK_FILE, 'utf-8').trim() !== String(process.pid)) {
@@ -251,17 +260,20 @@ async function startServer(): Promise<ServerState> {
 
     // Start server as detached background process.
     // Compiled binary: self-spawn with __BROWSE_SERVER_MODE=1
-    // Dev mode: spawn bun with server.ts
+    // Dev mode: spawn tsx with server.ts
     const spawnCmd = SERVER_SCRIPT === '__compiled__'
       ? [process.execPath]
-      : ['bun', 'run', SERVER_SCRIPT];
-    const proc = Bun.spawn(spawnCmd, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}) },
+      : [process.execPath, '--import', 'tsx', SERVER_SCRIPT];
+    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}) } as NodeJS.ProcessEnv;
+    const proc = spawn(spawnCmd[0], spawnCmd.slice(1), {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: spawnEnv,
+      detached: true,
     });
 
-    // Don't hold the CLI open
+    // Don't hold the CLI open — unref process and stderr pipe
     proc.unref();
+    if (proc.stderr) proc.stderr.unref();
 
     // Wait for state file to appear
     const start = Date.now();
@@ -270,17 +282,18 @@ async function startServer(): Promise<ServerState> {
       if (state && isProcessAlive(state.pid)) {
         return state;
       }
-      await Bun.sleep(100);
+      await sleep(100);
     }
 
     // If we get here, server didn't start in time
     // Try to read stderr for error message
     const stderr = proc.stderr;
     if (stderr) {
-      const reader = stderr.getReader();
-      const { value } = await reader.read();
-      if (value) {
-        const errText = new TextDecoder().decode(value);
+      const stderrChunks: Buffer[] = [];
+      stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+      await new Promise(resolve => stderr.once('end', resolve));
+      if (stderrChunks.length > 0) {
+        const errText = Buffer.concat(stderrChunks).toString('utf8');
         throw new Error(`Server failed to start:\n${errText}`);
       }
     }
@@ -316,11 +329,11 @@ async function ensureServer(): Promise<ServerState> {
       // Brief wait for graceful exit
       const deadline = Date.now() + 3000;
       while (Date.now() < deadline && isProcessAlive(state.pid)) {
-        await Bun.sleep(100);
+        await sleep(100);
       }
       if (isProcessAlive(state.pid)) {
         try { process.kill(state.pid, 'SIGKILL'); } catch {}
-        await Bun.sleep(200);
+        await sleep(200);
       }
     }
   }
@@ -445,11 +458,11 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
         const oldPid = state.pid;
         const deadline = Date.now() + 5000;
         while (Date.now() < deadline && isProcessAlive(oldPid)) {
-          await Bun.sleep(100);
+          await sleep(100);
         }
         if (isProcessAlive(oldPid)) {
           try { process.kill(oldPid, 'SIGKILL'); } catch {}
-          await Bun.sleep(300);
+          await sleep(300);
         }
         // Clean up state file
         try { fs.unlinkSync(STATE_FILE); } catch {}
@@ -619,21 +632,6 @@ export async function main() {
     args.splice(stateIdx, 2);
   }
 
-  // Handle --connect / --cdp: blocked by Bun WebSocket bug (oven-sh/bun#9911)
-  // Bun's compiled binary sends "Connection: keep-alive" instead of "Connection: Upgrade",
-  // breaking the WebSocket handshake required by Playwright's connectOverCDP().
-  // This affects all CDP-based connections (--connect, --cdp, lightpanda).
-  // The discovery and flag logic is ready — enable when Bun fixes the bug.
-  if (connectFlag || cdpPort) {
-    console.error(
-      '--connect/--cdp are not yet supported in the compiled binary.\n' +
-      'Bun\'s WebSocket client breaks the CDP handshake (oven-sh/bun#9911).\n' +
-      'Workaround: use cookie-import to borrow auth from your browser instead:\n' +
-      '  browse cookie-import chrome --domain <your-domain>'
-    );
-    process.exit(1);
-  }
-
   // Extract --max-output <n> flag (only before command)
   let maxOutput = 0;
   const maxOutputIdx = args.indexOf('--max-output');
@@ -648,6 +646,27 @@ export async function main() {
   }
   maxOutput = maxOutput || parseInt(process.env.BROWSE_MAX_OUTPUT || '0', 10) || 0;
 
+  // Resolve CDP URL from --connect (auto-discover) or --cdp <port>
+  let cdpUrl = process.env.BROWSE_CDP_URL || '';
+  if (!cdpUrl && (connectFlag || cdpPort)) {
+    if (cdpPort) {
+      // --cdp <port>: construct CDP endpoint URL for the specific port
+      cdpUrl = `http://127.0.0.1:${cdpPort}`;
+    } else {
+      // --connect: auto-discover a running Chrome instance
+      const { discoverChrome } = await import('./chrome-discover');
+      const discovered = await discoverChrome();
+      if (!discovered) {
+        console.error(
+          'No running Chrome instance found.\n' +
+          'Start Chrome with --remote-debugging-port=9222, or use --cdp <port>.'
+        );
+        process.exit(1);
+      }
+      cdpUrl = discovered;
+    }
+  }
+
   // Set global flags for sendCommand()
   cliFlags.json = jsonMode;
   cliFlags.contentBoundaries = contentBoundaries;
@@ -655,6 +674,7 @@ export async function main() {
   cliFlags.headed = headed;
   cliFlags.stateFile = stateFile;
   cliFlags.maxOutput = maxOutput;
+  cliFlags.cdpUrl = cdpUrl;
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') {
@@ -757,14 +777,14 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
 
   // Special case: chain reads from stdin
   if (command === 'chain' && commandArgs.length === 0) {
-    const stdin = await Bun.stdin.text();
+    const stdin = await readStdin();
     commandArgs.push(stdin.trim());
   }
 
   // Special case: auth --password-stdin reads in CLI before sending to server
   if (command === 'auth' && commandArgs.includes('--password-stdin')) {
     const stdinIdx = commandArgs.indexOf('--password-stdin');
-    const password = (await Bun.stdin.text()).trim();
+    const password = (await readStdin()).trim();
     commandArgs.splice(stdinIdx, 1, password);
   }
 
@@ -774,8 +794,8 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
 
 if (process.env.__BROWSE_SERVER_MODE === '1') {
   import('./server');
-} else if (import.meta.main) {
-  // Direct execution: bun run src/cli.ts <command>
+} else if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename_cli)) {
+  // Direct execution: tsx src/cli.ts <command>
   main().catch((err) => {
     console.error(`[browse] ${err.message}`);
     process.exit(1);

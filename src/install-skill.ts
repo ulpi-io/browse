@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
 const PERMISSIONS = [
   'Bash(browse:*)',
@@ -49,7 +50,7 @@ export function installSkill(targetDir?: string) {
   const skillDir = path.join(dir, '.claude', 'skills', 'browse');
   fs.mkdirSync(skillDir, { recursive: true });
 
-  const skillSource = path.resolve(import.meta.dir, '..', 'skill', 'SKILL.md');
+  const skillSource = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'skill', 'SKILL.md');
   const skillDest = path.join(skillDir, 'SKILL.md');
 
   if (!fs.existsSync(skillSource)) {

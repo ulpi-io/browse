@@ -1,57 +1,56 @@
 /**
- * Tiny Bun.serve for test fixtures
+ * Tiny HTTP server for test fixtures
  * Serves HTML files from test/fixtures/ on a random available port
  */
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as http from 'http';
+import { fileURLToPath } from 'url';
 
-const FIXTURES_DIR = path.resolve(import.meta.dir, 'fixtures');
+const __dirname_test = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURES_DIR = path.resolve(__dirname_test, 'fixtures');
 
-export function startTestServer(port: number = 0): { server: ReturnType<typeof Bun.serve>; url: string } {
-  const server = Bun.serve({
-    port,
-    hostname: '127.0.0.1',
-    fetch(req) {
-      const url = new URL(req.url);
-      // Special route: downloadable file with Content-Disposition
-      if (url.pathname === '/download/test.txt') {
-        return new Response('test file content', {
-          headers: {
-            'Content-Type': 'text/plain',
-            'Content-Disposition': 'attachment; filename="test.txt"',
-          },
-        });
-      }
+export async function startTestServer(port: number = 0): Promise<{ server: http.Server; url: string; port: number }> {
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', `http://127.0.0.1`);
 
-      let filePath = url.pathname === '/' ? '/basic.html' : url.pathname;
-
-      // Remove leading slash
-      filePath = filePath.replace(/^\//, '');
-      const fullPath = path.join(FIXTURES_DIR, filePath);
-
-      if (!fs.existsSync(fullPath)) {
-        return new Response('Not Found', { status: 404 });
-      }
-
-      const content = fs.readFileSync(fullPath, 'utf-8');
-      const ext = path.extname(fullPath);
-      const contentType = ext === '.html' ? 'text/html' : 'text/plain';
-
-      return new Response(content, {
-        headers: { 'Content-Type': contentType },
+    // Special route: downloadable file with Content-Disposition
+    if (url.pathname === '/download/test.txt') {
+      res.writeHead(200, {
+        'Content-Type': 'text/plain',
+        'Content-Disposition': 'attachment; filename="test.txt"',
       });
-    },
+      res.end('test file content');
+      return;
+    }
+
+    let filePath = url.pathname === '/' ? '/basic.html' : url.pathname;
+    filePath = filePath.replace(/^\//, '');
+    const fullPath = path.join(FIXTURES_DIR, filePath);
+
+    if (!fs.existsSync(fullPath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+      return;
+    }
+
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    const ext = path.extname(fullPath);
+    const contentType = ext === '.html' ? 'text/html' : 'text/plain';
+
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(content);
   });
 
-  const url = `http://127.0.0.1:${server.port}`;
-  return { server, url };
-}
+  const assignedPort = await new Promise<number>((resolve, reject) => {
+    server.listen(port, '127.0.0.1', () => {
+      const addr = server.address() as { port: number };
+      resolve(addr.port);
+    });
+    server.on('error', reject);
+  });
 
-// If run directly, start and print URL
-if (import.meta.main) {
-  const { server, url } = startTestServer(9450);
-  console.log(`Test server running at ${url}`);
-  console.log(`Fixtures: ${FIXTURES_DIR}`);
-  console.log('Press Ctrl+C to stop');
+  const serverUrl = `http://127.0.0.1:${assignedPort}`;
+  return { server, url: serverUrl, port: assignedPort };
 }

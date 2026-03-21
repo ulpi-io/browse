@@ -764,7 +764,7 @@ export async function handleMetaCommand(
     // ─── Doctor ────────────────────────────────────────
     case 'doctor': {
       const lines: string[] = [];
-      lines.push(`Bun: ${typeof Bun !== 'undefined' ? Bun.version : 'not available'}`);
+      lines.push(`Node: ${process.version}`);
       try {
         const pw = await import('playwright');
         lines.push(`Playwright: installed`);

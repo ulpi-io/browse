@@ -30,7 +30,8 @@
  *   6. sameSite: 0→"None", 1→"Lax", 2→"Strict", else→"Lax"
  */
 
-import { Database } from 'bun:sqlite';
+import Database, { type Database as DatabaseType } from 'better-sqlite3';
+import { spawn } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -117,7 +118,7 @@ export function listDomains(browserName: string, profile = 'Default'): { domains
   const db = openDb(dbPath, browser.name);
   try {
     const now = chromiumNow();
-    const rows = db.query(
+    const rows = db.prepare(
       `SELECT host_key AS domain, COUNT(*) AS count
        FROM cookies
        WHERE has_expires = 0 OR expires_utc > ?
@@ -148,7 +149,7 @@ export async function importCookies(
   try {
     const now = chromiumNow();
     const placeholders = domains.map(() => '?').join(',');
-    const rows = db.query(
+    const rows = db.prepare(
       `SELECT host_key, name, value, encrypted_value, path, expires_utc,
               is_secure, is_httponly, has_expires, samesite
        FROM cookies
@@ -219,7 +220,7 @@ function getCookieDbPath(browser: BrowserInfo, profile: string): string {
 
 // ─── Internal: SQLite Access ────────────────────────────────────
 
-function openDb(dbPath: string, browserName: string): Database {
+function openDb(dbPath: string, browserName: string): DatabaseType {
   try {
     return new Database(dbPath, { readonly: true });
   } catch (err: any) {
@@ -236,7 +237,7 @@ function openDb(dbPath: string, browserName: string): Database {
   }
 }
 
-function openDbFromCopy(dbPath: string, browserName: string): Database {
+function openDbFromCopy(dbPath: string, browserName: string): DatabaseType {
   const tmpPath = `/tmp/browse-cookies-${browserName.toLowerCase()}-${crypto.randomUUID()}.db`;
   try {
     fs.copyFileSync(dbPath, tmpPath);
@@ -247,14 +248,14 @@ function openDbFromCopy(dbPath: string, browserName: string): Database {
     if (fs.existsSync(shmPath)) fs.copyFileSync(shmPath, tmpPath + '-shm');
 
     const db = new Database(tmpPath, { readonly: true });
-    // Wrap close() to clean up temp files
+    // Register cleanup to remove temp files when db is closed
     const origClose = db.close.bind(db);
-    db.close = () => {
+    db.close = (() => {
       origClose();
       try { fs.unlinkSync(tmpPath); } catch {}
       try { fs.unlinkSync(tmpPath + '-wal'); } catch {}
       try { fs.unlinkSync(tmpPath + '-shm'); } catch {}
-    };
+    }) as typeof db.close;
     return db;
   } catch {
     try { fs.unlinkSync(tmpPath); } catch {}
@@ -281,9 +282,19 @@ async function getDerivedKey(browser: BrowserInfo): Promise<Buffer> {
 async function getKeychainPassword(service: string): Promise<string> {
   // Array args — no shell injection possible.
   // macOS may show an Allow/Deny dialog that blocks until the user responds.
-  const proc = Bun.spawn(
-    ['security', 'find-generic-password', '-s', service, '-w'],
-    { stdout: 'pipe', stderr: 'pipe' },
+  const proc = spawn('security', ['find-generic-password', '-s', service, '-w'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+  proc.stdout!.setEncoding('utf8');
+  proc.stderr!.setEncoding('utf8');
+  proc.stdout!.on('data', (chunk: string) => { stdout += chunk; });
+  proc.stderr!.on('data', (chunk: string) => { stderr += chunk; });
+
+  const exitPromise = new Promise<number | null>((resolve) =>
+    proc.on('close', (code) => resolve(code)),
   );
 
   const timeout = new Promise<never>((_, reject) =>
@@ -298,9 +309,7 @@ async function getKeychainPassword(service: string): Promise<string> {
   );
 
   try {
-    const exitCode = await Promise.race([proc.exited, timeout]);
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await Promise.race([exitPromise, timeout]);
 
     if (exitCode !== 0) {
       const errText = stderr.trim().toLowerCase();

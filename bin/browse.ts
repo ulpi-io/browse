@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env tsx
 import { main } from '../src/cli';
 
 if (process.env.__BROWSE_SERVER_MODE === '1') {

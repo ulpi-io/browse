@@ -5,7 +5,7 @@
  * have fully isolated state: navigation, tabs, refs, buffers.
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { chromium, type Browser } from 'playwright';
 import { SessionManager } from '../src/session-manager';
 import { BrowserManager } from '../src/browser-manager';
@@ -21,13 +21,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-let testServer: ReturnType<typeof startTestServer>;
+let testServer: Awaited<ReturnType<typeof startTestServer>>;
 let browser: Browser;
 let sm: SessionManager;
 let baseUrl: string;
 
 beforeAll(async () => {
-  testServer = startTestServer(0);
+  testServer = await startTestServer(0);
   baseUrl = testServer.url;
 
   browser = await chromium.launch({ headless: true });
@@ -35,7 +35,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try { testServer.server.stop(); } catch {}
+  try { testServer.server.close(); } catch {}
   await sm.closeAll().catch(() => {});
   await Promise.race([
     browser.close().catch(() => {}),

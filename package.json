@@ -8,6 +8,7 @@
   "dependencies": {
     "@lightpanda/browser": "^1.2.0",
     "@ulpi/browse": "^0.3.0",
+    "better-sqlite3": "^11.0.0",
     "diff": "^7.0.0",
     "playwright": "^1.58.2",
     "playwright-core": "^1.58.2"
@@ -17,7 +18,7 @@
   },
   "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
   "engines": {
-    "bun": ">=1.0.0"
+    "node": ">=18.0.0"
   },
   "files": [
     "bin/",
@@ -41,19 +42,23 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build --compile --external electron --external chromium-bidi src/cli.ts --outfile dist/browse && rm -f .*.bun-build",
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node18 --outfile=dist/browse.js --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi",
     "build:all": "bash scripts/build-all.sh",
-    "dev": "bun run src/cli.ts",
-    "server": "bun run src/server.ts",
-    "test": "bun test",
-    "start": "bun run src/server.ts",
-    "postinstall": "bunx playwright install chromium",
-    "benchmark": "bun run benchmark.ts"
+    "dev": "tsx src/cli.ts",
+    "server": "tsx src/server.ts",
+    "test": "vitest run",
+    "start": "tsx src/server.ts",
+    "postinstall": "npx playwright install chromium",
+    "benchmark": "tsx benchmark.ts"
   },
   "type": "module",
   "devDependencies": {
+    "@types/better-sqlite3": "^7.0.0",
     "@types/node": "^25.5.0",
-    "typescript": "^5.9.3"
+    "esbuild": "^0.25.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
   },
   "optionalDependencies": {
     "rebrowser-playwright": "^1.52.0"

@@ -95,6 +95,10 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 - **Build command:** Always `bun run build` (uses `--external electron --external chromium-bidi`). These are playwright optional deps we never use.
 - **Compiled binary:** Self-spawns in server mode via `__BROWSE_SERVER_MODE=1` env var. In dev mode, spawns `bun run server.ts`.
 
+## Node.js Gotchas
+
+- **`child_process.spawn` + `detached` + `pipe` = parent hangs.** Node keeps the event loop alive for every open handle (stream, socket, timer). `proc.unref()` only unrefs the process, NOT its stdio streams. If you spawn a background server with `stdio: 'pipe'`, the parent will hang forever. Fix: use `stdio: 'ignore'` for streams you don't read, and call `proc.stderr.unref()` on any piped streams you keep.
+
 ## Conventions
 
 - All selectors support both CSS selectors and @refs (`@e1`, `@e2`...)
