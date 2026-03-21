@@ -14,11 +14,18 @@ import { sanitizeName } from './sanitize';
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface RecordedStep {
+  command: string;
+  args: string[];
+  timestamp: number;
+}
+
 export interface Session {
   id: string;
   manager: BrowserManager;
   buffers: SessionBuffers;
   domainFilter: DomainFilter | null;
+  recording: RecordedStep[] | null;
   outputDir: string;
   lastActivity: number;
   createdAt: number;
@@ -114,6 +121,7 @@ export class SessionManager {
       manager,
       buffers,
       domainFilter,
+      recording: null,
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),

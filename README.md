@@ -1,208 +1,421 @@
 # @ulpi/browse
 
-**The headless browser CLI built for AI agents — not humans.**
+Headless browser CLI for AI coding agents. Persistent Chromium daemon via Playwright, ~100ms per command after startup.
 
-When AI agents browse the web, the bottleneck isn't Chromium — it's **what gets dumped into the context window**. [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp) sends the full accessibility snapshot on every navigate, click, and keystroke. On a real e-commerce page, that's **~16,000 tokens per action** — automatically, whether the agent needs it or not.
+## Installation
 
-Ten actions and you've burned **146K tokens — 73% of a 200K context window** — just on browser output. That leaves almost nothing for the agent to actually think.
-
-`@ulpi/browse` flips this. Navigation returns 11 tokens. Clicks return 15 tokens. The agent requests a page snapshot **only when it needs one** — and can filter to interactive elements only, cutting another 2-6x.
-
-**Same 10 actions: ~11K tokens. 6% of context. 13x less than @playwright/mcp.**
-
-## Benchmarks
-
-### vs Agent Browser & Browser-Use (Token Cost)
-
-Tested on 3 sites across multi-step browsing flows — navigate, snapshot, scroll, search, extract text:
-
-**browse is 2.4-2.8x cheaper on tokens, 1.3-2.6x faster, and uses 7% of context vs 17-20%.**
-
-| Tool | Total Tokens | Total Time | Context Used (200K) |
-|------|-------------:|-----------:|--------------------:|
-| **browse** | **14,134** | **28.5s** | **7.1%** |
-| agent-browser | 39,414 | 36.2s | 19.7% |
-| browser-use | 34,281 | 72.7s | 17.1% |
-
-**Per site:**
-
-| Site | browse tokens | agent-browser tokens | browser-use tokens | browse time | agent-browser time | browser-use time |
-|------|-------:|-------------:|------------:|------:|------:|------:|
-| amazon.com | 7,531 | 11,596 | 20,508 | 10.1s | 12.9s | 21.9s |
-| bbc.com | 4,032 | 24,861 | 8,827 | 9.8s | 13.5s | 29.9s |
-| booking.com | 2,571 | 2,957 | 4,946 | 8.6s | 9.8s | 20.9s |
-
-browse uses **2.4x fewer tokens** than browser-use and **2.8x fewer** than agent-browser — and completes **2.5x faster** than browser-use across the same workflows.
-
-### vs @playwright/mcp (Architecture)
-
-@playwright/mcp dumps the full accessibility snapshot on every action (navigate, click, type). browse returns ~15 tokens per action — the agent requests a snapshot only when it needs one:
-
-| | @playwright/mcp | @ulpi/browse |
-|---|---:|---:|
-| Tokens on `navigate` | ~14,578 (auto-dumped) | **~11** (one-liner) |
-| Tokens on `click` | ~14,578 (auto-dumped) | **~15** (one-liner) |
-| 10-action session | ~145,780 | **~11,388** |
-| Context consumed (200K) | **73%** | **6%** |
-
-The agent decides when to see the page. Most actions don't need a snapshot.
-
-Rerun: `bun run benchmark`
-
-## Why It's Faster
-
-### 1. You Control What Enters the Context
-
-```
-@playwright/mcp browser_navigate → 51,150 tokens (full snapshot, every time)
-
-browse goto    →     11 tokens  ("Navigated to https://... (200)")
-browse text    →  4,970 tokens  (clean visible text, when you need it)
-browse snap -i → 15,072 tokens  (interactive elements + refs, when you need it)
-```
-
-You pick the right view for the task. Reading prices? Use `text`. Need to click something? Use `snapshot -i`. Just navigating? `goto` is enough.
-
-### 2. Ref-Based Interaction — No Selector Construction
-
-After `snapshot`, every element gets a ref (`@e1`, `@e2`, ...) backed by a Playwright Locator. The agent doesn't waste tokens constructing CSS selectors:
-
-```bash
-$ browse snapshot -i
-@e1 [button] "Help 24/7"
-@e2 [link] "Mumzworld"
-  @e3 [searchbox]
-@e4 [link] "Sign In"
-@e5 [link] "Cart"
-
-$ browse fill @e3 "strollers"
-Filled @e3
-
-$ browse press Enter
-Pressed Enter
-```
-
-### 3. Cursor-Interactive Detection — What ARIA Misses
-
-Modern SPAs use `<div onclick>`, `cursor: pointer`, `tabindex`, and `data-action` for interactivity. These are **invisible** to accessibility trees — both @playwright/mcp and raw `ariaSnapshot()` miss them.
-
-```bash
-$ browse snapshot -i -C
-@e1 [button] "Submit"
-@e2 [textbox] "Email"
-
-[cursor-interactive]
-@e3 [div.card] "Add to cart" (cursor:pointer)
-@e4 [span.close] "Close dialog" (onclick)
-@e5 [div.menu] "Open Menu" (data-action)
-```
-
-Every detected element gets a ref. `browse click @e3` just works.
-
-### 4. 75 Purpose-Built Commands vs Generic Tools
-
-@playwright/mcp has ~15 tools. For anything beyond navigate/click/type, you write JavaScript via `browser_evaluate`. `browse` has purpose-built commands that return structured, minimal output:
-
-| Need | @playwright/mcp | browse |
-|------|----------------|--------|
-| Page text | `browser_evaluate` + custom JS | `text` |
-| Form fields | `browser_evaluate` + custom JS | `forms` → structured JSON |
-| All links | `browser_evaluate` + custom JS | `links` → `Text → URL` |
-| Network log | Not available | `network` |
-| Cookies | Not available | `cookies` |
-| Performance | Not available | `perf` |
-| Page diff | Not available | `diff <url1> <url2>` |
-| Snapshot diff | Not available | `snapshot-diff` |
-| Responsive screenshots | Not available | `responsive` |
-| Device emulation | Not available | `emulate iphone` |
-| Input value | `browser_evaluate` + custom JS | `value <sel>` |
-| Element count | `browser_evaluate` + custom JS | `count <sel>` |
-| iframe targeting | Not available | `frame <sel>` / `frame main` |
-| Network mocking | Not available | `route <pattern> block\|fulfill` |
-| Offline mode | Not available | `offline on\|off` |
-| State persistence | Not available | `state save\|load` |
-| Credential vault | Not available | `auth save\|login\|list` |
-| HAR recording | Not available | `har start\|stop` |
-| Video recording | Not available | `video start [dir]\|stop\|status` |
-| Clipboard access | Not available | `clipboard [write <text>]` |
-| Element finding | Not available | `find role\|text\|label\|placeholder\|testid` |
-| DevTools inspect | Not available | `inspect` |
-| Domain restriction | Not available | `--allowed-domains` |
-| Prompt injection defense | Not available | `--content-boundaries` |
-| JSON output mode | Not available | `--json` |
-
-### 5. Persistent Daemon — 100ms Commands
-
-```
-First command:       ~2s  (server + Chromium startup, once)
-Every command after: ~100-200ms  (HTTP to localhost)
-```
-
-@playwright/mcp starts a new browser per MCP session. `browse` keeps the server running across commands with auto-shutdown after 30 min idle. Crash recovery is built in — the CLI detects a dead server and restarts transparently.
-
-### 6. Multi-Agent Sessions — Parallel Browsing on One Chromium
-
-Run multiple AI agents in parallel, each with its own isolated browser session, sharing a single Chromium process. Each session gets its own tabs, refs, cookies, localStorage, and console/network buffers — zero cross-talk.
-
-```bash
-# Agent A researches strollers on mumzworld
-browse --session agent-a goto https://www.mumzworld.com
-browse --session agent-a snapshot -i
-browse --session agent-a fill @e3 "strollers"
-browse --session agent-a press Enter
-
-# Agent B checks competitor pricing on amazon — simultaneously
-browse --session agent-b goto https://www.amazon.com
-browse --session agent-b snapshot -i
-browse --session agent-b fill @e6 "baby stroller"
-browse --session agent-b press Enter
-
-# Or set once via env var
-export BROWSE_SESSION=agent-a
-browse text    # runs in agent-a's session
-```
-
-Under the hood, each session is a separate Playwright `BrowserContext` on the shared Chromium — same isolation model as browser profiles (separate cookies, storage, cache). One process, no extra memory for multiple Chromium instances.
-
-```
-browse --session <id> <command>
-          │
-    Persistent server (one Chromium process)
-          │
-    SessionManager
-    ├── "default"  → BrowserContext → tabs, refs, cookies, buffers
-    ├── "agent-a"  → BrowserContext → tabs, refs, cookies, buffers
-    └── "agent-b"  → BrowserContext → tabs, refs, cookies, buffers
-```
-
-**Session management:**
-```bash
-browse sessions                # list active sessions with tab counts
-browse session-close agent-a   # close a session (frees its tabs/context)
-browse status                  # shows total session count
-```
-
-Sessions auto-close after the idle timeout (default 30 min). The server shuts down when all sessions are idle. Without `--session`, everything runs in a `"default"` session — fully backward compatible.
-
-For full process isolation (separate Chromium instances), use `BROWSE_PORT` to run independent servers.
-
-## Install
+### Global Installation (recommended)
 
 ```bash
 npm install -g @ulpi/browse
 ```
 
-Requires [Bun](https://bun.sh) runtime. Chromium is installed automatically via Playwright.
+Requires [Bun](https://bun.sh) runtime. Chromium is installed automatically via Playwright on first `npm install`.
 
-### Claude Code Skill
+### Project Installation (local dependency)
 
-Install via [skills.sh](https://skills.sh) (works across Claude Code, Cursor, Cline, Windsurf, and 15+ agents):
+```bash
+npm install @ulpi/browse
+```
+
+Then use via `package.json` scripts or by invoking `browse` directly.
+
+### From Source
+
+```bash
+git clone https://github.com/ulpi-io/browse
+cd browse
+bun install
+bun run src/cli.ts goto https://example.com   # Dev mode
+bun run build                                  # Build standalone binary
+```
+
+## Quick Start
+
+```bash
+browse goto https://example.com
+browse snapshot -i                     # Get interactive elements with refs
+browse click @e2                       # Click by ref from snapshot
+browse fill @e3 "test@example.com"     # Fill input by ref
+browse text                            # Get visible page text
+browse screenshot page.png
+browse stop
+```
+
+### The Ref Workflow
+
+Every `snapshot` assigns refs (`@e1`, `@e2`, ...) to elements. Use refs as selectors in any command — no CSS selector construction needed:
+
+```bash
+$ browse snapshot -i
+@e1 [button] "Submit"
+@e2 [link] "Home"
+@e3 [textbox] "Email"
+
+$ browse click @e1                     # Click the Submit button
+Clicked @e1
+
+$ browse fill @e3 "user@example.com"   # Fill the Email field
+Filled @e3
+```
+
+### Traditional Selectors (also supported)
+
+```bash
+browse click "#submit"
+browse fill ".email-input" "test@example.com"
+browse click "text=Submit"
+```
+
+## Commands
+
+### Navigation
+
+```bash
+browse goto <url>              # Navigate to URL
+browse back                    # Go back
+browse forward                 # Go forward
+browse reload                  # Reload page
+browse url                     # Get current URL
+```
+
+### Content Extraction
+
+```bash
+browse text                    # Visible text (clean, no DOM mutation)
+browse html [sel]              # Full HTML or element innerHTML
+browse links                   # All links as "text -> href"
+browse forms                   # Form structure as JSON
+browse accessibility           # Raw ARIA snapshot tree
+```
+
+### Interaction
+
+```bash
+browse click <sel>             # Click element
+browse dblclick <sel>          # Double-click element
+browse fill <sel> <val>        # Clear and fill input
+browse select <sel> <val>      # Select dropdown option
+browse hover <sel>             # Hover element
+browse focus <sel>             # Focus element
+browse check <sel>             # Check checkbox
+browse uncheck <sel>           # Uncheck checkbox
+browse type <text>             # Type text via keyboard (current focus)
+browse press <key>             # Press key (Enter, Tab, etc.)
+browse keydown <key>           # Key down event
+browse keyup <key>             # Key up event
+browse scroll [sel|up|down]    # Scroll element into view or direction
+browse drag <src> <tgt>        # Drag and drop
+browse highlight <sel>         # Highlight element with visual overlay
+browse download <sel> [path]   # Download file triggered by click
+browse upload <sel> <files...> # Upload files to input
+```
+
+### Wait
+
+```bash
+browse wait <selector>         # Wait for element
+browse wait --url <pattern>    # Wait for URL
+browse wait --network-idle     # Wait for network idle
+```
+
+### Snapshot
+
+```bash
+browse snapshot                # Full accessibility tree
+browse snapshot -i             # Interactive elements only (terse flat list)
+browse snapshot -i -f          # Interactive elements, full indented tree
+browse snapshot -i -C          # Include cursor-interactive elements (onclick, cursor:pointer)
+browse snapshot -V             # Viewport only — elements visible on screen
+browse snapshot -c             # Compact — remove empty structural elements
+browse snapshot -d 3           # Limit depth to 3 levels
+browse snapshot -s "#main"     # Scope to CSS selector
+browse snapshot -i -c -d 5    # Combine options
+```
+
+| Flag | Description |
+|------|-------------|
+| `-i` | Interactive elements only (buttons, links, inputs) — terse flat list |
+| `-f` | Full — indented tree with props and children (use with `-i`) |
+| `-V` | Viewport — only elements visible in current viewport |
+| `-c` | Compact — remove empty structural elements |
+| `-C` | Cursor-interactive — detect divs with `cursor:pointer`, `onclick`, `tabindex` |
+| `-d N` | Limit tree depth |
+| `-s <sel>` | Scope to CSS selector |
+
+The `-C` flag catches modern SPA patterns that ARIA trees miss — `<div onclick>`, `cursor: pointer`, `tabindex`, and `data-action` elements.
+
+### Find Elements
+
+```bash
+browse find role <role> [name]                # By ARIA role
+browse find text <text>                       # By text content
+browse find label <label>                     # By label
+browse find placeholder <placeholder>         # By placeholder
+browse find testid <id>                       # By data-testid
+```
+
+### Inspection
+
+```bash
+browse js <expr>               # Evaluate JavaScript expression
+browse eval <file>             # Evaluate JavaScript file
+browse css <sel> <prop>        # Get computed CSS property
+browse attrs <sel>             # Get element attributes as JSON
+browse element-state <sel>     # Element state (visible, enabled, checked, etc.)
+browse value <sel>             # Get input/select value
+browse count <sel>             # Count elements matching selector
+browse clipboard [write <text>] # Read or write clipboard
+browse console [--clear]       # Console log buffer
+browse network [--clear]       # Network request buffer
+browse cookies                 # Browser cookies as JSON
+browse storage [set <k> <v>]   # localStorage/sessionStorage
+browse perf                    # Navigation timing (dns, ttfb, load)
+browse devices [filter]        # List available device names
+```
+
+### Visual
+
+```bash
+browse screenshot [path]       # Take screenshot
+browse screenshot --annotate   # Annotated screenshot with numbered element labels
+browse pdf [path]              # Save page as PDF
+browse responsive [prefix]     # Mobile/tablet/desktop screenshots
+```
+
+### Compare
+
+```bash
+browse diff <url1> <url2>                  # Text diff between two pages
+browse snapshot-diff                        # Diff current vs last snapshot
+browse screenshot-diff <baseline> [current] # Pixel-level visual diff
+```
+
+### Tabs
+
+```bash
+browse tabs                    # List all tabs
+browse tab <id>                # Switch to tab
+browse newtab [url]            # Open new tab
+browse closetab [id]           # Close tab
+```
+
+### Frames
+
+```bash
+browse frame <sel>             # Switch to iframe
+browse frame main              # Back to main frame
+```
+
+### Device Emulation
+
+```bash
+browse emulate "iPhone 14"     # Emulate device
+browse emulate reset           # Reset to desktop (1920x1080)
+browse devices                 # List all available devices
+browse devices iphone          # Filter device list
+browse viewport 1280x720       # Set viewport size
+```
+
+100+ devices: iPhone 12–17, Pixel 5–7, iPad, Galaxy, and all Playwright built-ins.
+
+### Network
+
+```bash
+browse route <pattern> block                # Block matching requests
+browse route <pattern> fulfill <status> [body] # Mock response
+browse route clear                          # Remove all routes
+browse offline [on|off]                     # Toggle offline mode
+browse cookie <name>=<value>                # Set cookie
+browse header <name>:<value>                # Set extra HTTP header
+browse useragent <string>                   # Set user agent
+```
+
+### Dialogs
+
+```bash
+browse dialog                  # Last dialog info
+browse dialog-accept [text]    # Accept next dialog (optional prompt text)
+browse dialog-dismiss          # Dismiss next dialog
+```
+
+### Recording
+
+```bash
+browse har start               # Start HAR recording
+browse har stop [path]         # Stop and save HAR file
+
+browse video start [dir]       # Start video recording (WebM)
+browse video stop              # Stop recording
+browse video status            # Check recording status
+
+browse record start            # Record browsing commands as you go
+browse record stop             # Stop recording
+browse record status           # Check recording status
+browse record export browse [path]      # Export as chain-compatible JSON (replay with browse chain)
+browse record export replay [path]     # Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+```
+
+### State & Auth
+
+```bash
+browse state save [name]       # Save cookies + localStorage
+browse state load [name]       # Restore saved state
+browse state list              # List saved states
+browse state show [name]       # Show state details
+
+browse auth save <name> <url> <user> <pass>  # Save encrypted credential
+browse auth save <name> <url> <user> --password-stdin  # Password from stdin
+browse auth login <name>       # Auto-login with saved credential
+browse auth list               # List saved credentials
+browse auth delete <name>      # Delete credential
+```
+
+### Multi-Step (Chaining)
+
+Execute a sequence of commands in one call:
+
+```bash
+echo '[["goto","https://example.com"],["snapshot","-i"],["text"]]' | browse chain
+```
+
+### Server Control
+
+```bash
+browse status                  # Server health report
+browse instances               # List all running browse servers
+browse stop                    # Stop server
+browse restart                 # Restart server
+browse inspect                 # Open DevTools (requires BROWSE_DEBUG_PORT)
+```
+
+### Setup
+
+```bash
+browse install-skill [path]    # Install Claude Code skill
+```
+
+## Sessions
+
+Run multiple AI agents in parallel, each with isolated browser state, sharing one Chromium process:
+
+```bash
+# Agent A
+browse --session agent-a goto https://site-a.com
+browse --session agent-a snapshot -i
+browse --session agent-a click @e3
+
+# Agent B (simultaneously)
+browse --session agent-b goto https://site-b.com
+browse --session agent-b snapshot -i
+browse --session agent-b fill @e2 "query"
+
+# Or set once via env var
+export BROWSE_SESSION=agent-a
+browse text
+```
+
+Each session has its own:
+- Browser context (cookies, storage, cache)
+- Tabs and navigation history
+- Refs from snapshots
+- Console and network buffers
+
+```bash
+browse sessions                # List active sessions
+browse session-close agent-a   # Close a session
+browse status                  # Shows total session count
+```
+
+Sessions auto-close after the idle timeout (default 30 min). Without `--session`, everything runs in a `"default"` session.
+
+For full process isolation (separate Chromium instances), use `BROWSE_PORT` to run independent servers.
+
+## Security
+
+All security features are opt-in — existing workflows are unaffected until you explicitly enable a feature.
+
+### Domain Allowlist
+
+Restrict navigation and sub-resource requests to trusted domains:
+
+```bash
+browse --allowed-domains "example.com,*.example.com" goto https://example.com
+# Or via env var
+BROWSE_ALLOWED_DOMAINS="example.com,*.api.io" browse goto https://example.com
+```
+
+Blocks HTTP requests, WebSocket, EventSource, and `sendBeacon` to non-allowed domains. Wildcards like `*.example.com` match the bare domain and all subdomains.
+
+### Action Policy
+
+Gate commands with a `browse-policy.json` file:
+
+```json
+{ "default": "allow", "deny": ["js", "eval"], "confirm": ["goto"] }
+```
+
+Precedence: deny > confirm > allow > default. Hot-reloads on file change — no server restart needed.
+
+### Credential Vault
+
+Encrypted credential storage (AES-256-GCM). The LLM never sees passwords:
+
+```bash
+echo "mypassword" | browse auth save github https://github.com/login myuser --password-stdin
+browse auth login github          # Auto-navigates, detects form, fills + submits
+browse auth list                  # List saved credentials (no passwords shown)
+```
+
+Key is auto-generated at `.browse/.encryption-key` or set via `BROWSE_ENCRYPTION_KEY`.
+
+### Content Boundaries
+
+Wrap page output in CSPRNG nonce-delimited markers so LLMs can distinguish tool output from untrusted page content:
+
+```bash
+browse --content-boundaries text
+```
+
+### JSON Output
+
+Machine-readable output for agent frameworks:
+
+```bash
+browse --json snapshot -i
+# Returns: {"success": true, "data": "...", "command": "snapshot"}
+```
+
+## Configuration
+
+Create a `browse.json` file at your project root to set persistent defaults:
+
+```json
+{
+  "session": "my-agent",
+  "json": true,
+  "contentBoundaries": true,
+  "allowedDomains": ["example.com", "*.api.io"],
+  "idleTimeout": 3600000,
+  "viewport": "1280x720",
+  "device": "iPhone 14",
+  "runtime": "playwright"
+}
+```
+
+CLI flags and environment variables override config file values.
+
+## Usage with AI Agents
+
+### Claude Code (recommended)
+
+Install as a Claude Code skill via [skills.sh](https://skills.sh):
 
 ```bash
 npx skills add https://github.com/ulpi-io/skills --skill browse
 ```
 
-Or install directly into your project:
+Or install directly:
 
 ```bash
 browse install-skill
@@ -210,127 +423,29 @@ browse install-skill
 
 Both copy the skill definition to `.claude/skills/browse/SKILL.md` and add all browse commands to permissions — no more approval prompts.
 
-## Real-World Example: E-Commerce Flow
+### CLAUDE.md / AGENTS.md
 
-Agent browses mumzworld.com — search, find a product, add to cart, checkout:
+Add to your project instructions:
 
-```bash
-browse goto https://www.mumzworld.com
-browse snapshot -i                    # find searchbox → @e3
-browse fill @e3 "strollers"
-browse press Enter
+```markdown
+## Browser Automation
 
-browse text                           # scan prices in results
-browse goto "https://www.mumzworld.com/en/doona-infant-car-seat..."
+Use `browse` for web automation. Run `browse --help` for all commands.
 
-browse snapshot -i                    # find Add to Cart → @e54
-browse click @e54
-
-browse snapshot -i -s "[role=dialog]" # scope to cart modal
-browse click @e3                      # "View Cart"
-
-browse snapshot -i                    # find Checkout → @e52
-browse click @e52
+Core workflow:
+1. `browse goto <url>` — Navigate to page
+2. `browse snapshot -i` — Get interactive elements with refs (@e1, @e2)
+3. `browse click @e1` / `fill @e2 "text"` — Interact using refs
+4. Re-snapshot after page changes
 ```
 
-**12 steps. ~24K tokens total.** With @playwright/mcp: **~240K tokens** for the same flow (every action dumps a full snapshot).
-
-## Command Reference
-
-### Navigation
-`goto <url>` | `back` | `forward` | `reload` | `url`
-
-### Content Extraction
-`text` | `html [sel]` | `links` | `forms` | `accessibility`
-
-### Interaction
-`click <sel>` | `dblclick <sel>` | `fill <sel> <val>` | `select <sel> <val>` | `hover <sel>` | `focus <sel>` | `check <sel>` | `uncheck <sel>` | `drag <src> <tgt>` | `type <text>` | `press <key>` | `keydown <key>` | `keyup <key>` | `scroll [sel|up|down]` | `wait <sel|--url|--network-idle>` | `viewport <WxH>` | `highlight <sel>` | `download <sel> [path]`
-
-### Snapshot & Refs
-```
-snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]
-  -i    Interactive elements only — terse flat list (minimal tokens)
-  -f    Full — indented tree with props and children (use with -i)
-  -V    Viewport — only elements visible in current viewport
-  -c    Compact — remove empty structural nodes
-  -C    Cursor-interactive — detect hidden clickable elements
-  -d N  Limit tree depth
-  -s    Scope to CSS selector
-```
-After snapshot, use `@e1`, `@e2`... as selectors in any command.
-
-### Snapshot Diff
-`snapshot-diff` — compare current page against last snapshot.
-
-### Device Emulation
-`emulate <device>` | `emulate reset` | `devices [filter]`
-
-100+ devices: iPhone 12-17, Pixel 5-7, iPad, Galaxy, and all Playwright built-ins.
-
-### Inspection
-`js <expr>` | `eval <file>` | `css <sel> <prop>` | `attrs <sel>` | `element-state <sel>` | `value <sel>` | `count <sel>` | `clipboard [write <text>]` | `console [--clear]` | `network [--clear]` | `cookies` | `storage [set <k> <v>]` | `perf`
-
-### Visual
-`screenshot [path]` | `screenshot --annotate` | `pdf [path]` | `responsive [prefix]`
-
-### Compare
-`diff <url1> <url2>` — text diff between two pages.
-`screenshot-diff <baseline> [current]` — pixel-level visual regression testing.
-
-### Find
-`find role|text|label|placeholder|testid <query> [name]` — semantic element locators.
-
-### Multi-Step
-```bash
-echo '[["goto","https://example.com"],["text"]]' | browse chain
-```
-
-### Tabs
-`tabs` | `tab <id>` | `newtab [url]` | `closetab [id]`
-
-### Frames
-`frame <sel>` | `frame main`
-
-### Sessions
-`sessions` | `session-close <id>`
-
-### Network
-`route <pattern> block` | `route <pattern> fulfill <status> [body]` | `route clear` | `offline [on|off]`
-
-### State & Auth
-`state save [name]` | `state load [name]` | `state list` | `state show [name]` | `auth save <name> <url> <user> <pass>` | `auth login <name>` | `auth list` | `auth delete <name>`
-
-### Recording
-`har start` | `har stop [path]` | `video start [dir]` | `video stop` | `video status`
-
-### Debug
-`inspect` — open DevTools debugger (requires `BROWSE_DEBUG_PORT`).
-
-### Server Control
-`status` | `instances` | `cookie <n>=<v>` | `header <n>:<v>` | `useragent <str>` | `stop` | `restart`
-
-## Architecture
+### Just ask the agent
 
 ```
-browse [--session <id>] <command>
-          │
-          ▼
-    CLI (thin HTTP client)
-    X-Browse-Session: <id>
-          │
-          ▼
-    Persistent server (localhost, auto-started)
-          │
-    SessionManager
-    ├── Session "default" → BrowserContext + tabs + refs + buffers
-    ├── Session "agent-a" → BrowserContext + tabs + refs + buffers
-    └── Session "agent-b" → BrowserContext + tabs + refs + buffers
-          │
-          ▼
-    Chromium (Playwright, headless, shared)
+Use browse to test the login flow. Run browse --help to see available commands.
 ```
 
-## CLI Options
+## Options
 
 | Flag | Description |
 |------|-------------|
@@ -338,112 +453,87 @@ browse [--session <id>] <command>
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
-| `--headed` | Run browser in headed (visible) mode |
+| `--headed` | Show browser window (not headless) |
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BROWSE_PORT` | auto 9400-10400 | Fixed server port |
+| `BROWSE_PORT` | auto (9400–10400) | Fixed server port |
 | `BROWSE_PORT_START` | 9400 | Start of port scan range |
 | `BROWSE_SESSION` | (none) | Default session ID for all commands |
-| `BROWSE_INSTANCE` | auto (PPID) | Instance ID for multi-Claude isolation |
-| `BROWSE_IDLE_TIMEOUT` | 1800000 (30m) | Idle shutdown in ms |
+| `BROWSE_INSTANCE` | auto (PPID) | Instance ID for multi-agent isolation |
+| `BROWSE_IDLE_TIMEOUT` | 1800000 (30m) | Idle auto-shutdown in ms |
 | `BROWSE_TIMEOUT` | (none) | Override all command timeouts (ms) |
-| `BROWSE_LOCAL_DIR` | `.browse/` or `/tmp` | State/log directory |
+| `BROWSE_LOCAL_DIR` | `.browse/` or `/tmp` | State/log/screenshot directory |
 | `BROWSE_JSON` | (none) | Set to `1` for JSON output mode |
 | `BROWSE_CONTENT_BOUNDARIES` | (none) | Set to `1` for nonce-delimited output |
 | `BROWSE_ALLOWED_DOMAINS` | (none) | Comma-separated domain allowlist |
-| `BROWSE_HEADED` | (none) | Set to `1` for headed (visible) browser mode |
+| `BROWSE_HEADED` | (none) | Set to `1` for headed browser mode |
+| `BROWSE_CDP_URL` | (none) | Connect to remote Chrome via CDP |
 | `BROWSE_PROXY` | (none) | Proxy server URL |
 | `BROWSE_PROXY_BYPASS` | (none) | Proxy bypass list |
-| `BROWSE_CDP_URL` | (none) | Connect to remote Chrome via CDP |
 | `BROWSE_SERVER_SCRIPT` | auto-detected | Override path to server.ts |
-| `BROWSE_DEBUG_PORT` | (none) | Port for DevTools debugging (inspect command) |
+| `BROWSE_DEBUG_PORT` | (none) | Port for DevTools debugging |
 | `BROWSE_POLICY` | browse-policy.json | Path to action policy file |
-| `BROWSE_CONFIRM_ACTIONS` | (none) | Comma-separated commands requiring confirmation |
+| `BROWSE_CONFIRM_ACTIONS` | (none) | Commands requiring confirmation |
 | `BROWSE_ENCRYPTION_KEY` | auto-generated | 64-char hex AES key for credential vault |
-| `BROWSE_AUTH_PASSWORD` | (none) | Password for auth save (alt to `--password-stdin`) |
+| `BROWSE_AUTH_PASSWORD` | (none) | Password for `auth save` (alt to `--password-stdin`) |
+| `BROWSE_RUNTIME` | playwright | Browser runtime (playwright, rebrowser, lightpanda) |
+
+## Architecture
+
+```
+browse [--session <id>] <command>
+          |
+    CLI (thin HTTP client)
+          |
+    Persistent server (localhost, auto-started)
+          |
+    SessionManager
+    ├── "default"  → BrowserContext → tabs, refs, cookies, buffers
+    ├── "agent-a"  → BrowserContext → tabs, refs, cookies, buffers
+    └── "agent-b"  → BrowserContext → tabs, refs, cookies, buffers
+          |
+    Chromium (Playwright, headless, shared)
+```
+
+- **First command:** ~2s (server + Chromium startup, once)
+- **Every command after:** ~100–200ms (HTTP to localhost)
+- Server auto-starts on first command, auto-shuts down after 30 min idle
+- Crash recovery: CLI detects dead server and restarts transparently
+- State file: `.browse/browse-server.json` (pid, port, token)
+
+## Benchmarks
+
+### vs Agent Browser & Browser-Use (Token Cost)
+
+Tested on 3 sites across multi-step browsing flows — navigate, snapshot, scroll, search, extract text:
+
+| Tool | Total Tokens | Total Time | Context Used (200K) |
+|------|-------------:|-----------:|--------------------:|
+| **browse** | **14,134** | **28.5s** | **7.1%** |
+| agent-browser | 39,414 | 36.2s | 19.7% |
+| browser-use | 34,281 | 72.7s | 17.1% |
+
+browse uses **2.4x fewer tokens** than browser-use, **2.8x fewer** than agent-browser, and completes **2.5x faster** than browser-use.
+
+### vs @playwright/mcp (Architecture)
+
+@playwright/mcp dumps the full accessibility snapshot on every action. browse returns ~15 tokens per action — the agent requests a snapshot only when needed:
+
+| | @playwright/mcp | browse |
+|---|---:|---:|
+| Tokens on `navigate` | ~14,578 (auto-dumped) | **~11** |
+| Tokens on `click` | ~14,578 (auto-dumped) | **~15** |
+| 10-action session | ~145,780 | **~11,388** |
+| Context consumed (200K) | **73%** | **6%** |
+
+Rerun: `bun run benchmark`
 
 ## Acknowledgments
 
-Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan. The core architecture — persistent Chromium daemon, thin CLI client, ref-based element selection via ARIA snapshots — comes from gstack.
-
-## Changelog
-
-### v0.7.5 — Token Optimization & Benchmarks
-
-- `snapshot -i` now outputs terse flat list by default (no indentation, no props, names truncated to 30 chars)
-- `-f` flag for full indented ARIA tree with props/children (the old `-i` behavior)
-- `-V` flag for viewport-only snapshot — filters to elements visible in the current viewport (BBC: 189 → 28 elements, ~85% reduction)
-- `browse version` / `--version` — print CLI version
-- 2.4-2.8x fewer tokens than browser-use and agent-browser across real-world benchmarks
-
-### v0.4.0 — Video Recording
-
-- `video start [dir]` | `video stop` | `video status` — compositor-level WebM recording
-- Works with local and remote (CDP) browsers
-
-### v0.3.0 — Headed Mode, Clipboard, DevTools
-
-- `--headed` flag — run browser in visible mode for debugging and demos
-- `clipboard [write <text>]` — read and write clipboard contents
-- `inspect` command — open DevTools debugger via `BROWSE_DEBUG_PORT`
-- `screenshot --annotate` — pixel-annotated PNG with numbered badges
-- `instances` command — list all running browse servers
-- `BROWSE_DEBUG_PORT` env var for DevTools debugging
-
-### v0.2.0 — Security, Interactions, DX
-
-**Commands:**
-- `dblclick`, `focus`, `check`, `uncheck`, `drag`, `keydown`, `keyup` — interaction commands
-- `frame <sel>` / `frame main` — iframe targeting
-- `value <sel>`, `count <sel>` — element inspection
-- `scroll up/down` — viewport-relative scrolling
-- `wait --url`, `wait --network-idle` — navigation/network wait variants
-- `highlight <sel>` — visual element debugging
-- `download <sel> [path]` — file download
-- `route <pattern> block/fulfill` — network request interception and mocking
-- `offline on/off` — offline mode toggle
-- `state save/load` — persist and restore cookies + localStorage (all origins)
-- `har start/stop` — HAR recording and export
-- `video start/stop/status` — video recording (WebM, compositor-level, works with remote CDP)
-- `screenshot-diff` — pixel-level visual regression testing
-- `find role/text/label/placeholder/testid` — semantic element locators
-
-**Security:**
-- `--allowed-domains` — domain allowlist (HTTP + WebSocket/EventSource/sendBeacon)
-- `browse-policy.json` — action policy gate (allow/deny/confirm per command)
-- `auth save/login/list/delete` — AES-256-GCM encrypted credential vault
-- `--content-boundaries` — CSPRNG nonce wrapping for prompt injection defense
-
-**DX:**
-- `--json` — structured output mode for agent frameworks
-- `browse.json` config file support
-- AI-friendly error messages — Playwright errors rewritten to actionable hints
-- Per-session output folders (`.browse/sessions/{id}/`)
-
-**Infrastructure:**
-- Auto-instance servers via PPID — multi-Claude isolation
-- CDP remote connection (`BROWSE_CDP_URL`)
-- Proxy support (`BROWSE_PROXY`)
-- Compiled binary self-spawn mode
-- Orphaned server cleanup
-
-### v0.1.0 — Foundation
-
-**Commands:**
-- `emulate` / `devices` — device emulation (100+ devices)
-- `snapshot -C` — cursor-interactive detection
-- `snapshot-diff` — before/after comparison with ref-number stripping
-- `dialog` / `dialog-accept` / `dialog-dismiss` — dialog handling
-- `upload` — file upload
-- `screenshot --annotate` — numbered badge overlay with legend
-
-**Infrastructure:**
-- Session multiplexing — multiple agents share one Chromium
-- Safe retry classification — read vs write commands
-- TreeWalker text extraction — no MutationObserver triggers
+Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan.
 
 ## License
 

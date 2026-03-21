@@ -75,6 +75,7 @@ If the file is missing or does not contain browse permission rules in `permissio
 "Bash(browse frame:*)",
 "Bash(browse sessions:*)", "Bash(browse session-close:*)",
 "Bash(browse state:*)", "Bash(browse auth:*)", "Bash(browse har:*)", "Bash(browse video:*)",
+"Bash(browse record:*)",
 "Bash(browse route:*)", "Bash(browse offline:*)",
 "Bash(browse status:*)", "Bash(browse stop:*)", "Bash(browse restart:*)",
 "Bash(browse cookie:*)", "Bash(browse header:*)",
@@ -421,6 +422,15 @@ browse video stop              Stop recording and save video files
 browse video status            Check if recording is active
 ```
 
+### Command recording & export
+```
+browse record start                    Start recording commands
+browse record stop                     Stop recording, keep steps for export
+browse record status                   Recording state and step count
+browse record export browse [path]     Export as chain-compatible JSON (replay with browse chain)
+browse record export replay [path]    Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+```
+
 ### Server management
 ```
 browse status                  Server health, uptime, session count
@@ -484,6 +494,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Auto-login | `auth save gh https://github.com/login user pass` → `auth login gh` |
 | Record network | `har start` → browse around → `har stop ./out.har` |
 | Record video | `video start ./vids` → browse around → `video stop` |
+| Export automation script | `record start` → browse around → `record export replay ./recording.json` |
 | Parallel agents | `--session agent-a <cmd>` / `--session agent-b <cmd>` |
 | Multi-step flow | `echo '[...]' \| browse chain` |
 | Secure browsing | `--allowed-domains example.com goto https://example.com` |

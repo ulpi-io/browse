@@ -218,7 +218,8 @@ export async function handleMetaCommand(
     case 'screenshot': {
       const page = bm.getPage();
       const annotate = args.includes('--annotate');
-      const filteredArgs = args.filter(a => a !== '--annotate');
+      const isFullPage = args.includes('--full');
+      const filteredArgs = args.filter(a => a !== '--annotate' && a !== '--full');
       const screenshotPath = filteredArgs[0] || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
 
       if (annotate) {
@@ -278,7 +279,7 @@ export async function handleMetaCommand(
             document.body.appendChild(container);
           }, badges);
 
-          await page.screenshot({ path: screenshotPath, fullPage: true });
+          await page.screenshot({ path: screenshotPath, fullPage: isFullPage });
         } finally {
           await page.evaluate(() => {
             document.getElementById('__browse_annotate__')?.remove();
@@ -288,7 +289,7 @@ export async function handleMetaCommand(
         return `Screenshot saved: ${screenshotPath}\n\nLegend:\n${legend.join('\n')}`;
       }
 
-      await page.screenshot({ path: screenshotPath, fullPage: true });
+      await page.screenshot({ path: screenshotPath, fullPage: isFullPage });
       return `Screenshot saved: ${screenshotPath}`;
     }
 
@@ -481,14 +482,16 @@ export async function handleMetaCommand(
 
     // ─── Screenshot Diff ──────────────────────────────
     case 'screenshot-diff': {
-      const baseline = args[0];
-      if (!baseline) throw new Error('Usage: browse screenshot-diff <baseline> [current] [--threshold 0.1]');
+      const isFullPageDiff = args.includes('--full');
+      const diffArgs = args.filter(a => a !== '--full');
+      const baseline = diffArgs[0];
+      if (!baseline) throw new Error('Usage: browse screenshot-diff <baseline> [current] [--threshold 0.1] [--full]');
       if (!fs.existsSync(baseline)) throw new Error(`Baseline file not found: ${baseline}`);
 
       let thresholdPct = 0.1;
-      const threshIdx = args.indexOf('--threshold');
-      if (threshIdx !== -1 && args[threshIdx + 1]) {
-        thresholdPct = parseFloat(args[threshIdx + 1]);
+      const threshIdx = diffArgs.indexOf('--threshold');
+      if (threshIdx !== -1 && diffArgs[threshIdx + 1]) {
+        thresholdPct = parseFloat(diffArgs[threshIdx + 1]);
       }
 
       const baselineBuffer = fs.readFileSync(baseline);
@@ -496,16 +499,16 @@ export async function handleMetaCommand(
       // Find optional current image path: any non-flag arg after baseline
       let currentBuffer: Buffer;
       let currentPath: string | undefined;
-      for (let i = 1; i < args.length; i++) {
-        if (args[i] === '--threshold') { i++; continue; }
-        if (!args[i].startsWith('--')) { currentPath = args[i]; break; }
+      for (let i = 1; i < diffArgs.length; i++) {
+        if (diffArgs[i] === '--threshold') { i++; continue; }
+        if (!diffArgs[i].startsWith('--')) { currentPath = diffArgs[i]; break; }
       }
       if (currentPath) {
         if (!fs.existsSync(currentPath)) throw new Error(`Current screenshot not found: ${currentPath}`);
         currentBuffer = fs.readFileSync(currentPath);
       } else {
         const page = bm.getPage();
-        currentBuffer = await page.screenshot({ fullPage: true }) as Buffer;
+        currentBuffer = await page.screenshot({ fullPage: isFullPageDiff }) as Buffer;
       }
 
       const { compareScreenshots } = await import('../png-compare');
@@ -737,6 +740,73 @@ export async function handleMetaCommand(
         if (err.message.includes('BROWSE_DEBUG_PORT')) throw err;
         throw new Error(`Cannot reach Chrome debug port at ${debugPort}: ${err.message}`);
       }
+    }
+
+    // ─── Record & Export ─────────────────────────────────
+    case 'record': {
+      const subcommand = args[0];
+      if (!subcommand) throw new Error('Usage: browse record start | stop | status | export browse|replay [path]');
+
+      if (subcommand === 'start') {
+        if (!currentSession) throw new Error('Recording requires a session context');
+        if (currentSession.recording) throw new Error('Recording already active. Run "browse record stop" first.');
+        currentSession.recording = [];
+        return 'Recording started';
+      }
+
+      if (subcommand === 'stop') {
+        if (!currentSession) throw new Error('Recording requires a session context');
+        if (!currentSession.recording) throw new Error('No active recording. Run "browse record start" first.');
+        const count = currentSession.recording.length;
+        // Store last recording for export after stop
+        (currentSession as any)._lastRecording = currentSession.recording;
+        currentSession.recording = null;
+        return `Recording stopped (${count} steps captured)`;
+      }
+
+      if (subcommand === 'status') {
+        if (!currentSession) return 'No session context';
+        if (currentSession.recording) {
+          return `Recording active — ${currentSession.recording.length} steps captured`;
+        }
+        const last = (currentSession as any)._lastRecording;
+        if (last) return `Recording stopped — ${last.length} steps available for export`;
+        return 'No active recording';
+      }
+
+      if (subcommand === 'export') {
+        if (!currentSession) throw new Error('Recording requires a session context');
+        const format = args[1];
+        if (!format) throw new Error('Usage: browse record export browse|replay [path]');
+
+        // Use active recording or last stopped recording
+        const steps = currentSession.recording || (currentSession as any)._lastRecording;
+        if (!steps || steps.length === 0) {
+          throw new Error('No recording to export. Run "browse record start" first, execute commands, then export.');
+        }
+
+        const { exportBrowse, exportReplay } = await import('../record-export');
+
+        let output: string;
+        if (format === 'browse') {
+          output = exportBrowse(steps);
+        } else if (format === 'replay') {
+          output = exportReplay(steps);
+        } else {
+          throw new Error(`Unknown format: ${format}. Use "browse" (chain JSON) or "replay" (Playwright/Puppeteer).`);
+        }
+
+        const filePath = args[2];
+        if (filePath) {
+          fs.writeFileSync(filePath, output);
+          return `Exported ${steps.length} steps as ${format}: ${filePath}`;
+        }
+
+        // No path — return the script to stdout
+        return output;
+      }
+
+      throw new Error('Usage: browse record start | stop | status | export browse|replay [path]');
     }
 
     default:

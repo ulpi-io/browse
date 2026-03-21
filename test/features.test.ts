@@ -1191,3 +1191,193 @@ describe('Video Recording', () => {
     expect(result!.paths.some(p => /tab-\d+\.webm$/.test(p))).toBe(true);
   }, 30000);
 });
+
+// ─── Runtime registry ────────────────────────────────────────────
+
+import { getRuntime, AVAILABLE_RUNTIMES, findLightpanda } from '../src/runtime';
+
+describe('Runtime registry', () => {
+  test('getRuntime() defaults to playwright', async () => {
+    const runtime = await getRuntime();
+    expect(runtime.name).toBe('playwright');
+    expect(runtime.chromium).toBeTruthy();
+  });
+
+  test('getRuntime("playwright") returns playwright', async () => {
+    const runtime = await getRuntime('playwright');
+    expect(runtime.name).toBe('playwright');
+    expect(runtime.chromium).toBeTruthy();
+  });
+
+  test('getRuntime("invalid") throws with available runtimes', async () => {
+    await expect(getRuntime('invalid')).rejects.toThrow('Unknown runtime: invalid');
+  });
+
+  test('AVAILABLE_RUNTIMES lists all runtimes', () => {
+    expect(AVAILABLE_RUNTIMES).toContain('playwright');
+    expect(AVAILABLE_RUNTIMES).toContain('rebrowser');
+    expect(AVAILABLE_RUNTIMES).toContain('lightpanda');
+  });
+
+  test('findLightpanda returns null or valid path', () => {
+    const result = findLightpanda();
+    // Either null (not installed) or a string path
+    if (result !== null) {
+      expect(typeof result).toBe('string');
+    }
+  });
+
+  test('getRuntime("rebrowser") throws install instructions when not installed', async () => {
+    try {
+      await getRuntime('rebrowser');
+      // If it succeeds, rebrowser-playwright is installed -- just verify the runtime
+    } catch (e: any) {
+      expect(e.message).toContain('rebrowser-playwright not installed');
+    }
+  });
+});
+
+// ─── Record & Export ─────────────────────────────────────────────
+
+import { SessionBuffers } from '../src/buffers';
+import { exportBrowse, exportReplay } from '../src/record-export';
+import type { RecordedStep } from '../src/record-export';
+import type { Session } from '../src/session-manager';
+
+describe('Record & Export', () => {
+  const shutdown = async () => {};
+
+  function makeSession(): Session {
+    return {
+      id: 'test-record',
+      manager: bm,
+      buffers: new SessionBuffers(),
+      domainFilter: null,
+      recording: null,
+      outputDir: '/tmp',
+      lastActivity: Date.now(),
+      createdAt: Date.now(),
+    };
+  }
+
+  // ─── record start/stop/status via handleMetaCommand ───────────
+
+  test('record start sets recording active', async () => {
+    const session = makeSession();
+    const result = await handleMetaCommand('record', ['start'], bm, shutdown, undefined, session);
+    expect(result).toContain('Recording started');
+
+    const status = await handleMetaCommand('record', ['status'], bm, shutdown, undefined, session);
+    expect(status).toContain('Recording active');
+    // Cleanup
+    session.recording = null;
+  });
+
+  test('record stop returns step count', async () => {
+    const session = makeSession();
+    await handleMetaCommand('record', ['start'], bm, shutdown, undefined, session);
+
+    // Simulate steps that server.ts would push during command execution
+    session.recording!.push(
+      { command: 'goto', args: ['https://example.com'], timestamp: Date.now() },
+      { command: 'click', args: ['.btn'], timestamp: Date.now() + 1 },
+      { command: 'fill', args: ['#email', 'user@test.com'], timestamp: Date.now() + 2 },
+    );
+
+    const result = await handleMetaCommand('record', ['stop'], bm, shutdown, undefined, session);
+    expect(result).toContain('3 steps');
+  });
+
+  test('record start while recording throws', async () => {
+    const session = makeSession();
+    await handleMetaCommand('record', ['start'], bm, shutdown, undefined, session);
+
+    try {
+      await handleMetaCommand('record', ['start'], bm, shutdown, undefined, session);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('already active');
+    }
+    // Cleanup
+    session.recording = null;
+  });
+
+  test('record export with no recording throws', async () => {
+    const session = makeSession();
+    try {
+      await handleMetaCommand('record', ['export', 'browse'], bm, shutdown, undefined, session);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('No recording to export');
+    }
+  });
+
+  test('record status when inactive', async () => {
+    const session = makeSession();
+    const result = await handleMetaCommand('record', ['status'], bm, shutdown, undefined, session);
+    expect(result).toContain('No active recording');
+  });
+
+  // ─── exportBrowse ──────────────────────────────────────────────
+
+  test('exportBrowse produces chain-compatible output', () => {
+    const steps: RecordedStep[] = [
+      { command: 'goto', args: ['https://example.com'], timestamp: 1 },
+      { command: 'click', args: ['.btn'], timestamp: 2 },
+    ];
+    const output = exportBrowse(steps);
+    const parsed = JSON.parse(output);
+    expect(parsed).toEqual([
+      ['goto', 'https://example.com'],
+      ['click', '.btn'],
+    ]);
+  });
+
+  // ─── exportReplay ─────────────────────────────────────────────
+
+  test('exportReplay produces Chrome DevTools Recorder format', () => {
+    const steps: RecordedStep[] = [
+      { command: 'goto', args: ['https://example.com'], timestamp: 1 },
+      { command: 'click', args: ['.submit'], timestamp: 2 },
+      { command: 'fill', args: ['#email', 'user@test.com'], timestamp: 3 },
+    ];
+    const output = exportReplay(steps);
+    const parsed = JSON.parse(output);
+    expect(parsed.title).toBe('browse recording');
+    expect(parsed.steps).toBeInstanceOf(Array);
+    // First step is setViewport (default)
+    expect(parsed.steps[0].type).toBe('setViewport');
+    // Navigate
+    expect(parsed.steps[1].type).toBe('navigate');
+    expect(parsed.steps[1].url).toBe('https://example.com');
+    // Click
+    expect(parsed.steps[2].type).toBe('click');
+    expect(parsed.steps[2].selectors[0][0]).toBe('.submit');
+    // Fill → change
+    expect(parsed.steps[3].type).toBe('change');
+    expect(parsed.steps[3].selectors[0][0]).toBe('#email');
+    expect(parsed.steps[3].value).toBe('user@test.com');
+  });
+
+  test('exportReplay skips unmapped commands', () => {
+    const steps: RecordedStep[] = [
+      { command: 'goto', args: ['https://example.com'], timestamp: 1 },
+      { command: 'snapshot', args: ['-i'], timestamp: 2 },
+    ];
+    const output = exportReplay(steps);
+    const parsed = JSON.parse(output);
+    // setViewport + navigate = 2 steps, snapshot is skipped
+    expect(parsed.steps.length).toBe(2);
+  });
+
+  test('exportReplay handles back/forward', () => {
+    const steps: RecordedStep[] = [
+      { command: 'back', args: [], timestamp: 1 },
+    ];
+    const output = exportReplay(steps);
+    const parsed = JSON.parse(output);
+    // setViewport + back = 2 steps
+    expect(parsed.steps[1].type).toBe('waitForExpression');
+    expect(parsed.steps[1].expression).toContain('history.back()');
+  });
+});

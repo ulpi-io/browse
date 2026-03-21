@@ -9,8 +9,9 @@
  *   Auto-shutdown when all sessions idle past BROWSE_IDLE_TIMEOUT (default 30 min)
  */
 
-import { chromium, type Browser } from 'playwright';
-import { SessionManager, type Session } from './session-manager';
+import type { Browser } from 'playwright';
+import { getRuntime, type BrowserRuntime } from './runtime';
+import { SessionManager, type Session, type RecordedStep } from './session-manager';
 import { handleReadCommand } from './commands/read';
 import { handleWriteCommand } from './commands/write';
 import { handleMetaCommand } from './commands/meta';
@@ -99,6 +100,7 @@ function flushSessionBuffers(session: Session, final: boolean) {
 // ─── Server ────────────────────────────────────────────────────
 let sessionManager: SessionManager;
 let browser: Browser;
+let activeRuntime: BrowserRuntime | undefined;
 let isShuttingDown = false;
 let isRemoteBrowser = false;
 const policyChecker = new PolicyChecker();
@@ -129,7 +131,13 @@ const META_COMMANDS = new Set([
   'url', 'snapshot', 'snapshot-diff', 'screenshot-diff',
   'sessions', 'session-close',
   'frame', 'state', 'find',
-  'auth', 'har', 'video', 'inspect',
+  'auth', 'har', 'video', 'inspect', 'record',
+]);
+
+// Commands excluded from recording — meta/diagnostic commands that don't represent user actions
+const RECORDING_SKIP = new Set([
+  'record', 'status', 'stop', 'restart', 'sessions', 'session-close',
+  'console', 'network', 'snapshot-diff', 'screenshot-diff',
 ]);
 
 // Probe if a port is free using net.createServer (not Bun.serve which fatally crashes on EADDRINUSE)
@@ -280,6 +288,11 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       });
     }
 
+    // Record step if recording is active
+    if (session.recording && !RECORDING_SKIP.has(command)) {
+      session.recording.push({ command, args, timestamp: Date.now() });
+    }
+
     // Apply content boundaries for page-content commands
     if (opts.contentBoundaries && PAGE_CONTENT_COMMANDS.has(command)) {
       const origin = session.manager.getCurrentUrl();
@@ -326,6 +339,9 @@ async function shutdown() {
     await browser.close().catch(() => {});
   }
 
+  // Clean up runtime resources (e.g. lightpanda child process)
+  await activeRuntime?.close?.().catch(() => {});
+
   // Only remove state file if it still belongs to this server instance.
   try {
     const currentState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
@@ -365,13 +381,27 @@ const sessionCleanupInterval = setInterval(async () => {
 async function start() {
   const port = await findPort();
 
+  // Resolve browser runtime (playwright, rebrowser, etc.)
+  const runtimeName = process.env.BROWSE_RUNTIME;
+  const runtime = await getRuntime(runtimeName);
+  activeRuntime = runtime;
+  console.log(`[browse] Runtime: ${runtime.name}`);
+
   // Launch or connect to browser
   const cdpUrl = process.env.BROWSE_CDP_URL;
   if (cdpUrl) {
     // Connect to remote Chrome via CDP
-    browser = await chromium.connectOverCDP(cdpUrl);
+    browser = await runtime.chromium.connectOverCDP(cdpUrl);
     isRemoteBrowser = true;
     console.log(`[browse] Connected to remote Chrome via CDP: ${cdpUrl}`);
+  } else if (runtime.browser) {
+    // Process runtime (e.g. lightpanda) -- browser already connected
+    browser = runtime.browser;
+    browser.on('disconnected', () => {
+      if (isShuttingDown) return;
+      console.error('[browse] Browser disconnected. Shutting down.');
+      shutdown();
+    });
   } else {
     // Launch local Chromium
     const launchOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
@@ -385,7 +415,7 @@ async function start() {
         launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
       }
     }
-    browser = await chromium.launch(launchOptions);
+    browser = await runtime.chromium.launch(launchOptions);
 
     // Chromium crash → clean shutdown (only for owned browser)
     browser.on('disconnected', () => {

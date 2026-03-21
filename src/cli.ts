@@ -376,7 +376,7 @@ export const SAFE_TO_RETRY = new Set([
   'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'perf', 'value', 'count',
   // Meta commands that are read-only or idempotent
-  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find',
+  'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record',
 ]);
 
 // Commands that return static data independent of page state.
@@ -619,6 +619,8 @@ Multi-step:     chain (reads JSON from stdin)
 Network:        offline [on|off] | route <pattern> block|fulfill
 Recording:      har start | har stop [path]
                 video start [dir] | video stop | video status
+                record start | record stop | record status
+                record export browse|replay [path]
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
