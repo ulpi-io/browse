@@ -20,7 +20,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 
 | Feature | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| goto/back/forward/reload | YES | YES | YES | YES |
+| goto/back/forward/reload | YES | YES | YES | PARTIAL (no forward/reload) |
 | click | YES | YES | YES | YES |
 | dblclick | YES | — | YES | YES |
 | rightclick | YES | — | — | YES |
@@ -41,12 +41,13 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | highlight | YES | — | YES | — |
 | mouse move/down/up/wheel | YES | — | YES | — |
 | tap/swipe (mobile) | YES | — | YES | — |
+| click by coordinates (x,y) | — | — | — | YES |
 
 ## Content Extraction
 
 | Feature | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| text (visible) | YES | YES | YES (`get text`) | — |
+| text (visible) | YES | YES | YES (`get text`) | YES (`get text`) |
 | html | YES | YES | YES (`get html`) | YES (`get html`) |
 | links | YES | YES | — | — |
 | forms | YES | YES | — | — |
@@ -122,7 +123,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | Screenshot | YES | YES | YES | YES |
 | Screenshot viewport (default) | YES (default) | — | YES (default) | YES (default) |
 | Screenshot full page | YES (`--full`) | YES (default) | YES (`--full`) | YES (`--full`) |
-| Screenshot element/ref | YES | YES | — | — |
+| Screenshot element/ref | YES | YES | YES | — |
 | Screenshot clip region | YES (`--clip x,y,w,h`) | YES (`--clip x,y,w,h`) | — | — |
 | PDF | YES | — | YES | — |
 | Responsive (multi-viewport) | YES | YES | — | — |
@@ -140,6 +141,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | Set user agent | YES | YES | — | — |
 | Set geolocation | YES (`set geo`) | — | YES (`set geo`) | — |
 | Set color scheme | YES (`set media`) | — | YES (`set media`) | — |
+| Reduced motion emulation | — | — | YES (`set media`) | — |
 
 ## JavaScript
 
@@ -164,7 +166,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | Storage read/write | YES | YES | YES | — |
 | Route/intercept requests | YES | — | YES (`network route`) | — |
 | Route mock response | YES | — | YES (`network route --body`) | — |
-| Offline mode | YES | — | — | — |
+| Offline mode | YES | — | YES (`set offline`) | — |
 | Set HTTP headers | YES | — | YES (`set headers`, `--headers`) | — |
 | Set cookie with options | YES (domain/secure/expires/sameSite) | — | — | YES (domain/secure/expires) |
 
@@ -182,7 +184,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | Feature | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
 | HAR recording | YES | — | YES (`network har`) | — |
-| Video recording (WebM) | YES | — | — | — |
+| Video recording (WebM) | YES | — | YES (`record`) | — |
 | Command recording | YES (`record`) | — | — | — |
 | Export to Playwright script | YES | — | — | — |
 | Export to Puppeteer script | YES | — | — | — |
@@ -285,7 +287,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 
 | Category | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| Total features (YES) | 125 | 52 | 127 | 52 |
+| Total features (YES) | 135 | 60 | 136 | 51 |
 | Blocked (Bun bug) | 2 | — | — | — |
 
 ## Top Remaining Gaps
