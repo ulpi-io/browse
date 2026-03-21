@@ -1,6 +1,13 @@
 # Changelog
 
-## v1.1.0 — Persistent Profiles
+## v1.0.3 — CJS Bundle (Performance Fix)
+
+- Switched from ESM (.mjs) to CJS (.cjs) bundle — **30x faster CLI startup**
+- ESM: ~350-550ms per command (Node ESM module resolution overhead)
+- CJS: ~100-150ms per command (back to Bun-level speed)
+- `import.meta.url` shimmed via esbuild `--define` + `--banner`
+
+## v1.0.2 — Persistent Profiles
 
 - `--profile <name>` — persistent browser profiles with full state (cookies, localStorage, IndexedDB, cache)
 - Each profile gets its own Chromium with a real user data directory
