@@ -1,7 +1,7 @@
 # Feature Comparison: browse vs gstack vs agent-browser vs browser-use
 
 > Generated: 2026-03-21
-> State: v1.0.0 — ported to Node.js, all features unblocked
+> State: v1.0.2 — persistent profiles shipped
 
 Legend: **YES** = shipped, **—** = not available
 
@@ -205,7 +205,7 @@ Legend: **YES** = shipped, **—** = not available
 | `--connect` auto-discover Chrome | YES | — | YES | YES |
 | `--cdp <port>` flag | YES | — | YES | YES (`--cdp-url`) |
 | State cleanup (`state clean`) | YES | — | YES (`state clean`) | — |
-| Persistent profile (`--profile`) | — | — | YES | YES |
+| Persistent profile (`--profile`) | YES | — | YES | YES |
 | Handoff to visible Chrome | — | YES | — | — |
 | State save/load (manual) | YES | — | YES | — |
 
@@ -287,13 +287,12 @@ Legend: **YES** = shipped, **—** = not available
 
 | Category | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| Total features (YES) | 138 | 60 | 136 | 51 |
+| Total features (YES) | 139 | 60 | 136 | 51 |
 | Blocked | 0 | — | — | — |
 
 ## Top Remaining Gaps
 
 1. **Cloud providers** — agent-browser has 4, we have 0 (L effort)
 2. **Handoff** — gstack exclusive, unlocker for CAPTCHA/MFA (M effort)
-3. **Persistent profiles (`--profile`)** — deferred, conflicts with session multiplexing. Auto-persist covers 90% of auth use case.
-4. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
-5. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
+3. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
+4. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
