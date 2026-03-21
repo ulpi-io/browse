@@ -1,6 +1,6 @@
 {
   "name": "@ulpi/browse",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "repository": {
     "type": "git",
     "url": "https://github.com/ulpi-io/browse"
@@ -14,13 +14,14 @@
     "playwright-core": "^1.58.2"
   },
   "bin": {
-    "browse": "dist/browse.cjs"
+    "browse": "bin/browse"
   },
   "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
   "engines": {
     "node": ">=18.0.0"
   },
   "files": [
+    "bin/",
     "dist/",
     "skill/",
     "LICENSE",

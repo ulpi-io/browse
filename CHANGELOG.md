@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.4 — Bun CLI Shim (Performance)
+
+- Auto-detect Bun for CLI execution — 40-60ms per command (vs 100-150ms with Node)
+- Shell shim at `bin/browse`: uses Bun if installed, falls back to Node
+- Server always spawns under Node for correct WebSocket/CDP handling
+- Invisible to users — same `browse` command, just faster
+
 ## v1.0.3 — CJS Bundle (Performance Fix)
 
 - Switched from ESM (.mjs) to CJS (.cjs) bundle — **30x faster CLI startup**

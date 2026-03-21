@@ -267,12 +267,13 @@ async function startServer(): Promise<ServerState> {
     } catch {}
 
     // Start server as detached background process.
-    // Bundled: self-spawn the same .mjs file with __BROWSE_SERVER_MODE=1
-    // Dev mode: spawn node --import tsx with server.ts
+    // Server must run under Node (not Bun) for correct WebSocket/CDP handling.
+    // CLI may run under Bun for faster startup, but server always uses node.
+    const nodeExec = process.execPath.includes('bun') ? 'node' : process.execPath;
     const selfPath = fileURLToPath(import.meta.url);
     const spawnCmd = SERVER_SCRIPT === '__self__'
-      ? [process.execPath, selfPath]
-      : [process.execPath, '--import', 'tsx', SERVER_SCRIPT];
+      ? [nodeExec, selfPath]
+      : [nodeExec, '--import', 'tsx', SERVER_SCRIPT];
     const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}) } as NodeJS.ProcessEnv;
     const proc = spawn(spawnCmd[0], spawnCmd.slice(1), {
       stdio: ['ignore', 'ignore', 'pipe'],
