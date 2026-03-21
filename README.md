@@ -531,6 +531,10 @@ browse uses **2.4x fewer tokens** than browser-use, **2.8x fewer** than agent-br
 
 Rerun: `bun run benchmark`
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for full release history.
+
 ## Acknowledgments
 
 Inspired by and originally derived from the `/browse` skill in [gstack](https://github.com/garrytan/gstack) by Garry Tan.

@@ -1,6 +1,6 @@
 ---
 name: browse
-version: 2.5.1
+version: 2.6.0
 description: |
   Fast web browsing for AI coding agents via persistent headless Chromium daemon. Navigate to any URL,
   read page content, click elements, fill forms, run JavaScript, take screenshots,
@@ -205,6 +205,15 @@ browse video start ./videos
 browse goto https://example.com
 browse click @e3
 browse video stop
+
+# Record & export (generate Playwright/Puppeteer-compatible recordings)
+browse record start
+browse goto https://example.com
+browse click "a"
+browse fill "[id=search]" "test query"
+browse record stop
+browse record export replay ./recording.json    # replay with: npx @puppeteer/replay ./recording.json
+browse record export browse ./steps.json        # replay with: cat steps.json | browse chain
 
 # Device emulation
 browse emulate iphone
