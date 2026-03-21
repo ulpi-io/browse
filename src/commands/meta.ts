@@ -252,7 +252,7 @@ export async function handleMetaCommand(
       let elementSelector: string | null = null;
       let screenshotPath: string;
       const firstArg = filteredArgs[0];
-      if (firstArg && (firstArg.startsWith('@e') || firstArg.startsWith('@c') || /^[.#\[]/.test(firstArg))) {
+      if (firstArg && (firstArg.startsWith('@e') || firstArg.startsWith('@c') || (/^[.#\[]/.test(firstArg) && !firstArg.includes('/')))) {
         if (clip) throw new Error('Cannot use --clip with element selector');
         elementSelector = firstArg;
         screenshotPath = filteredArgs[1] || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
