@@ -200,13 +200,13 @@ browse har start
 browse goto https://example.com
 browse har stop ./recording.har
 
-# Video recording
+# Video recording (watch a .webm of the session)
 browse video start ./videos
 browse goto https://example.com
 browse click @e3
 browse video stop
 
-# Record & export (generate Playwright/Puppeteer-compatible recordings)
+# Command recording (export replayable scripts)
 browse record start
 browse goto https://example.com
 browse click "a"
@@ -214,6 +214,17 @@ browse fill "[id=search]" "test query"
 browse record stop
 browse record export replay ./recording.json    # replay with: npx @puppeteer/replay ./recording.json
 browse record export browse ./steps.json        # replay with: cat steps.json | browse chain
+
+# Both together (video + replayable script)
+browse video start ./videos
+browse record start
+browse goto https://example.com
+browse snapshot -i
+browse click @e3
+browse fill "[id=email]" "user@test.com"
+browse record stop
+browse video stop
+browse record export replay ./recording.json
 
 # Device emulation
 browse emulate iphone
