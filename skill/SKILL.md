@@ -32,6 +32,7 @@ fi
 If `NEEDS_INSTALL`:
 1. Tell the user: "browse needs a one-time install via npm. OK to proceed?"
 2. If they approve: `npm install -g @ulpi/browse`
+3. Optional speed boost: if [Bun](https://bun.sh) is installed, browse auto-detects it for ~2x faster commands
 
 ### Permissions check
 

@@ -10,7 +10,7 @@ Headless browser CLI for AI coding agents. Persistent Chromium daemon via Playwr
 npm install -g @ulpi/browse
 ```
 
-Requires Node.js 18+. Chromium is installed automatically via Playwright on first `npm install`.
+Requires Node.js 18+. Chromium is installed automatically via Playwright on first `npm install`. If [Bun](https://bun.sh) is installed, browse automatically uses it for ~2x faster command execution.
 
 ### Project Installation (local dependency)
 
