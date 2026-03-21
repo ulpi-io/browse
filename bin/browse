@@ -1,5 +1,12 @@
 #!/bin/sh
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve symlinks to find the actual package directory
+SELF="$0"
+while [ -L "$SELF" ]; do
+  DIR="$(cd "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
 CLI="$SCRIPT_DIR/dist/browse.cjs"
 if command -v bun >/dev/null 2>&1; then
   exec bun "$CLI" "$@"
