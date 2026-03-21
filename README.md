@@ -371,12 +371,12 @@ Inspired by and originally derived from the `/browse` skill in [gstack](https://
 
 ## Changelog
 
-### v0.7.0 — Token Optimization
+### v0.7.5 — Token Optimization & Benchmarks
 
 - `snapshot -i` now outputs terse flat list by default (no indentation, no props, names truncated to 30 chars)
 - `-f` flag for full indented ARIA tree with props/children (the old `-i` behavior)
 - `-V` flag for viewport-only snapshot — filters to elements visible in the current viewport (BBC: 189 → 28 elements, ~85% reduction)
-- `browse version` / `--version` / `-V` — print CLI version
+- `browse version` / `--version` — print CLI version
 - 2.4-2.8x fewer tokens than browser-use and agent-browser across real-world benchmarks
 
 ### v0.4.0 — Video Recording
