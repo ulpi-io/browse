@@ -15,6 +15,15 @@
 - `browse version` / `--version` — print CLI version
 - 2.4-2.8x fewer tokens than browser-use and agent-browser across real-world benchmarks
 
+## v0.5.0–v0.7.0 — Runtime Abstraction (internal)
+
+- Browser runtime provider registry (`src/runtime.ts`) — pluggable backend support
+- `--runtime rebrowser` — stealth mode via rebrowser-playwright (bypasses bot detection)
+- `--runtime lightpanda` — experimental LightPanda browser support
+- `BROWSE_RUNTIME` env var for default runtime selection
+- `screenshot --full` — full-page screenshots (entire scrollable page)
+- Multiple internal package.json bumps during development
+
 ## v0.4.0 — Video Recording
 
 - `video start [dir]` | `video stop` | `video status` — compositor-level WebM recording
