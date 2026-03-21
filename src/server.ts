@@ -131,13 +131,13 @@ const META_COMMANDS = new Set([
   'url', 'snapshot', 'snapshot-diff', 'screenshot-diff',
   'sessions', 'session-close',
   'frame', 'state', 'find',
-  'auth', 'har', 'video', 'inspect', 'record',
+  'auth', 'har', 'video', 'inspect', 'record', 'cookie-import',
 ]);
 
 // Commands excluded from recording — meta/diagnostic commands that don't represent user actions
 const RECORDING_SKIP = new Set([
   'record', 'status', 'stop', 'restart', 'sessions', 'session-close',
-  'console', 'network', 'snapshot-diff', 'screenshot-diff',
+  'console', 'network', 'snapshot-diff', 'screenshot-diff', 'cookie-import',
 ]);
 
 // Probe if a port is free using net.createServer (not Bun.serve which fatally crashes on EADDRINUSE)
@@ -461,6 +461,25 @@ async function start() {
         const sessionId = req.headers.get('x-browse-session') || 'default';
         const allowedDomains = req.headers.get('x-browse-allowed-domains') || undefined;
         const session = await sessionManager.getOrCreate(sessionId, allowedDomains);
+
+        // Load state file (cookies) if requested via --state flag
+        const stateFilePath = req.headers.get('x-browse-state');
+        if (stateFilePath) {
+          const context = session.manager.getContext();
+          if (context) {
+            try {
+              const stateData = JSON.parse(fs.readFileSync(stateFilePath, 'utf-8'));
+              if (stateData.cookies?.length) {
+                await context.addCookies(stateData.cookies);
+              }
+            } catch (err: any) {
+              return new Response(JSON.stringify({ error: `Failed to load state file: ${err.message}` }), {
+                status: 400, headers: { 'Content-Type': 'application/json' },
+              });
+            }
+          }
+        }
+
         const opts: RequestOptions = {
           jsonMode: req.headers.get('x-browse-json') === '1',
           contentBoundaries: req.headers.get('x-browse-boundaries') === '1',

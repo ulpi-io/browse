@@ -21,6 +21,8 @@ import { formatAsHar } from '../src/har';
 import { loadConfig } from '../src/config';
 import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/png-compare';
 import { sanitizeName } from '../src/sanitize';
+import { findInstalledBrowsers, CookieImportError } from '../src/cookie-import';
+import { discoverChrome } from '../src/chrome-discover';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -1380,4 +1382,80 @@ describe('Record & Export', () => {
     expect(parsed.steps[1].type).toBe('waitForExpression');
     expect(parsed.steps[1].expression).toContain('history.back()');
   });
+});
+
+// ─── Cookie Import ───────────────────────────────────────────────
+
+describe('Cookie Import', () => {
+  test('findInstalledBrowsers returns an array', () => {
+    const browsers = findInstalledBrowsers();
+    expect(Array.isArray(browsers)).toBe(true);
+    // May be empty on CI, but should never throw
+  });
+
+  test('findInstalledBrowsers entries have correct structure', () => {
+    const browsers = findInstalledBrowsers();
+    for (const b of browsers) {
+      expect(typeof b.name).toBe('string');
+      expect(b.name.length).toBeGreaterThan(0);
+      expect(Array.isArray(b.aliases)).toBe(true);
+      expect(b.aliases.length).toBeGreaterThan(0);
+      expect(typeof b.dataDir).toBe('string');
+      expect(typeof b.keychainService).toBe('string');
+    }
+  });
+
+  test('CookieImportError has code and action fields', () => {
+    const err = new CookieImportError('test message', 'test_code', 'retry');
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(CookieImportError);
+    expect(err.message).toBe('test message');
+    expect(err.code).toBe('test_code');
+    expect(err.action).toBe('retry');
+    expect(err.name).toBe('CookieImportError');
+  });
+
+  test('CookieImportError without action field', () => {
+    const err = new CookieImportError('no action', 'some_code');
+    expect(err.code).toBe('some_code');
+    expect(err.action).toBeUndefined();
+  });
+
+  test('CookieImportError is catchable as Error', () => {
+    let caught = false;
+    try {
+      throw new CookieImportError('thrown', 'thrown_code');
+    } catch (e) {
+      if (e instanceof Error) {
+        caught = true;
+        expect(e.message).toBe('thrown');
+      }
+    }
+    expect(caught).toBe(true);
+  });
+});
+
+// ─── Chrome Discovery ────────────────────────────────────────────
+
+describe('Chrome Discovery', () => {
+  test('discoverChrome returns null or a string URL', async () => {
+    const result = await discoverChrome();
+    // In test env, there is typically no Chrome with debugging enabled
+    // Result should be null (no Chrome) or a valid ws:// URL
+    if (result !== null) {
+      expect(typeof result).toBe('string');
+      expect(result).toMatch(/^ws:\/\//);
+    } else {
+      expect(result).toBeNull();
+    }
+  }, 10_000);
+
+  test('discoverChrome does not hang', async () => {
+    // Verify the function completes within a reasonable time
+    const start = Date.now();
+    await discoverChrome();
+    const elapsed = Date.now() - start;
+    // Should complete well within 10s (timeout per probe is 2s, max ~4 probes)
+    expect(elapsed).toBeLessThan(10_000);
+  }, 10_000);
 });

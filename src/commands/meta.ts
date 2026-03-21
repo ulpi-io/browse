@@ -131,8 +131,8 @@ export async function handleMetaCommand(
     // ─── State Persistence ───────────────────────────────
     case 'state': {
       const subcommand = args[0];
-      if (!subcommand || !['save', 'load', 'list', 'show'].includes(subcommand)) {
-        throw new Error('Usage: browse state save|load|list|show [name]');
+      if (!subcommand || !['save', 'load', 'list', 'show', 'clean'].includes(subcommand)) {
+        throw new Error('Usage: browse state save|load|list|show|clean [name] [--older-than N]');
       }
       const name = sanitizeName(args[1] || 'default');
       const statesDir = `${LOCAL_DIR}/states`;
@@ -165,6 +165,21 @@ export async function handleMetaCommand(
           `Origins: ${originCount}`,
           `Storage items: ${storageItems}`,
         ].join('\n');
+      }
+
+      if (subcommand === 'clean') {
+        const olderThanIdx = args.indexOf('--older-than');
+        const maxDays = olderThanIdx !== -1 && args[olderThanIdx + 1]
+          ? parseInt(args[olderThanIdx + 1], 10)
+          : 7;
+        if (isNaN(maxDays) || maxDays < 1) {
+          throw new Error('--older-than must be a positive number of days');
+        }
+        const { cleanOldStates } = await import('../session-persist');
+        const { deleted } = cleanOldStates(LOCAL_DIR, maxDays);
+        return deleted > 0
+          ? `Deleted ${deleted} state file(s) older than ${maxDays} days`
+          : `No state files older than ${maxDays} days`;
       }
 
       if (subcommand === 'save') {
@@ -589,6 +604,70 @@ export async function handleMetaCommand(
         }
         default:
           throw new Error('Usage: browse auth save|login|list|delete [args...]');
+      }
+    }
+
+    // ─── Cookie Import ──────────────────────────────────
+    case 'cookie-import': {
+      const { findInstalledBrowsers, importCookies, CookieImportError } = await import('../cookie-import');
+
+      // --list: show installed browsers
+      if (args.includes('--list')) {
+        const browsers = findInstalledBrowsers();
+        if (browsers.length === 0) return 'No supported Chromium browsers found';
+        return 'Installed browsers:\n' + browsers.map(b => `  ${b.name}`).join('\n');
+      }
+
+      const browserName = args[0];
+      if (!browserName) {
+        throw new Error(
+          'Usage: browse cookie-import --list\n' +
+          '       browse cookie-import <browser> [--domain <d>] [--profile <p>]\n' +
+          'Supported browsers: chrome, arc, brave, edge'
+        );
+      }
+
+      // Parse --domain and --profile flags
+      const domains: string[] = [];
+      let profile: string | undefined;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--domain' && args[i + 1]) { domains.push(args[++i]); }
+        else if (args[i] === '--profile' && args[i + 1]) { profile = args[++i]; }
+      }
+
+      try {
+        // If no domains specified, import all by listing domains first then importing all
+        if (domains.length === 0) {
+          const { listDomains } = await import('../cookie-import');
+          const { domains: allDomains, browser } = listDomains(browserName, profile);
+          if (allDomains.length === 0) return `No cookies found in ${browser}`;
+          const allDomainNames = allDomains.map(d => d.domain);
+          const result = await importCookies(browserName, allDomainNames, profile);
+          const context = bm.getContext();
+          if (!context) throw new Error('No browser context');
+          if (result.cookies.length > 0) await context.addCookies(result.cookies);
+          const domainCount = Object.keys(result.domainCounts).length;
+          const failedNote = result.failed > 0 ? ` (${result.failed} failed to decrypt)` : '';
+          return `Imported ${result.count} cookies from ${browser} across ${domainCount} domains${failedNote}`;
+        }
+
+        const result = await importCookies(browserName, domains, profile);
+        const context = bm.getContext();
+        if (!context) throw new Error('No browser context');
+        if (result.cookies.length > 0) await context.addCookies(result.cookies);
+        const domainLabel = domains.length === 1 ? `for ${domains[0]} ` : '';
+        const failedNote = result.failed > 0 ? ` (${result.failed} failed to decrypt)` : '';
+        // Resolve display name from the result's domain counts keys or use arg
+        const browserDisplay = Object.keys(result.domainCounts).length > 0
+          ? browserName.charAt(0).toUpperCase() + browserName.slice(1)
+          : browserName;
+        return `Imported ${result.count} cookies ${domainLabel}from ${browserDisplay}${failedNote}`;
+      } catch (err) {
+        if (err instanceof CookieImportError) {
+          const hint = err.action === 'retry' ? ' (retry may help)' : '';
+          throw new Error(err.message + hint);
+        }
+        throw err;
       }
     }
 

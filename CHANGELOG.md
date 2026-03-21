@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.9.0 — Auth Persistence
+
+- **Session auto-persistence** — named sessions (`--session myapp`) now automatically save cookies + localStorage on close and restore on next use. No extra commands needed. The `"default"` session is unaffected.
+- **Cookie import from real browsers** — `cookie-import chrome --domain .example.com` reads and decrypts cookies from Chrome, Arc, Brave, or Edge on macOS. Import once, browse authenticated. Use `cookie-import --list` to see installed browsers. Supports `--profile` for multi-profile browsers.
+- **Encrypted state at rest** — auto-persisted session state and manual state files are encrypted with AES-256-GCM when `BROWSE_ENCRYPTION_KEY` is set (same key as auth vault).
+- **`--state <path>` flag** — load a saved state file before the first command: `browse --state auth.json goto https://app.com`
+- **`state clean`** — garbage-collect old state files: `browse state clean` (7 days default) or `browse state clean --older-than 30`
+- **`--connect` / `--cdp` flags** — discover and connect to a running Chrome instance (code ready, blocked by Bun WebSocket bug oven-sh/bun#9911 — use `cookie-import` as workaround)
+
 ## v0.8.0 — Command Recording & Export
 
 - `record start` | `record stop` | `record status` — record browse commands as you go

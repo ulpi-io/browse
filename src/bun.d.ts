@@ -14,6 +14,8 @@ declare module 'bun' {
 
   export function spawn(cmd: string[], options?: {
     stdio?: Array<'ignore' | 'pipe' | 'inherit'>;
+    stdout?: 'pipe' | 'ignore' | 'inherit';
+    stderr?: 'pipe' | 'ignore' | 'inherit';
     env?: Record<string, string | undefined>;
   }): BunSubprocess;
 
@@ -30,7 +32,23 @@ declare module 'bun' {
     pid: number;
     stderr: ReadableStream<Uint8Array> | null;
     stdout: ReadableStream<Uint8Array> | null;
+    exited: Promise<number>;
     unref(): void;
+    kill(signal?: number): void;
+  }
+}
+
+declare module 'bun:sqlite' {
+  export class Database {
+    constructor(filename: string, options?: { readonly?: boolean; create?: boolean });
+    query(sql: string): Statement;
+    close(): void;
+  }
+
+  interface Statement {
+    all(...params: any[]): any[];
+    get(...params: any[]): any;
+    run(...params: any[]): void;
   }
 }
 

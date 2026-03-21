@@ -8,11 +8,11 @@
  * Password never returned in list/get — only hasPassword: true
  */
 
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { BrowserManager } from './browser-manager';
 import { DEFAULTS } from './constants';
+import { resolveEncryptionKey, encrypt, decrypt } from './encryption';
 import { sanitizeName } from './sanitize';
 
 interface StoredCredential {
@@ -44,55 +44,7 @@ export class AuthVault {
 
   constructor(localDir: string) {
     this.authDir = path.join(localDir, 'auth');
-    this.encryptionKey = this.resolveKey(localDir);
-  }
-
-  private resolveKey(localDir: string): Buffer {
-    // 1. Env var (64-char hex = 32 bytes)
-    const envKey = process.env.BROWSE_ENCRYPTION_KEY;
-    if (envKey) {
-      if (envKey.length !== 64) {
-        throw new Error('BROWSE_ENCRYPTION_KEY must be 64 hex characters (32 bytes)');
-      }
-      return Buffer.from(envKey, 'hex');
-    }
-
-    // 2. Key file
-    const keyPath = path.join(localDir, '.encryption-key');
-    if (fs.existsSync(keyPath)) {
-      const hex = fs.readFileSync(keyPath, 'utf-8').trim();
-      return Buffer.from(hex, 'hex');
-    }
-
-    // 3. Auto-generate
-    const key = crypto.randomBytes(32);
-    fs.writeFileSync(keyPath, key.toString('hex') + '\n', { mode: 0o600 });
-    return key;
-  }
-
-  private encrypt(plaintext: string): { ciphertext: string; iv: string; authTag: string } {
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
-    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
-    return {
-      ciphertext: encrypted.toString('base64'),
-      iv: iv.toString('base64'),
-      authTag: cipher.getAuthTag().toString('base64'),
-    };
-  }
-
-  private decrypt(ciphertext: string, iv: string, authTag: string): string {
-    const decipher = crypto.createDecipheriv(
-      'aes-256-gcm',
-      this.encryptionKey,
-      Buffer.from(iv, 'base64'),
-    );
-    decipher.setAuthTag(Buffer.from(authTag, 'base64'));
-    const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(ciphertext, 'base64')),
-      decipher.final(),
-    ]);
-    return decrypted.toString('utf-8');
+    this.encryptionKey = resolveEncryptionKey(localDir);
   }
 
   save(
@@ -104,7 +56,7 @@ export class AuthVault {
   ): void {
     fs.mkdirSync(this.authDir, { recursive: true });
 
-    const { ciphertext, iv, authTag } = this.encrypt(password);
+    const { ciphertext, iv, authTag } = encrypt(password, this.encryptionKey);
     const now = new Date().toISOString();
 
     const credential: StoredCredential = {
@@ -136,7 +88,7 @@ export class AuthVault {
 
   async login(name: string, bm: BrowserManager): Promise<string> {
     const cred = this.load(name);
-    const password = this.decrypt(cred.data, cred.iv, cred.authTag);
+    const password = decrypt(cred.data, cred.iv, cred.authTag, this.encryptionKey);
     const page = bm.getPage();
 
     // Navigate to login URL
