@@ -446,27 +446,80 @@ export async function handleSnapshot(
     output.push(outputLine);
   }
 
-  // Viewport filter: remove elements below the visible viewport
+  // Viewport filter: remove elements outside the visible viewport
+  // Uses a single page.evaluate() for speed — checking 189 locators individually is slow
   if (opts.viewport) {
     const vp = page.viewportSize();
     if (vp) {
-      const toRemove = new Set<string>();
-      await Promise.all(
-        Array.from(refMap.entries()).map(async ([ref, loc]) => {
-          try {
-            const box = await loc.boundingBox({ timeout: 500 });
-            if (!box || box.y >= vp.height || box.y + box.height <= 0) {
-              toRemove.add(ref);
+      // Build a list of {ref, role, name} to check in the DOM
+      const checks = Array.from(refMap.keys()).map(ref => {
+        const line = output.find(l => l.includes(`@${ref} `));
+        const roleMatch = line?.match(/\[(\w+)\]/);
+        const nameMatch = line?.match(/"([^"]*)"/);
+        return { ref, role: roleMatch?.[1] || '', name: nameMatch?.[1] || '' };
+      });
+
+      const visibleRefs = await evalCtx.evaluate(
+        ({ checks, vpHeight }) => {
+          const ROLE_TO_SELECTOR: Record<string, string> = {
+            link: 'a,[role="link"]',
+            button: 'button,[role="button"],input[type="button"],input[type="submit"]',
+            textbox: 'input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="hidden"]),textarea,[role="textbox"]',
+            checkbox: 'input[type="checkbox"],[role="checkbox"]',
+            radio: 'input[type="radio"],[role="radio"]',
+            combobox: 'select,[role="combobox"]',
+            searchbox: 'input[type="search"],[role="searchbox"]',
+            tab: '[role="tab"]',
+            switch: '[role="switch"]',
+            slider: 'input[type="range"],[role="slider"]',
+            menuitem: '[role="menuitem"]',
+            option: 'option,[role="option"]',
+          };
+
+          const visible = new Set<string>();
+          // Track which elements we've already matched per role+name
+          const roleCounts = new Map<string, number>();
+
+          for (const { ref, role, name } of checks) {
+            const selector = ROLE_TO_SELECTOR[role] || `[role="${role}"]`;
+            const all = document.querySelectorAll(selector);
+            const key = `${role}:${name}`;
+            const skip = roleCounts.get(key) || 0;
+
+            let matched = 0;
+            for (let i = 0; i < all.length; i++) {
+              const el = all[i] as HTMLElement;
+              // Match by accessible name (textContent or aria-label)
+              const accName = (el.getAttribute('aria-label') || el.textContent || '').trim();
+              // For terse mode, name may be truncated — check startsWith
+              const nameMatches = !name || accName === name ||
+                (name.endsWith('...') && accName.startsWith(name.slice(0, -3)));
+              if (!nameMatches) continue;
+
+              if (matched < skip) { matched++; continue; }
+
+              const rect = el.getBoundingClientRect();
+              if (rect.y + rect.height > 0 && rect.y < vpHeight) {
+                visible.add(ref);
+              }
+              matched++;
+              break;
             }
-          } catch {
-            toRemove.add(ref);
+            roleCounts.set(key, skip + 1);
           }
-        })
+          return [...visible];
+        },
+        { checks, vpHeight: vp.height }
       );
+
+      const visibleSet = new Set(visibleRefs);
+      const toRemove = new Set<string>();
+      for (const ref of refMap.keys()) {
+        if (!visibleSet.has(ref)) toRemove.add(ref);
+      }
       for (const ref of toRemove) {
         refMap.delete(ref);
       }
-      // Remove output lines for filtered refs
       for (let i = output.length - 1; i >= 0; i--) {
         const match = output[i].match(/@(e\d+)/);
         if (match && toRemove.has(match[1])) {
