@@ -10,7 +10,7 @@ Headless browser CLI for AI coding agents. Persistent Chromium daemon via Playwr
 npm install -g @ulpi/browse
 ```
 
-Requires [Bun](https://bun.sh) runtime. Chromium is installed automatically via Playwright on first `npm install`.
+Requires Node.js 18+. Chromium is installed automatically via Playwright on first `npm install`.
 
 ### Project Installation (local dependency)
 
@@ -25,9 +25,9 @@ Then use via `package.json` scripts or by invoking `browse` directly.
 ```bash
 git clone https://github.com/ulpi-io/browse
 cd browse
-bun install
-bun run src/cli.ts goto https://example.com   # Dev mode
-bun run build                                  # Build standalone binary
+npm install
+npx tsx src/cli.ts goto https://example.com   # Dev mode
+npm run build                                  # Build bundle
 ```
 
 ## Quick Start
@@ -330,7 +330,7 @@ echo '[["goto","https://example.com"],["snapshot","-i"],["text"]]' | browse chai
 ```bash
 browse status                  # Server health report
 browse instances               # List all running browse servers
-browse doctor                  # System check (Bun, Playwright, Chromium)
+browse doctor                  # System check (Node, Playwright, Chromium)
 browse upgrade                 # Self-update via npm
 browse stop                    # Stop server
 browse restart                 # Restart server
@@ -579,7 +579,7 @@ browse uses **2.4x fewer tokens** than browser-use, **2.8x fewer** than agent-br
 | 10-action session | ~145,780 | **~11,388** |
 | Context consumed (200K) | **73%** | **6%** |
 
-Rerun: `bun run benchmark`
+Rerun: `npm run benchmark`
 
 ## Changelog
 

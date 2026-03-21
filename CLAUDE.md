@@ -18,11 +18,11 @@ Fast headless browser CLI for AI coding agents. Persistent Chromium daemon via P
 
 ## Tech Stack
 
-- **Runtime:** Bun (>=1.0)
+- **Runtime:** Node.js (>=18.0)
 - **Browser:** Playwright + Chromium (headless)
 - **Language:** TypeScript (ESNext, strict, bundler resolution)
 - **Tests:** `bun:test` (integration tests against real browser)
-- **Build:** `bun run build` (uses `--external electron --external chromium-bidi`)
+- **Build:** `npm run build` (esbuild bundle with `--external` flags)
 
 ## Project Structure
 
@@ -60,16 +60,16 @@ test/fixtures/             HTML test fixtures
 ## Key Commands
 
 ```bash
-bun test                                              # Run tests
-bun run src/cli.ts <command> [args]                   # Dev mode
-bun run src/cli.ts --session <id> <command> [args]    # Dev mode with session
-bun run build                                         # Build binary (uses --external flags)
+npm test                                              # Run tests (vitest)
+npx tsx src/cli.ts <command> [args]                   # Dev mode
+npx tsx src/cli.ts --session <id> <command> [args]    # Dev mode with session
+npm run build                                         # Build bundle (esbuild)
 ```
 
 ## Architecture Summary
 
 ```
-CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManager(s) → Chromium
+CLI [--session <id>] → Server (node:http) → SessionManager → BrowserManager(s) → Chromium
 ```
 
 - Server auto-starts on first command, shuts down when all sessions idle (30 min)
@@ -92,8 +92,8 @@ CLI [--session <id>] → Server (Bun.serve) → SessionManager → BrowserManage
 - **No shortcuts.** When you find a bug, stop and fix it. Don't patch around it, don't defer it.
 - **No fake reviews.** Find real bugs or say it's clean. Never list non-issues as findings.
 - **Automagic for customers.** The tool must self-heal. Zombie servers, port conflicts, stale state — all handled automatically. If you need `pkill` or `rm` before testing, that's a bug.
-- **Build command:** Always `bun run build` (uses `--external electron --external chromium-bidi`). These are playwright optional deps we never use.
-- **Compiled binary:** Self-spawns in server mode via `__BROWSE_SERVER_MODE=1` env var. In dev mode, spawns `bun run server.ts`.
+- **Build command:** Always `npm run build` (esbuild with `--external` flags for playwright optional deps).
+- **Bundle:** Self-spawns in server mode via `__BROWSE_SERVER_MODE=1` env var. In dev mode, spawns `node --import tsx server.ts`.
 
 ## Node.js Gotchas
 
