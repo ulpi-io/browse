@@ -284,7 +284,7 @@ browse screenshot-diff baseline.png current.png
 browse --headed goto https://example.com
 
 # Stealth mode (bypasses bot detection)
-# Requires: bun add rebrowser-playwright && npx rebrowser-playwright install chromium
+# Requires: npm install rebrowser-playwright && npx rebrowser-playwright install chromium
 browse --runtime rebrowser goto https://example.com
 
 # State list / show
@@ -530,7 +530,7 @@ browse record export replay [path]    Export as Chrome DevTools Recorder (Playwr
 browse status                  Server health, uptime, session count
 browse instances               List all running browse servers (instance, PID, port, status)
 browse version                 Print CLI version
-browse doctor                  System check (Bun, Playwright, Chromium)
+browse doctor                  System check (Node, Playwright, Chromium)
 browse upgrade                 Self-update via npm
 browse stop                    Shutdown server
 browse restart                 Kill + restart server
