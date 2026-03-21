@@ -111,6 +111,7 @@ const READ_COMMANDS = new Set([
   'js', 'eval', 'css', 'attrs', 'element-state', 'dialog',
   'console', 'network', 'cookies', 'storage', 'perf', 'devices',
   'value', 'count', 'clipboard',
+  'box', 'errors',
 ]);
 
 const WRITE_COMMANDS = new Set([
@@ -121,6 +122,8 @@ const WRITE_COMMANDS = new Set([
   'upload', 'dialog-accept', 'dialog-dismiss', 'emulate',
   'drag', 'keydown', 'keyup',
   'highlight', 'download', 'route', 'offline',
+  'rightclick', 'tap', 'swipe', 'mouse', 'keyboard',
+  'scrollinto', 'scrollintoview', 'set',
 ]);
 
 const META_COMMANDS = new Set([
@@ -132,6 +135,7 @@ const META_COMMANDS = new Set([
   'sessions', 'session-close',
   'frame', 'state', 'find',
   'auth', 'har', 'video', 'inspect', 'record', 'cookie-import',
+  'doctor', 'upgrade',
 ]);
 
 // Commands excluded from recording — meta/diagnostic commands that don't represent user actions
@@ -181,6 +185,7 @@ const BOUNDARY_NONCE = crypto.randomUUID();
 interface RequestOptions {
   jsonMode: boolean;
   contentBoundaries: boolean;
+  maxOutput: number;
 }
 
 /**
@@ -291,6 +296,11 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
     // Record step if recording is active
     if (session.recording && !RECORDING_SKIP.has(command)) {
       session.recording.push({ command, args, timestamp: Date.now() });
+    }
+
+    // Apply max-output truncation
+    if (opts.maxOutput > 0 && result.length > opts.maxOutput) {
+      result = result.slice(0, opts.maxOutput) + `\n... (truncated at ${opts.maxOutput} chars)`;
     }
 
     // Apply content boundaries for page-content commands
@@ -483,6 +493,7 @@ async function start() {
         const opts: RequestOptions = {
           jsonMode: req.headers.get('x-browse-json') === '1',
           contentBoundaries: req.headers.get('x-browse-boundaries') === '1',
+          maxOutput: parseInt(req.headers.get('x-browse-max-output') || '0', 10) || 0,
         };
         return handleCommand(body, session, opts);
       }

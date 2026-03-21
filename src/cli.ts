@@ -21,6 +21,7 @@ const cliFlags = {
   allowedDomains: '' as string,
   headed: false,
   stateFile: '' as string,
+  maxOutput: 0,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -381,6 +382,7 @@ export const SAFE_TO_RETRY = new Set([
   'console', 'network', 'cookies', 'perf', 'value', 'count',
   // Meta commands that are read-only or idempotent
   'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record', 'cookie-import',
+  'box', 'errors', 'doctor', 'upgrade',
 ]);
 
 // Commands that return static data independent of page state.
@@ -409,6 +411,9 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   if (cliFlags.stateFile && !stateFileApplied) {
     headers['X-Browse-State'] = cliFlags.stateFile;
     stateFileApplied = true;
+  }
+  if (cliFlags.maxOutput > 0) {
+    headers['X-Browse-Max-Output'] = String(cliFlags.maxOutput);
   }
 
   try {
@@ -629,12 +634,27 @@ export async function main() {
     process.exit(1);
   }
 
+  // Extract --max-output <n> flag (only before command)
+  let maxOutput = 0;
+  const maxOutputIdx = args.indexOf('--max-output');
+  if (maxOutputIdx !== -1 && maxOutputIdx < findCommandIndex(args)) {
+    const val = args[maxOutputIdx + 1];
+    if (!val || val.startsWith('-')) {
+      console.error('Usage: browse --max-output <chars> <command> [args...]');
+      process.exit(1);
+    }
+    maxOutput = parseInt(val, 10);
+    args.splice(maxOutputIdx, 2);
+  }
+  maxOutput = maxOutput || parseInt(process.env.BROWSE_MAX_OUTPUT || '0', 10) || 0;
+
   // Set global flags for sendCommand()
   cliFlags.json = jsonMode;
   cliFlags.contentBoundaries = contentBoundaries;
   cliFlags.allowedDomains = allowedDomains || '';
   cliFlags.headed = headed;
   cliFlags.stateFile = stateFile;
+  cliFlags.maxOutput = maxOutput;
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') {
@@ -661,23 +681,36 @@ Usage: browse [options] <command> [args...]
 
 Navigation:     goto <url> | back | forward | reload | url
 Content:        text | html [sel] | links | forms | accessibility
-Interaction:    click <sel> | fill <sel> <val> | select <sel> <val>
-                hover <sel> | dblclick <sel> | focus <sel>
+Interaction:    click <sel> | rightclick <sel> | dblclick <sel>
+                fill <sel> <val> | select <sel> <val>
+                hover <sel> | focus <sel> | tap <sel>
                 check <sel> | uncheck <sel> | drag <src> <tgt>
                 type <text> | press <key> | keydown <key> | keyup <key>
-                scroll [sel|up|down] | wait <sel|--url|--network-idle>
+                keyboard inserttext <text>
+                scroll [sel|up|down] | scrollinto <sel>
+                swipe <up|down|left|right> [px]
+                wait <sel|ms|--url|--text|--fn|--load|--network-idle>
                 viewport <WxH> | highlight <sel> | download <sel> [path]
+Mouse:          mouse move <x> <y> | mouse down [btn] | mouse up [btn]
+                mouse wheel <dy> [dx]
+Settings:       set geo <lat> <lng> | set media <dark|light|no-preference>
 Device:         emulate <device> | emulate reset | devices [filter]
 Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
-                element-state <sel> | console [--clear] | network [--clear]
+                element-state <sel> | box <sel>
+                console [--clear] | errors [--clear] | network [--clear]
                 cookies | storage [set <k> <v>] | perf
                 value <sel> | count <sel> | clipboard [write <text>]
-Visual:         screenshot [path] | pdf [path] | responsive [prefix]
+Visual:         screenshot [sel|@ref] [path] [--full] [--clip x,y,w,h]
+                screenshot --annotate | pdf [path] | responsive [prefix]
 Snapshot:       snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]
-Find:           find role|text|label|placeholder|testid <query> [name]
+Find:           find role|text|label|placeholder|testid|alt|title <query>
+                find first|last <sel> | find nth <n> <sel>
 Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
 Multi-step:     chain (reads JSON from stdin)
+Cookies:        cookie <n>=<v> | cookie set <n> <v> [--domain --secure]
+                cookie clear | cookie export <file> | cookie import <file>
 Network:        offline [on|off] | route <pattern> block|fulfill
+                header <n>:<v> | useragent <str>
 Recording:      har start | har stop [path]
                 video start [dir] | video stop | video status
                 record start | record stop | record status
@@ -690,8 +723,7 @@ Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]
 State:          state save|load|list|show [name]
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
-Server:         status | instances | cookie <n>=<v> | header <n>:<v>
-                useragent <str> | stop | restart
+Server:         status | instances | stop | restart | doctor | upgrade
 Setup:          install-skill [path]
 
 Options:
@@ -700,6 +732,7 @@ Options:
   --content-boundaries     Wrap page content in nonce-delimited markers
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
   --headed                 Run browser in headed (visible) mode
+  --max-output <n>         Truncate output to N characters
   --state <path>           Load state file (cookies/storage) before first command
   --connect                Auto-discover and connect to running Chrome
   --cdp <port>             Connect to Chrome on specific debugging port

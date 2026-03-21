@@ -259,8 +259,9 @@ describe('SPA and buffers', () => {
 describe('Cookies and storage', () => {
   test('cookies returns array', async () => {
     await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleWriteCommand('cookie', ['clear'], bm);
     const result = await handleReadCommand('cookies', [], bm);
-    // Test server doesn't set cookies, so empty array
+    // After clearing, should be empty array
     expect(result).toBe('[]');
   });
 
@@ -573,5 +574,69 @@ describe('DOM mutation safety', () => {
     // Mutation count should still be 0
     const after = await handleReadCommand('js', ['window.__mutationCount'], bm);
     expect(parseInt(after, 10)).toBe(0);
+  });
+});
+
+// ─── Box command ────────────────────────────────────────────────
+
+describe('Box', () => {
+  test('box returns valid bounding box JSON for h1', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleReadCommand('box', ['h1'], bm);
+    const box = JSON.parse(result);
+    expect(typeof box.x).toBe('number');
+    expect(typeof box.y).toBe('number');
+    expect(typeof box.width).toBe('number');
+    expect(typeof box.height).toBe('number');
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.width).toBeGreaterThan(0);
+    expect(box.height).toBeGreaterThan(0);
+  });
+
+  test('box with no selector throws', async () => {
+    await expect(handleReadCommand('box', [], bm)).rejects.toThrow('Usage');
+  });
+
+  test('box with nonexistent selector throws', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await expect(handleReadCommand('box', ['#nonexistent'], bm)).rejects.toThrow();
+  }, 10000);
+});
+
+// ─── Errors command ─────────────────────────────────────────────
+
+describe('Errors', () => {
+  test('errors captures console.error messages', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    // Clear any pre-existing errors
+    await handleReadCommand('errors', ['--clear'], bm);
+    // Trigger a console.error
+    await handleReadCommand('js', ['console.error("test error message")'], bm);
+    // Brief wait for console event to propagate
+    await new Promise(r => setTimeout(r, 200));
+    const result = await handleReadCommand('errors', [], bm);
+    expect(result).toContain('test error message');
+  });
+
+  test('errors does not include console.log messages', async () => {
+    await handleReadCommand('errors', ['--clear'], bm);
+    await handleReadCommand('js', ['console.log("not an error")'], bm);
+    await new Promise(r => setTimeout(r, 200));
+    const result = await handleReadCommand('errors', [], bm);
+    expect(result).not.toContain('not an error');
+  });
+
+  test('errors --clear returns cleared message', async () => {
+    // Ensure there is at least one error to clear
+    await handleReadCommand('js', ['console.error("to be cleared")'], bm);
+    await new Promise(r => setTimeout(r, 200));
+    const result = await handleReadCommand('errors', ['--clear'], bm);
+    expect(result).toContain('Cleared');
+  });
+
+  test('errors returns no errors after clear', async () => {
+    const result = await handleReadCommand('errors', [], bm);
+    expect(result).toBe('(no errors)');
   });
 });

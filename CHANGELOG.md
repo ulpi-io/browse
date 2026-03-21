@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.10.0 — Feature Parity
+
+**New commands:**
+- `rightclick <sel>` — right-click element (context menu)
+- `tap <sel>` — tap element (touch-enabled contexts)
+- `swipe <up|down|left|right> [px]` — swipe gesture via touch events
+- `mouse move|down|up|wheel` — low-level mouse control
+- `keyboard inserttext <text>` — insert text without key events
+- `scrollinto <sel>` / `scrollintoview <sel>` — explicit scroll-into-view
+- `set geo <lat> <lng>` — set geolocation with permission grant
+- `set media <dark|light|no-preference>` — emulate color scheme
+- `box <sel>` — get element bounding box as JSON `{x, y, width, height}`
+- `errors [--clear]` — view/clear page errors (filtered from console buffer)
+- `doctor` — system check (Bun version, Playwright, Chromium path)
+- `upgrade` — self-update via npm
+
+**Extended commands:**
+- `wait --text "..."` — wait for text to appear in page body
+- `wait --fn "expr"` — wait for JavaScript condition
+- `wait --load <state>` — wait for load state (load, domcontentloaded, networkidle)
+- `wait <sel> --state hidden` — wait for element to disappear
+- `wait <ms>` — wait for milliseconds
+- `cookie clear` — clear all cookies
+- `cookie set <n> <v> [--domain --secure --expires --sameSite --path]` — set cookie with options
+- `cookie export <file>` — export cookies to JSON file
+- `cookie import <file>` — import cookies from JSON file
+- `find alt <text>` — find by alt text
+- `find title <text>` — find by title attribute
+- `find first|last <sel>` — find first/last matching element
+- `find nth <n> <sel>` — find nth matching element (0-indexed)
+- `screenshot <sel|@ref> [path]` — screenshot a specific element
+- `screenshot --clip x,y,w,h [path]` — screenshot a clipped region
+
+**New flag:**
+- `--max-output <n>` — truncate output to N characters (also `BROWSE_MAX_OUTPUT` env var)
+
+**Improvements:**
+- Ref staleness detection — stale refs fail in ~5ms with actionable error instead of waiting for Playwright timeout
+- 305 tests (31 new)
+
 ## v0.9.0 — Auth Persistence
 
 - **Session auto-persistence** — named sessions (`--session myapp`) now automatically save cookies + localStorage on close and restore on next use. No extra commands needed. The `"default"` session is unaffected.

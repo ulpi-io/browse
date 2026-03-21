@@ -75,7 +75,7 @@ Legend: **YES** = shipped, **BLOCKED** = code ready but blocked by external bug,
 | Snapshot diff | YES | YES (`-D` flag) | YES (`diff snapshot`) | — |
 | Annotated screenshot | YES | YES (`-a` flag) | YES (`--annotate`) | — |
 | Ref staleness detection | — | YES (count check) | — | — |
-| Numeric index refs | — | — | — | YES (`click 5`) |
+| Numeric index refs | — (uses `@e5`) | — | — | YES (`click 5`) |
 
 ## Find / Semantic Locators
 

@@ -23,5 +23,20 @@
 
   <div style="height:3000px;">Spacer for scroll testing</div>
   <div id="bottom-marker">Bottom</div>
+
+  <button id="ctx-btn" oncontextmenu="this.textContent='right-clicked'; event.preventDefault()">Right Click Me</button>
+
+  <img id="alt-img" alt="Test Logo" src="" />
+  <span id="title-span" title="Close Dialog">X</span>
+
+  <div id="mouse-tracker" onmousemove="this.dataset.x=event.clientX; this.dataset.y=event.clientY">Track</div>
+
+  <div id="error-trigger" onclick="console.error('test error')">Trigger Error</div>
+
+  <input type="text" id="inserttext-target" value="" placeholder="Insert text here" />
+
+  <div id="tap-target" ontouchstart="this.textContent='tapped'" style="width:100px;height:100px;background:#eee;">Tap Me</div>
+
+  <div id="scroll-anchor" style="margin-top:50px;">Scroll Anchor</div>
 </body>
 </html>

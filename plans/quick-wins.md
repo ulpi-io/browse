@@ -2,44 +2,59 @@
 
 > Generated: 2026-03-21
 > Branch: `feat/quick-wins`
-> Mode: EXPANSION
+> Mode: REDUCTION
 
 ## Overview
 
-Close 27 feature gaps identified in `features-comparison.md` against agent-browser, gstack, and browser-use. All are S-effort Playwright API calls — 5-15 line case blocks in existing switch statements. No new modules, no architectural changes.
+Close 30 feature gaps identified in `features-comparison.md` against agent-browser, gstack, and browser-use. All S-effort Playwright API calls. Batched by file to prevent merge conflicts during parallel agent execution.
 
 ## Scope Challenge
 
-Explored the codebase — every feature maps directly to an existing Playwright API and follows the exact same pattern as existing commands (resolveRef, case block, register in server.ts, update CLI help). The `scroll` command already does `scrollIntoViewIfNeeded` for selectors, so `scrollIntoView` is partially covered. `wait` already handles `--url` and `--network-idle`. All 27 features are truly independent S-effort additions. EXPANSION mode selected for per-feature granularity and independent agent execution.
+Explored the codebase — every feature maps directly to an existing Playwright API and follows the exact same pattern as existing commands (resolveRef, case block, register in server.ts, update CLI help). Original EXPANSION plan (27 per-feature tasks) was reviewed and REVISED: batch-by-file grouping eliminates merge conflicts since 15+ tasks all touch the same 3 files (write.ts, server.ts, cli.ts). Added ref staleness detection. Dropped numeric index refs (we use `@e5`). Merged `set geo` + `set media` into single task.
 
 ## Architecture
 
 ```
-src/commands/write.ts (TASK-001 through TASK-011)
-├── rightclick, tap, swipe              ← new interaction commands
-├── mouse move/down/up/wheel            ← new mouse subcommands
-├── keyboard inserttext                 ← new keyboard subcommand
-├── wait --text/--fn/--load/--state/ms  ← extend existing wait case
-├── cookie clear + extended cookie set  ← extend existing cookie case
-└── set geo, set media                  ← new settings subcommands
+TASK-001: src/commands/write.ts + src/server.ts WRITE_COMMANDS + meta.ts WRITE_SET
+├── rightclick, tap, swipe                  (new interaction commands)
+├── mouse move|down|up|wheel                (new mouse subcommand block)
+├── keyboard inserttext                     (new keyboard subcommand block)
+├── scrollinto / scrollintoview             (alias for scroll <sel>)
+├── set geo / set media                     (new set subcommand block)
+├── wait --text/--fn/--load/--state/ms      (extend existing wait case)
+├── cookie clear + cookie set with options  (extend existing cookie case)
+└── cookie export/import file              (new: storageState → file, file → addCookies)
 
-src/commands/read.ts (TASK-012 through TASK-014)
-├── box <sel>                           ← new read command
-├── errors [--clear]                    ← new read command (filter console buffer)
-└── find alt/title/first/last/nth       ← extend existing find case
+TASK-002: src/commands/read.ts + src/server.ts READ_COMMANDS + meta.ts READ_SET
+├── box <sel>                               (new: locator.boundingBox())
+└── errors [--clear]                        (new: filter console buffer for errors)
 
-src/commands/meta.ts (TASK-015 through TASK-017)
-├── screenshot <sel|@ref> [path]        ← extend screenshot case
-├── screenshot --clip x,y,w,h          ← extend screenshot case
-└── doctor                              ← new meta command
+TASK-003: src/commands/meta.ts
+├── find alt/title/first/last/nth           (extend existing find case)
+├── screenshot <sel|@ref> [path]            (extend screenshot case)
+├── screenshot --clip x,y,w,h              (extend screenshot case)
+├── doctor                                  (new meta command)
+└── upgrade                                 (new: npm update -g @ulpi/browse)
 
-src/server.ts (touched by every task — registration)
-src/cli.ts (touched by every task — help text, SAFE_TO_RETRY)
+TASK-004: src/browser-manager.ts
+└── Ref staleness detection                 (count check in resolveRef)
 
-test/interactions.test.ts (TASK-018 through TASK-027)
-test/fixtures/interactions.html (extended)
-test/commands.test.ts (some tests)
-test/features.test.ts (some tests)
+TASK-005: src/cli.ts + src/server.ts
+├── --max-output <n> flag + truncation      (new CLI flag + server response)
+├── SAFE_TO_RETRY updates                   (box, errors, doctor)
+└── CLI help text updates                   (all new commands)
+
+TASK-006: test/fixtures/interactions.html
+└── New HTML elements for testing           (contextmenu, alt, title attrs)
+
+TASK-007: test/interactions.test.ts
+└── Tests for: rightclick, mouse, wait extensions, find extensions
+
+TASK-008: test/commands.test.ts
+└── Tests for: box, errors, cookie clear/set
+
+TASK-009: test/features.test.ts
+└── Tests for: set geo, set media, --max-output, screenshot element/clip, ref staleness
 ```
 
 ## Existing Code Leverage
@@ -48,31 +63,56 @@ test/features.test.ts (some tests)
 |------------|---------------|--------|
 | Ref resolution for selectors | `bm.resolveRef()` in write.ts:77-82 | Reuse pattern |
 | Frame context for scrolling | `bm.getFrameContext()` in write.ts:143 | Reuse pattern |
-| Console buffer filtering | `read.ts:234-244` console case | Extend/filter for errors |
+| Console buffer filtering | `read.ts:234-244` console case | Filter for errors |
 | Cookie setting | `write.ts:205-219` cookie case | Extend with options |
 | Wait command | `write.ts:167-195` wait case | Extend with new flags |
 | Find command | `meta.ts:735-774` find case | Extend with new types |
 | Screenshot command | `meta.ts:233-308` screenshot case | Extend with selector/clip |
 | Command registration | `server.ts:109-135` command sets | Add to existing sets |
-| CLI help | `cli.ts:597-653` help text | Extend existing sections |
 | Chain command sets | `meta.ts:364-365` READ_SET/WRITE_SET | Keep in sync |
-| Test patterns | `test/interactions.test.ts` | Follow existing pattern |
+| CLI help | `cli.ts:597-653` help text | Extend |
+| Ref resolution | `browser-manager.ts:resolveRef()` | Add staleness check |
 
 ## Tasks
 
-### TASK-001: Add `rightclick` command
+### TASK-001: Add all write commands (write.ts + server.ts registration + chain sets)
 
-Add `rightclick <sel>` to `src/commands/write.ts`. Uses `locator.click({ button: 'right' })`. Follows existing `click` pattern with `resolveRef()`.
+Add the following commands to `src/commands/write.ts`, register in `WRITE_COMMANDS` in `src/server.ts`, and add to `WRITE_SET` in `src/commands/meta.ts:364`:
 
-Register `'rightclick'` in `WRITE_COMMANDS` in `src/server.ts` and `WRITE_SET` in chain command (`src/commands/meta.ts`). Add to CLI help text in `src/cli.ts`.
+**New commands:**
+- `rightclick <sel>` — `locator.click({ button: 'right' })`. Same pattern as `click`.
+- `tap <sel>` — `locator.tap()`. Requires `hasTouch` context. Catch error and suggest `emulate` if touch not enabled.
+- `swipe <dir> [px]` — Directions: `up`, `down`, `left`, `right`. Get viewport center, use `page.touchscreen` API or `page.evaluate` with synthetic TouchEvent dispatch. Default distance: one viewport height/width.
+- `mouse move|down|up|wheel` — New case with sub-switch. `move <x> <y>` → `page.mouse.move(x,y)`. `down [button]` → `page.mouse.down({button})`. `up [button]` → `page.mouse.up({button})`. `wheel <dy> [dx]` → `page.mouse.wheel(dx,dy)`.
+- `keyboard inserttext <text>` — `page.keyboard.insertText(text)`. Different from `type` (no key events).
+- `scrollinto <sel>` / `scrollintoview <sel>` — `locator.scrollIntoViewIfNeeded()`. Alias for existing `scroll <sel>` behavior but explicit command name.
+- `set geo <lat> <lng>` — `context.setGeolocation({latitude,longitude})` + `context.grantPermissions(['geolocation'])`.
+- `set media dark|light|no-preference` — `context.emulateMedia({ colorScheme })`.
+
+**Extended commands:**
+- `wait` — Add five new modes before the existing selector fallback:
+  - `wait --text "Welcome"` → `page.waitForFunction(() => document.body.innerText.includes(text), {timeout})`
+  - `wait --fn "expr"` → `page.waitForFunction(expr, {timeout})`
+  - `wait --load networkidle|load|domcontentloaded` → `page.waitForLoadState(state, {timeout})`
+  - `wait <sel> --state hidden` → `page.waitForSelector(sel, { state: 'hidden', timeout })`
+  - `wait <ms>` (numeric first arg) → `page.waitForTimeout(ms)`
+- `cookie` — Add before the existing `name=value` handler:
+  - `cookie clear` → `page.context().clearCookies()`
+  - `cookie set <name> <value> [--domain <d>] [--secure] [--expires <ts>] [--sameSite <s>]` → `page.context().addCookies([{...}])`
+  - `cookie export <file>` → `const state = await page.context().storageState(); fs.writeFileSync(file, JSON.stringify(state.cookies, null, 2))`
+  - `cookie import <file>` → `const cookies = JSON.parse(fs.readFileSync(file)); await page.context().addCookies(cookies)`
 
 **Type:** feature
-**Effort:** S
+**Effort:** L
 
 **Acceptance Criteria:**
-- [ ] `browse rightclick <sel>` right-clicks the element
-- [ ] `browse rightclick @e1` works with ref selectors
-- [ ] `browse rightclick` with no args throws usage error
+- [ ] All new commands return expected output format (e.g., "Right-clicked @e1", "Mouse moved to 100,200")
+- [ ] All extended commands (wait, cookie) preserve backward compatibility with existing argument formats
+- [ ] All new commands are registered in `WRITE_COMMANDS` (server.ts), `WRITE_SET` (meta.ts chain), and support `@ref` selectors where applicable
+- [ ] `cookie export cookies.json` writes current cookies to file, `cookie import cookies.json` loads them back
+- [ ] `tap` on non-touch context throws actionable error ("use emulate to enable touch")
+- [ ] `wait --text` with no text arg, `mouse` with no subcommand, `set` with no subcommand — all throw usage errors
+- [ ] `cookie clear` followed by `cookies` read returns empty
 
 **Agent:** general-purpose
 
@@ -80,19 +120,22 @@ Register `'rightclick'` in `WRITE_COMMANDS` in `src/server.ts` and `WRITE_SET` i
 
 ---
 
-### TASK-002: Add `tap` command
+### TASK-002: Add all read commands (read.ts + server.ts registration + chain sets)
 
-Add `tap <sel>` to `src/commands/write.ts`. Uses `locator.tap()`. Requires `hasTouch: true` on the BrowserContext (set by `emulate` device commands).
+Add to `src/commands/read.ts`, register in `READ_COMMANDS` in `src/server.ts`, and add to `READ_SET` in `src/commands/meta.ts:365`:
 
-Register in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help. Include note in error message if tap fails due to missing touch support.
+- `box <sel>` — Resolve ref or CSS selector. `locator.boundingBox()` → return JSON `{ x, y, width, height }`. Throw if element not found or not visible (null boundingBox).
+- `errors [--clear]` — Filter `(buffers || bm.getBuffers()).consoleBuffer` for entries where `level === 'error'`. Same output format as `console` command. `--clear` removes error entries from buffer. Return `(no errors)` when empty.
 
 **Type:** feature
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] `browse tap <sel>` taps the element when context has `hasTouch: true`
-- [ ] `browse tap @e1` works with ref selectors
-- [ ] Tap on non-touch context throws actionable error ("use emulate to enable touch")
+- [ ] `browse box #target` returns valid JSON with numeric x, y, width, height
+- [ ] `browse box @e1` works with ref selectors
+- [ ] `browse box` with no selector or nonexistent element throws clear error
+- [ ] `browse errors` returns only error-level entries, not log/warn/info
+- [ ] `browse errors --clear` clears error entries, subsequent `errors` returns `(no errors)`
 
 **Agent:** general-purpose
 
@@ -100,44 +143,46 @@ Register in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help. Include note in er
 
 ---
 
-### TASK-003: Add `swipe` command
+### TASK-003: Extend meta commands (meta.ts)
 
-Add `swipe <dir> [px]` to `src/commands/write.ts`. Uses `page.touchscreen` API: `touchscreen.tap(cx, cy)` isn't enough — need `mouse.move` with touch simulation or `page.evaluate` with TouchEvent dispatch. Implementation: get viewport center, then `touchscreen.tap` at start, use `page.evaluate` to dispatch `touchstart` → `touchmove` → `touchend` sequence. Directions: `up`, `down`, `left`, `right`. Default distance: one viewport height/width.
+Modify `src/commands/meta.ts` only — no server.ts changes needed (find, screenshot, doctor already registered or will be registered by TASK-005).
 
-Register in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help.
+**Extend `find` (meta.ts:735-774):**
+- `find alt <text>` → `root.getByAltText(text)`. Count + first text content.
+- `find title <text>` → `root.getByTitle(text)`. Count + first text content.
+- `find first <sel>` → `page.locator(sel).first()`. Report count + first text content.
+- `find last <sel>` → `page.locator(sel).last()`. Report count + last text content.
+- `find nth <n> <sel>` → `page.locator(sel).nth(parseInt(n))`. Report text content.
+- Update error message to include new types: `role|text|label|placeholder|testid|alt|title|first|last|nth`
 
-**Type:** feature
-**Effort:** S
+**Extend `screenshot` (meta.ts:233-308):**
+- Element/ref screenshot: detect if first arg is a selector (`@e` prefix, or starts with `.`, `#`, `[`). If selector, resolve via `bm.resolveRef()` or `page.locator()`, use `locator.screenshot({ path })`. If arg contains `/` or ends in `.png`/`.jpg`/`.webp` → treat as output path (existing behavior).
+- `--clip x,y,w,h` flag: parse comma-separated values, pass as `page.screenshot({ clip: { x, y, width, height } })`. Mutual exclusion: `--clip` + element selector → error. `--clip` + `--full` → error.
 
-**Acceptance Criteria:**
-- [ ] `browse swipe down` swipes down by one viewport height
-- [ ] `browse swipe up 500` swipes up by 500px
-- [ ] `browse swipe` with no direction throws usage error
+**Add `doctor` command:**
+- Report: Bun version (`Bun.version`), Playwright status (try import), Chromium path (try `chromium.executablePath()`), server running status.
+- Register `'doctor'` in `META_COMMANDS` in server.ts (done by TASK-005).
 
-**Agent:** general-purpose
-
-**Priority:** P2
-
----
-
-### TASK-004: Add `mouse` subcommands
-
-Add `mouse move|down|up|wheel` to `src/commands/write.ts` as a new case block with sub-switch.
-
-- `mouse move <x> <y>` → `page.mouse.move(x, y)`
-- `mouse down [button]` → `page.mouse.down({ button })` (default: 'left')
-- `mouse up [button]` → `page.mouse.up({ button })`
-- `mouse wheel <dy> [dx]` → `page.mouse.wheel(dx, dy)`
-
-Register `'mouse'` in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help.
+**Add `upgrade` command:**
+- Detect installation method: check if running from npm global (`which browse` resolves to a node_modules path) or compiled binary.
+- npm: run `npm update -g @ulpi/browse` via `Bun.spawn` or `child_process.execSync`.
+- Compiled binary: print message with download URL or suggest `npm install -g @ulpi/browse`.
+- Register `'upgrade'` in `META_COMMANDS` in server.ts (done by TASK-005).
 
 **Type:** feature
-**Effort:** S
+**Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `browse mouse move 100 200` moves cursor to (100, 200)
-- [ ] `browse mouse wheel 300` scrolls down by 300px
-- [ ] `browse mouse` with no subcommand throws usage error listing valid subcommands
+- [ ] `browse find alt "Logo"` finds elements by alt text, reports count
+- [ ] `browse find first .item` returns first match text, `find last .item` returns last
+- [ ] `browse find nth 2 .item` returns third element (0-indexed)
+- [ ] `browse screenshot @e1 shot.png` screenshots just the ref element (PNG smaller than full page)
+- [ ] `browse screenshot --clip 0,0,400,300 region.png` captures clipped region
+- [ ] `browse upgrade` attempts to update the package
+- [ ] `browse screenshot --clip ... --full` throws mutual exclusion error
+- [ ] `browse doctor` reports Bun version and Chromium path
+- [ ] Existing `find role|text|label|placeholder|testid` unchanged
+- [ ] Existing `screenshot path.png` unchanged
 
 **Agent:** general-purpose
 
@@ -145,48 +190,91 @@ Register `'mouse'` in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help.
 
 ---
 
-### TASK-005: Add `keyboard inserttext` command
+### TASK-004: Add ref staleness detection (browser-manager.ts)
 
-Add `keyboard inserttext <text>` to `src/commands/write.ts`. Uses `page.keyboard.insertText(text)`. No key events — just inserts text at current cursor position.
+Modify `resolveRef()` in `src/browser-manager.ts`. After looking up the ref in the map and getting the locator, add an async count check:
 
-Register `'keyboard'` in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help.
+```typescript
+const count = await locator.count();
+if (count === 0) {
+  throw new Error(`Ref ${ref} is stale (element no longer exists). Re-run 'snapshot' to get fresh refs.`);
+}
+```
+
+This fails fast (~5ms) instead of waiting for Playwright's action timeout (5-30 seconds) when an SPA has mutated the DOM since the last snapshot.
+
+Note: `resolveRef()` is currently synchronous (returns `{ locator }` or `{ selector }`). This change makes the ref path async. All callers already `await` the subsequent locator operations, but `resolveRef()` itself needs to become async, OR the count check can be done at the call site. Assess both approaches and pick the one with least caller disruption.
 
 **Type:** feature
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] `browse keyboard inserttext "hello"` inserts text at cursor
-- [ ] `browse keyboard` with no subcommand throws usage error
-- [ ] `browse keyboard inserttext` with no text throws usage error
+- [ ] Using a stale ref (after navigation or DOM change) throws immediately (~5ms) with message containing "stale" and "snapshot"
+- [ ] Using a valid ref still works normally with no performance regression
+- [ ] Error message is actionable: tells agent to re-run `snapshot`
 
 **Agent:** general-purpose
 
-**Priority:** P2
+**Priority:** P1
 
 ---
 
-### TASK-006: Extend `wait` with `--text`, `--fn`, `--load`, `--state hidden`, and millisecond wait
+### TASK-005: CLI flags, registration, and help text (cli.ts + server.ts)
 
-Extend the existing `wait` case in `src/commands/write.ts:167-195` with five new modes:
+Modify `src/cli.ts` and `src/server.ts`:
 
-- `wait --text "Welcome"` → `page.waitForFunction(() => document.body.innerText.includes(text))`
-- `wait --fn "window.ready === true"` → `page.waitForFunction(expr)`
-- `wait --load networkidle|load|domcontentloaded` → `page.waitForLoadState(state)`
-- `wait <sel> --state hidden` → `page.waitForSelector(sel, { state: 'hidden' })`
-- `wait <ms>` (numeric arg) → `page.waitForTimeout(ms)`
+**New CLI flag:**
+- `--max-output <n>` — Extract before command (like `--json`). Pass as `X-Browse-Max-Output` header. Support `BROWSE_MAX_OUTPUT` env var and `browse.json` config.
+- In `src/server.ts`, after computing `result` (around line 300, before content boundaries and JSON wrapping): if maxOutput is set and `result.length > maxOutput`, truncate: `result = result.slice(0, maxOutput) + '\n... (truncated at ' + maxOutput + ' chars)'`. Apply truncation to raw result only, not to JSON wrapper.
 
-Update CLI help text with new wait variants.
+**Server registration (server.ts):**
+- Add to `WRITE_COMMANDS`: `'rightclick'`, `'tap'`, `'swipe'`, `'mouse'`, `'keyboard'`, `'scrollinto'`, `'scrollintoview'`, `'set'`
+- Add to `READ_COMMANDS`: `'box'`, `'errors'`
+- Add to `META_COMMANDS`: `'doctor'`, `'upgrade'`
+
+**SAFE_TO_RETRY (cli.ts):**
+- Add: `'box'`, `'errors'`, `'doctor'`, `'upgrade'`
+
+**CLI help text (cli.ts):**
+- Add all new commands to appropriate sections
+- Add `--max-output <n>` to options section
+- Add snapshot flag note about `--max-output`
 
 **Type:** feature
+**Effort:** M
+
+**Acceptance Criteria:**
+- [ ] `browse --max-output 100 text` truncates output to 100 chars with truncation notice
+- [ ] `BROWSE_MAX_OUTPUT=500` env var works as default
+- [ ] Output shorter than limit is returned unchanged
+- [ ] All new commands appear in `browse --help` output
+- [ ] `box`, `errors`, `doctor` are in SAFE_TO_RETRY
+- [ ] All new commands are registered in the correct command set
+
+**Agent:** general-purpose
+
+**Depends on:** TASK-001, TASK-002, TASK-003
+**Priority:** P1
+
+---
+
+### TASK-006: Test fixtures
+
+Extend `test/fixtures/interactions.html` with elements needed by test tasks:
+
+- `<button id="ctx-btn" oncontextmenu="this.textContent='right-clicked'">Right Click Me</button>` — for rightclick test
+- `<img id="alt-img" alt="Test Logo" src="" />` — for find alt test
+- `<span id="title-span" title="Close Dialog">X</span>` — for find title test
+- `<div id="mouse-tracker" onmousemove="this.dataset.x=event.clientX; this.dataset.y=event.clientY">Track</div>` — for mouse move test
+- `<div id="error-trigger" onclick="console.error('test error')">Trigger Error</div>` — for errors test
+
+**Type:** chore
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] `browse wait --text "Hello"` waits for text to appear in page body
-- [ ] `browse wait --fn "document.title === 'Done'"` waits for JS condition
-- [ ] `browse wait --load domcontentloaded` waits for load state
-- [ ] `browse wait #spinner --state hidden` waits for element to disappear
-- [ ] `browse wait 2000` waits for 2 seconds
-- [ ] `browse wait --text` with no text arg throws usage error
+- [ ] All new elements render in the fixture page
+- [ ] Event handlers fire correctly (verify manually or via existing test infrastructure)
+- [ ] Existing fixture elements unchanged
 
 **Agent:** general-purpose
 
@@ -194,442 +282,95 @@ Update CLI help text with new wait variants.
 
 ---
 
-### TASK-007: Extend `cookie` with `clear` and options
+### TASK-007: Tests for write commands (test/interactions.test.ts)
 
-Extend the existing `cookie` case in `src/commands/write.ts:205-219`:
+Add tests in `test/interactions.test.ts` for all new write commands from TASK-001:
 
-- `cookie clear` → `page.context().clearCookies()`
-- `cookie set <name> <value> [--domain <d>] [--secure] [--expires <ts>] [--sameSite <s>]` → `page.context().addCookies([{ name, value, domain, secure, expires, sameSite }])`
+- `rightclick` — right-click element, verify contextmenu event fires (check text change on `#ctx-btn`)
+- `mouse move` — move to coordinates, verify via `#mouse-tracker` dataset
+- `mouse wheel` — scroll and verify `scrollY` changed
+- `mouse` invalid subcommand — throws error
+- `wait --text` — navigate to spa.html, verify text detection after delay
+- `wait --fn` — verify JS condition detection
+- `wait 100` — verify completes (timing not critical)
+- `wait <sel> --state hidden` — hide element via JS, verify wait completes
+- `tap` — verify tap on touch-enabled context (may need emulate first)
+- `set geo` — set geolocation, verify via `js` eval of `navigator.geolocation`
+- `set media dark` — verify via `js` eval of `matchMedia`
+- `cookie clear` — set cookie, clear, verify empty via `cookies` read
+- `cookie set` with `--domain` — verify cookie attributes
 
-The existing `cookie <n>=<v>` format continues to work unchanged.
-
-Update CLI help text.
-
-**Type:** feature
-**Effort:** S
+**Type:** test
+**Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `browse cookie clear` clears all cookies
-- [ ] `browse cookie set auth token123 --domain .example.com --secure` sets cookie with options
-- [ ] Existing `browse cookie name=value` still works unchanged
-- [ ] `browse cookie set` with missing name/value throws usage error
+- [ ] All new write command tests pass
+- [ ] No regressions in existing interaction tests
+- [ ] At least one failure/edge case test (invalid subcommand, missing args)
 
 **Agent:** general-purpose
 
-**Priority:** P1
-
----
-
-### TASK-008: Add `set geo` subcommand
-
-Add a `set` command with `geo` subcommand to `src/commands/write.ts`. New case `'set'` with sub-switch.
-
-- `set geo <lat> <lng>` → `context.setGeolocation({ latitude, longitude })` + `context.grantPermissions(['geolocation'])`
-
-Register `'set'` in `WRITE_COMMANDS`, `WRITE_SET` in chain, CLI help.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse set geo 37.7749 -122.4194` sets geolocation to San Francisco
-- [ ] `navigator.geolocation.getCurrentPosition` returns the set coordinates (verify via `browse js`)
-- [ ] `browse set geo` with missing args throws usage error
-
-**Agent:** general-purpose
-
-**Priority:** P1
-
----
-
-### TASK-009: Add `set media` subcommand
-
-Extend the `set` command (from TASK-008) with `media` subcommand.
-
-- `set media dark` → `context.emulateMedia({ colorScheme: 'dark' })`
-- `set media light` → `context.emulateMedia({ colorScheme: 'light' })`
-- `set media no-preference` → `context.emulateMedia({ colorScheme: 'no-preference' })`
-
-Update CLI help text.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse set media dark` sets color scheme to dark
-- [ ] `window.matchMedia('(prefers-color-scheme: dark)').matches` returns true (verify via `browse js`)
-- [ ] `browse set media` with no value throws usage error listing valid values
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-008
-**Priority:** P1
-
----
-
-### TASK-010: Add `--max-output` flag
-
-Add `--max-output <n>` flag to `src/cli.ts` (extracted like `--json`) and pass as `X-Browse-Max-Output` header. In `src/server.ts`, after computing `result` (line ~300, before content boundaries and JSON wrapping): `if (maxOutput && result.length > maxOutput) result = result.slice(0, maxOutput) + '\n... (truncated at ' + maxOutput + ' chars)'`.
-
-Also support `BROWSE_MAX_OUTPUT` env var.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse --max-output 100 text` truncates output to 100 characters with truncation notice
-- [ ] `BROWSE_MAX_OUTPUT=500` env var works as default
-- [ ] Output shorter than limit is returned unchanged
-
-**Agent:** general-purpose
-
-**Priority:** P1
-
----
-
-### TASK-011: Add `scrollinto` alias
-
-Add `scrollinto <sel>` / `scrollintoview <sel>` as an explicit command aliased to the existing scroll-into-view behavior. Currently `scroll <sel>` does scrollIntoView, but having a dedicated command name improves discoverability.
-
-Add both `'scrollinto'` and `'scrollintoview'` to `WRITE_COMMANDS` in server.ts. In `write.ts`, add case that falls through to the scroll selector path. Update CLI help.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse scrollinto #bottom-marker` scrolls element into view
-- [ ] `browse scrollintoview @e1` works with refs
-- [ ] `browse scrollinto` with no selector throws usage error
-
-**Agent:** general-purpose
-
+**Depends on:** TASK-001, TASK-006
 **Priority:** P2
 
 ---
 
-### TASK-012: Add `box` read command
+### TASK-008: Tests for read commands (test/commands.test.ts)
 
-Add `box <sel>` to `src/commands/read.ts`. Uses `locator.boundingBox()` → returns JSON `{ x, y, width, height }`.
+Add tests in `test/commands.test.ts` for TASK-002 read commands:
 
-Register `'box'` in `READ_COMMANDS` in server.ts, `READ_SET` in chain, `SAFE_TO_RETRY` in cli.ts, CLI help.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse box #highlight-target` returns JSON with x, y, width, height
-- [ ] `browse box @e1` works with ref selectors
-- [ ] `browse box` with no selector throws usage error
-- [ ] Element not found returns clear error
-
-**Agent:** general-purpose
-
-**Priority:** P1
-
----
-
-### TASK-013: Add `errors` read command
-
-Add `errors [--clear]` to `src/commands/read.ts`. Filters the console buffer for entries where `level === 'error'`. Same pattern as `console` command but filtered.
-
-Register `'errors'` in `READ_COMMANDS` in server.ts, `READ_SET` in chain, `SAFE_TO_RETRY` in cli.ts, CLI help.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse errors` returns only error-level console entries
-- [ ] `browse errors --clear` clears error entries from buffer
-- [ ] Returns `(no errors)` when console buffer has no error entries
-
-**Agent:** general-purpose
-
-**Priority:** P1
-
----
-
-### TASK-014: Extend `find` with `alt`, `title`, `first`, `last`, `nth`
-
-Extend the existing `find` case in `src/commands/meta.ts:735-774`:
-
-- `find alt <text>` → `root.getByAltText(text)`
-- `find title <text>` → `root.getByTitle(text)`
-- `find first <sel>` → `page.locator(sel).first()` — report text content
-- `find last <sel>` → `page.locator(sel).last()` — report text content
-- `find nth <n> <sel>` → `page.locator(sel).nth(n)` — report text content
-
-Update error message to include new types. Update CLI help.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse find alt "Logo"` finds elements by alt text
-- [ ] `browse find title "Close"` finds elements by title attribute
-- [ ] `browse find first .item` returns first match with text content
-- [ ] `browse find nth 2 .item` returns third match (0-indexed)
-- [ ] `browse find last .item` returns last match
-
-**Agent:** general-purpose
-
-**Priority:** P1
-
----
-
-### TASK-015: Extend `screenshot` with element/ref support
-
-Extend the screenshot case in `src/commands/meta.ts:233-308`. Detect if first arg is a selector or @ref (not a path): `@e` prefix = ref, `.`/`#`/`[` prefix = CSS selector. Use `locator.screenshot({ path })` instead of `page.screenshot()`.
-
-Auto-detect logic: if arg starts with `@e`, `.`, `#`, `[`, or contains `:` — treat as selector. Otherwise treat as output path.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse screenshot @e1 shot.png` screenshots the ref element
-- [ ] `browse screenshot "#header" header.png` screenshots element by CSS selector
-- [ ] `browse screenshot page.png` still works as output path (no regression)
-- [ ] `browse screenshot @e1` without path uses default screenshot path
-
-**Agent:** general-purpose
-
-**Priority:** P1
-
----
-
-### TASK-016: Extend `screenshot` with `--clip` region
-
-Extend the screenshot case in `src/commands/meta.ts:233-308`. Add `--clip x,y,w,h` flag. Parse comma-separated values, pass as `page.screenshot({ clip: { x, y, width, height } })`.
-
-Mutual exclusion: `--clip` + selector throws error. `--clip` + `--full` throws error.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse screenshot --clip 0,0,400,300 region.png` captures the specified region
-- [ ] `browse screenshot --clip 0,0,400,300` with no path uses default path
-- [ ] `browse screenshot --clip` with invalid format throws usage error
-- [ ] `browse screenshot --clip 0,0,400,300 --full` throws mutual exclusion error
-
-**Agent:** general-purpose
-
-**Priority:** P2
-
----
-
-### TASK-017: Add `doctor` meta command
-
-Add `doctor` to `src/commands/meta.ts`. Checks:
-1. Bun version (`Bun.version`)
-2. Playwright installed (try `import('playwright')`)
-3. Chromium binary exists (check `chromium.executablePath()`)
-4. Server health (already running → report port/pid)
-
-Returns a checklist-style report. Register in `META_COMMANDS`, CLI help. Add to `SAFE_TO_RETRY`.
-
-**Type:** feature
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] `browse doctor` reports Bun version, Playwright status, Chromium path
-- [ ] Missing Chromium shows actionable message ("run: bunx playwright install chromium")
-- [ ] Command works even when server is not yet running
-
-**Agent:** general-purpose
-
-**Priority:** P2
-
----
-
-### TASK-018: Test `rightclick` command
-
-Add test in `test/interactions.test.ts`. Extend `test/fixtures/interactions.html` with a `contextmenu` event listener that sets text.
+- `box` — verify returns JSON with numeric x, y, width, height for visible element
+- `box` with ref — snapshot first, then `box @e1`
+- `box` with nonexistent selector — verify throws
+- `errors` — trigger `console.error()` via `js`, verify `errors` returns only error entries
+- `errors` — trigger `console.log()`, verify not in `errors` output
+- `errors --clear` — verify clears error entries
 
 **Type:** test
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] Test right-clicks element and verifies contextmenu event fired
-- [ ] Test verifies ref selector works with rightclick
+- [ ] `box` returns valid JSON with numeric values
+- [ ] `errors` filters correctly (only error-level)
+- [ ] `errors --clear` clears buffer
+- [ ] No regressions in existing command tests
 
 **Agent:** general-purpose
 
-**Depends on:** TASK-001
+**Depends on:** TASK-002, TASK-006
 **Priority:** P2
 
 ---
 
-### TASK-019: Test `mouse` subcommands
+### TASK-009: Tests for meta commands and features (test/features.test.ts)
 
-Add test in `test/interactions.test.ts`. Test `mouse move`, `mouse down`, `mouse up`, `mouse wheel` using JS event listeners to verify events fire.
+Add tests in `test/features.test.ts` for TASK-003, TASK-004, and TASK-005:
+
+- `find alt` — find `#alt-img` by alt text "Test Logo"
+- `find title` — find `#title-span` by title "Close Dialog"
+- `find first .item` — returns first of 3 items
+- `find last .item` — returns last of 3 items
+- `find nth 1 .item` — returns second item (0-indexed)
+- `screenshot @e1 <path>` — snapshot first, screenshot ref element, verify PNG exists and is smaller than full page screenshot
+- `screenshot --clip 0,0,100,100 <path>` — verify produces PNG
+- `screenshot --clip ... --full` — verify throws
+- `--max-output` — get long page text, verify truncation with flag
+- Ref staleness — navigate to page, snapshot, navigate away, try to use ref, verify fast failure with "stale" message
+- `doctor` — verify returns Bun version info
 
 **Type:** test
-**Effort:** S
+**Effort:** M
 
 **Acceptance Criteria:**
-- [ ] Test mouse move fires mousemove event at correct coordinates
-- [ ] Test mouse wheel changes scroll position
-- [ ] Test invalid subcommand throws error
+- [ ] All find extension tests pass (alt, title, first, last, nth)
+- [ ] Screenshot element/clip tests produce valid PNG files
+- [ ] Ref staleness test fails fast (<1s) with actionable error
+- [ ] --max-output truncation works correctly
+- [ ] No regressions in existing feature tests
 
 **Agent:** general-purpose
 
-**Depends on:** TASK-004
-**Priority:** P2
-
----
-
-### TASK-020: Test extended `wait` variants
-
-Add test in `test/interactions.test.ts`. Test `wait --text`, `wait --fn`, `wait --load`, `wait <sel> --state hidden`, `wait <ms>`.
-
-Use SPA fixture (`test/fixtures/spa.html`) which has delayed rendering for text/fn tests.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `wait --text` detects text appearing after delay
-- [ ] Test `wait --fn` detects JS condition becoming true
-- [ ] Test `wait 100` completes after ~100ms (not before)
-- [ ] Test `wait <sel> --state hidden` detects element disappearing
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-006
-**Priority:** P2
-
----
-
-### TASK-021: Test extended `cookie` commands
-
-Add test in `test/commands.test.ts`. Test `cookie clear` and `cookie set` with options.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `cookie clear` removes all cookies (verify via `cookies` read command)
-- [ ] Test `cookie set` with `--domain` applies correct domain
-- [ ] Test existing `cookie name=value` still works
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-007
-**Priority:** P2
-
----
-
-### TASK-022: Test `set geo` and `set media`
-
-Add test in `test/features.test.ts`. Test geolocation and color scheme emulation using JS eval to verify.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `set geo` changes geolocation (verify via JS `navigator.geolocation`)
-- [ ] Test `set media dark` changes color scheme (verify via JS `matchMedia`)
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-008, TASK-009
-**Priority:** P2
-
----
-
-### TASK-023: Test `--max-output` flag
-
-Add test in `test/features.test.ts`. Test truncation behavior on long output.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test output longer than limit is truncated with notice
-- [ ] Test output shorter than limit is returned unchanged
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-010
-**Priority:** P2
-
----
-
-### TASK-024: Test `box` read command
-
-Add test in `test/commands.test.ts`. Test bounding box returns valid JSON with x, y, width, height.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `box` returns valid JSON with numeric x, y, width, height
-- [ ] Test `box` with ref selector works
-- [ ] Test `box` with nonexistent selector throws error
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-012
-**Priority:** P2
-
----
-
-### TASK-025: Test `errors` read command
-
-Add test in `test/commands.test.ts`. Use `js` command to trigger `console.error()`, then verify `errors` returns only error entries.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `errors` shows error-level messages after `console.error()` is triggered
-- [ ] Test `errors` does not show `console.log()` messages
-- [ ] Test `errors --clear` clears the error entries
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-013
-**Priority:** P2
-
----
-
-### TASK-026: Test extended `find` command
-
-Add test in `test/interactions.test.ts`. Extend `test/fixtures/interactions.html` with elements that have `alt`, `title` attributes. Test `find first/last/nth`.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `find alt` finds image by alt text
-- [ ] Test `find title` finds element by title attribute
-- [ ] Test `find first .item` returns first item
-- [ ] Test `find nth 2 .item` returns third item
-- [ ] Test `find last .item` returns last item
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-014
-**Priority:** P2
-
----
-
-### TASK-027: Test extended `screenshot` (element + clip)
-
-Add test in `test/features.test.ts`. Test element screenshot and clip screenshot produce valid PNG files.
-
-**Type:** test
-**Effort:** S
-
-**Acceptance Criteria:**
-- [ ] Test `screenshot #header shot.png` produces a PNG smaller than full page
-- [ ] Test `screenshot --clip 0,0,100,100 clip.png` produces a 100x100 PNG
-- [ ] Test `screenshot --clip` with `--full` throws error
-
-**Agent:** general-purpose
-
-**Depends on:** TASK-015, TASK-016
+**Depends on:** TASK-003, TASK-004, TASK-005, TASK-006
 **Priority:** P2
 
 ---
@@ -638,32 +379,34 @@ Add test in `test/features.test.ts`. Test element screenshot and clip screenshot
 
 | Risk | Affected Tasks | Mitigation |
 |------|---------------|------------|
-| `tap` fails on non-touch context | TASK-002 | Catch Playwright error, rewrite to actionable message suggesting `emulate` |
-| `swipe` touch events not supported in headless | TASK-003 | Use `page.evaluate` to dispatch synthetic TouchEvents as fallback |
-| `set geo` requires permission grant | TASK-008 | Call `context.grantPermissions(['geolocation'])` before `setGeolocation` |
-| Screenshot selector detection false positive (path looks like selector) | TASK-015 | Use explicit heuristic: `@e`, `.`, `#`, `[` prefixes only. Paths with `/` or `.png`/`.jpg` extensions → path |
-| `--clip` + `--annotate` interaction | TASK-016 | Allow clip + annotate (annotations are overlays, clip just crops) |
-| `doctor` runs before server starts | TASK-017 | Make it a special case in CLI that doesn't require `ensureServer()` — or check lazily |
-| Chain command sets out of sync | All | Update both `server.ts` sets AND `meta.ts` chain sets for every new command |
-| `--max-output` truncates JSON mode output | TASK-010 | Apply truncation to the `data` field only, not the JSON wrapper |
+| `tap` fails on non-touch context | TASK-001 | Catch Playwright error, rewrite to actionable message suggesting `emulate` |
+| `swipe` touch events not supported in headless | TASK-001 | Use `page.evaluate` to dispatch synthetic TouchEvents as fallback |
+| `set geo` requires permission grant | TASK-001 | Call `context.grantPermissions(['geolocation'])` before `setGeolocation` |
+| Screenshot selector detection false positive (path looks like selector) | TASK-003 | Heuristic: `@e` prefix, `.`, `#`, `[` = selector. Contains `/` or ends `.png`/`.jpg`/`.webp` = path |
+| `--clip` + `--annotate` interaction | TASK-003 | Allow clip + annotate (annotations are overlays, clip just crops) |
+| `--max-output` truncates JSON mode output | TASK-005 | Apply truncation to raw result only, before JSON wrapping |
+| `resolveRef` becomes async (staleness check) | TASK-004 | Assess caller impact — if too many callers, do count check at call site instead |
+| Chain command sets out of sync | TASK-001, TASK-002 | Explicitly update `WRITE_SET`/`READ_SET` in meta.ts:364-365 in same task |
 
 ## Test Coverage Map
 
 | New Codepath | Covering Task | Test Type |
 |-------------|--------------|-----------|
-| rightclick via locator.click({button:'right'}) | TASK-018 | integration |
-| mouse move/down/up/wheel | TASK-019 | integration |
-| wait --text/--fn/--load/--state/ms | TASK-020 | integration |
-| cookie clear + cookie set with options | TASK-021 | integration |
-| set geo + set media | TASK-022 | integration |
-| --max-output truncation | TASK-023 | integration |
-| box bounding box | TASK-024 | integration |
-| errors console filter | TASK-025 | integration |
-| find alt/title/first/last/nth | TASK-026 | integration |
-| screenshot element/ref + clip | TASK-027 | integration |
-| tap/swipe touch commands | (manual — requires touch context) | manual |
-| keyboard inserttext | (covered by basic write test) | integration |
-| scrollinto alias | (covered by existing scroll tests) | integration |
+| rightclick via locator.click({button:'right'}) | TASK-007 | integration |
+| mouse move/down/up/wheel | TASK-007 | integration |
+| wait --text/--fn/--load/--state/ms | TASK-007 | integration |
+| tap/swipe touch commands | TASK-007 | integration |
+| set geo + set media | TASK-007 | integration |
+| cookie clear + cookie set with options | TASK-007 | integration |
+| box bounding box | TASK-008 | integration |
+| errors console filter | TASK-008 | integration |
+| find alt/title/first/last/nth | TASK-009 | integration |
+| screenshot element/ref + clip | TASK-009 | integration |
+| ref staleness detection | TASK-009 | integration |
+| --max-output truncation | TASK-009 | integration |
+| doctor command | TASK-009 | integration |
+| keyboard inserttext | (covered by write command batch — manual verify) | manual |
+| scrollinto alias | (covered by existing scroll tests — same code path) | existing |
 
 ## Task Dependencies
 
@@ -673,28 +416,10 @@ Add test in `test/features.test.ts`. Test element screenshot and clip screenshot
   "TASK-002": [],
   "TASK-003": [],
   "TASK-004": [],
-  "TASK-005": [],
+  "TASK-005": ["TASK-001", "TASK-002", "TASK-003"],
   "TASK-006": [],
-  "TASK-007": [],
-  "TASK-008": [],
-  "TASK-009": ["TASK-008"],
-  "TASK-010": [],
-  "TASK-011": [],
-  "TASK-012": [],
-  "TASK-013": [],
-  "TASK-014": [],
-  "TASK-015": [],
-  "TASK-016": [],
-  "TASK-017": [],
-  "TASK-018": ["TASK-001"],
-  "TASK-019": ["TASK-004"],
-  "TASK-020": ["TASK-006"],
-  "TASK-021": ["TASK-007"],
-  "TASK-022": ["TASK-008", "TASK-009"],
-  "TASK-023": ["TASK-010"],
-  "TASK-024": ["TASK-012"],
-  "TASK-025": ["TASK-013"],
-  "TASK-026": ["TASK-014"],
-  "TASK-027": ["TASK-015", "TASK-016"]
+  "TASK-007": ["TASK-001", "TASK-006"],
+  "TASK-008": ["TASK-002", "TASK-006"],
+  "TASK-009": ["TASK-003", "TASK-004", "TASK-005", "TASK-006"]
 }
 ```

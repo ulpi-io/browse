@@ -8,6 +8,7 @@
 import type { BrowserManager } from '../browser-manager';
 import { listDevices } from '../browser-manager';
 import type { SessionBuffers } from '../buffers';
+import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
 
 export async function handleReadCommand(
@@ -329,6 +330,33 @@ export async function handleReadCommand(
       } catch {
         return '(clipboard not available)';
       }
+    }
+
+    case 'box': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse box <selector>');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      const box = await locator.boundingBox({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      if (!box) throw new Error(`Element ${selector} is not visible or has no bounding box`);
+      return JSON.stringify({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) });
+    }
+
+    case 'errors': {
+      const cb = (buffers || bm.getBuffers()).consoleBuffer;
+      if (args[0] === '--clear') {
+        const before = cb.length;
+        // Remove error entries in-place
+        for (let i = cb.length - 1; i >= 0; i--) {
+          if (cb[i].level === 'error') cb.splice(i, 1);
+        }
+        return `Cleared ${before - cb.length} error(s).`;
+      }
+      const errors = cb.filter(e => e.level === 'error');
+      if (errors.length === 0) return '(no errors)';
+      return errors.map(e =>
+        `[${new Date(e.timestamp).toISOString()}] ${e.text}`
+      ).join('\n');
     }
 
     case 'devices': {

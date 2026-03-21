@@ -483,6 +483,23 @@ export class BrowserManager {
     return { selector };
   }
 
+  /**
+   * Resolve a ref with staleness detection. Throws immediately if the ref's
+   * element no longer exists in the DOM, instead of waiting for action timeout.
+   */
+  async resolveRefChecked(selector: string): Promise<{ locator: Locator } | { selector: string }> {
+    const resolved = this.resolveRef(selector);
+    if ('locator' in resolved) {
+      const count = await resolved.locator.count();
+      if (count === 0) {
+        throw new Error(
+          `Ref ${selector} is stale (element no longer exists). Re-run 'snapshot' to get fresh refs.`
+        );
+      }
+    }
+    return resolved;
+  }
+
   getRefCount(): number {
     return this.refMap.size;
   }

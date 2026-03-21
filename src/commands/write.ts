@@ -166,7 +166,7 @@ export async function handleWriteCommand(
 
     case 'wait': {
       const selector = args[0];
-      if (!selector) throw new Error('Usage: browse wait <selector|--url|--network-idle> [timeout]');
+      if (!selector) throw new Error('Usage: browse wait <selector|ms|--url|--text|--fn|--load|--network-idle> [args]');
 
       // wait --network-idle [timeout] — wait for network to settle
       if (selector === '--network-idle') {
@@ -184,14 +184,55 @@ export async function handleWriteCommand(
         return `URL matched: ${page.url()}`;
       }
 
-      const timeout = args[1] ? parseInt(args[1], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+      // wait --text "text" [timeout] — wait for text to appear in page body
+      if (selector === '--text') {
+        const text = args[1];
+        if (!text) throw new Error('Usage: browse wait --text <text> [timeout]');
+        const timeout = args[2] ? parseInt(args[2], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+        await page.waitForFunction((t) => document.body.innerText.includes(t), text, { timeout });
+        return `Text found: "${text}"`;
+      }
+
+      // wait --fn "expression" [timeout] — wait for JS condition to be truthy
+      if (selector === '--fn') {
+        const expr = args[1];
+        if (!expr) throw new Error('Usage: browse wait --fn <js-expression> [timeout]');
+        const timeout = args[2] ? parseInt(args[2], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+        await page.waitForFunction(expr, undefined, { timeout });
+        return `Condition met: ${expr}`;
+      }
+
+      // wait --load <state> [timeout] — wait for load state
+      if (selector === '--load') {
+        const state = args[1] as 'load' | 'domcontentloaded' | 'networkidle';
+        if (!state || !['load', 'domcontentloaded', 'networkidle'].includes(state)) {
+          throw new Error('Usage: browse wait --load <load|domcontentloaded|networkidle> [timeout]');
+        }
+        const timeout = args[2] ? parseInt(args[2], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+        await page.waitForLoadState(state, { timeout });
+        return `Load state reached: ${state}`;
+      }
+
+      // wait <ms> — wait for milliseconds (numeric first arg)
+      if (/^\d+$/.test(selector)) {
+        const ms = parseInt(selector, 10);
+        await page.waitForTimeout(ms);
+        return `Waited ${ms}ms`;
+      }
+
+      // wait <sel> [--state hidden] [timeout] — wait for element
+      const stateIdx = args.indexOf('--state');
+      const state = stateIdx >= 0 ? args[stateIdx + 1] as 'visible' | 'hidden' | 'attached' | 'detached' : 'visible';
+      const timeoutArgs = args.filter((a, i) => i !== 0 && a !== '--state' && (stateIdx < 0 || i !== stateIdx + 1));
+      const timeout = timeoutArgs[0] ? parseInt(timeoutArgs[0], 10) : DEFAULTS.COMMAND_TIMEOUT_MS;
+
       const resolved = bm.resolveRef(selector);
       if ('locator' in resolved) {
-        await resolved.locator.waitFor({ state: 'visible', timeout });
+        await resolved.locator.waitFor({ state, timeout });
       } else {
-        await page.waitForSelector(resolved.selector, { timeout });
+        await page.waitForSelector(resolved.selector, { state, timeout });
       }
-      return `Element ${selector} appeared`;
+      return state === 'hidden' ? `Element ${selector} hidden` : `Element ${selector} appeared`;
     }
 
     case 'viewport': {
@@ -204,7 +245,54 @@ export async function handleWriteCommand(
 
     case 'cookie': {
       const cookieStr = args[0];
-      if (!cookieStr || !cookieStr.includes('=')) throw new Error('Usage: browse cookie <name>=<value>');
+      if (!cookieStr) throw new Error('Usage: browse cookie <name>=<value> | cookie clear | cookie set <n> <v> [opts] | cookie export <file> | cookie import <file>');
+
+      // cookie clear — remove all cookies
+      if (cookieStr === 'clear') {
+        await page.context().clearCookies();
+        return 'All cookies cleared';
+      }
+
+      // cookie export <file> — save cookies to JSON file
+      if (cookieStr === 'export') {
+        const file = args[1];
+        if (!file) throw new Error('Usage: browse cookie export <file>');
+        const cookies = await page.context().cookies();
+        fs.writeFileSync(file, JSON.stringify(cookies, null, 2));
+        return `Exported ${cookies.length} cookie(s) to ${file}`;
+      }
+
+      // cookie import <file> — load cookies from JSON file
+      if (cookieStr === 'import') {
+        const file = args[1];
+        if (!file) throw new Error('Usage: browse cookie import <file>');
+        if (!fs.existsSync(file)) throw new Error(`File not found: ${file}`);
+        const cookies = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (!Array.isArray(cookies)) throw new Error('Cookie file must contain a JSON array of cookie objects');
+        await page.context().addCookies(cookies);
+        return `Imported ${cookies.length} cookie(s) from ${file}`;
+      }
+
+      // cookie set <name> <value> [--domain <d>] [--secure] [--expires <ts>] [--sameSite <s>]
+      if (cookieStr === 'set') {
+        const name = args[1];
+        const value = args[2];
+        if (!name || !value) throw new Error('Usage: browse cookie set <name> <value> [--domain <d>] [--secure] [--expires <ts>] [--sameSite <s>]');
+        const url = new URL(page.url());
+        const cookie: any = { name, value, domain: url.hostname, path: '/' };
+        for (let i = 3; i < args.length; i++) {
+          if (args[i] === '--domain' && args[i + 1]) { cookie.domain = args[++i]; }
+          else if (args[i] === '--secure') { cookie.secure = true; }
+          else if (args[i] === '--expires' && args[i + 1]) { cookie.expires = parseInt(args[++i], 10); }
+          else if (args[i] === '--sameSite' && args[i + 1]) { cookie.sameSite = args[++i]; }
+          else if (args[i] === '--path' && args[i + 1]) { cookie.path = args[++i]; }
+        }
+        await page.context().addCookies([cookie]);
+        return `Cookie set: ${name}=${value}${cookie.domain !== url.hostname ? ` (domain: ${cookie.domain})` : ''}`;
+      }
+
+      // Legacy: cookie <name>=<value>
+      if (!cookieStr.includes('=')) throw new Error('Usage: browse cookie <name>=<value> | cookie clear | cookie set <n> <v> [opts] | cookie export <file> | cookie import <file>');
       const eq = cookieStr.indexOf('=');
       const name = cookieStr.slice(0, eq);
       const value = cookieStr.slice(eq + 1);
@@ -425,6 +513,147 @@ export async function handleWriteCommand(
       const newState = !bm.isOffline();
       await bm.setOffline(newState);
       return `Offline mode: ${newState ? 'ON' : 'OFF'}`;
+    }
+
+    case 'rightclick': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse rightclick <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        await resolved.locator.click({ button: 'right', timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      } else {
+        await page.click(resolved.selector, { button: 'right', timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      }
+      return `Right-clicked ${selector}`;
+    }
+
+    case 'tap': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse tap <selector>');
+      const resolved = bm.resolveRef(selector);
+      try {
+        if ('locator' in resolved) {
+          await resolved.locator.tap({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        } else {
+          await page.locator(resolved.selector).tap({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        }
+      } catch (err: any) {
+        if (err.message?.includes('hasTouch') || err.message?.includes('touch')) {
+          throw new Error(
+            `Tap requires a touch-enabled context. Run 'browse emulate "iPhone 14"' (or any mobile device) first to enable touch.`
+          );
+        }
+        throw err;
+      }
+      return `Tapped ${selector}`;
+    }
+
+    case 'swipe': {
+      const dir = args[0];
+      if (!dir || !['up', 'down', 'left', 'right'].includes(dir)) {
+        throw new Error('Usage: browse swipe <up|down|left|right> [pixels]');
+      }
+      const distance = args[1] ? parseInt(args[1], 10) : undefined;
+      const vp = page.viewportSize() || { width: 1920, height: 1080 };
+      const cx = Math.floor(vp.width / 2);
+      const cy = Math.floor(vp.height / 2);
+      const dx = dir === 'left' ? -(distance || vp.width * 0.7) : dir === 'right' ? (distance || vp.width * 0.7) : 0;
+      const dy = dir === 'up' ? -(distance || vp.height * 0.7) : dir === 'down' ? (distance || vp.height * 0.7) : 0;
+      // Use evaluate to dispatch synthetic touch events for maximum compatibility
+      await page.evaluate(({ cx, cy, dx, dy }) => {
+        const start = new Touch({ identifier: 1, target: document.elementFromPoint(cx, cy) || document.body, clientX: cx, clientY: cy });
+        const end = new Touch({ identifier: 1, target: document.elementFromPoint(cx, cy) || document.body, clientX: cx + dx, clientY: cy + dy });
+        const el = document.elementFromPoint(cx, cy) || document.body;
+        el.dispatchEvent(new TouchEvent('touchstart', { touches: [start], changedTouches: [start], bubbles: true }));
+        el.dispatchEvent(new TouchEvent('touchmove', { touches: [end], changedTouches: [end], bubbles: true }));
+        el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [end], bubbles: true }));
+      }, { cx, cy, dx, dy });
+      return `Swiped ${dir}${distance ? ` ${distance}px` : ''}`;
+    }
+
+    case 'mouse': {
+      const sub = args[0];
+      if (!sub) throw new Error('Usage: browse mouse <move|down|up|wheel> [args]\n  move <x> <y>\n  down [left|right|middle]\n  up [left|right|middle]\n  wheel <dy> [dx]');
+      switch (sub) {
+        case 'move': {
+          const x = parseInt(args[1], 10);
+          const y = parseInt(args[2], 10);
+          if (isNaN(x) || isNaN(y)) throw new Error('Usage: browse mouse move <x> <y>');
+          await page.mouse.move(x, y);
+          return `Mouse moved to ${x},${y}`;
+        }
+        case 'down': {
+          const button = (args[1] || 'left') as 'left' | 'right' | 'middle';
+          await page.mouse.down({ button });
+          return `Mouse down (${button})`;
+        }
+        case 'up': {
+          const button = (args[1] || 'left') as 'left' | 'right' | 'middle';
+          await page.mouse.up({ button });
+          return `Mouse up (${button})`;
+        }
+        case 'wheel': {
+          const dy = parseInt(args[1], 10);
+          const dx = args[2] ? parseInt(args[2], 10) : 0;
+          if (isNaN(dy)) throw new Error('Usage: browse mouse wheel <dy> [dx]');
+          await page.mouse.wheel(dx, dy);
+          return `Mouse wheel dx=${dx} dy=${dy}`;
+        }
+        default:
+          throw new Error(`Unknown mouse subcommand: ${sub}. Use move|down|up|wheel`);
+      }
+    }
+
+    case 'keyboard': {
+      const sub = args[0];
+      if (!sub) throw new Error('Usage: browse keyboard <inserttext> <text>');
+      if (sub === 'inserttext' || sub === 'insertText') {
+        const text = args.slice(1).join(' ');
+        if (!text) throw new Error('Usage: browse keyboard inserttext <text>');
+        await page.keyboard.insertText(text);
+        return `Inserted text: "${text}"`;
+      }
+      throw new Error(`Unknown keyboard subcommand: ${sub}. Use inserttext`);
+    }
+
+    case 'scrollinto':
+    case 'scrollintoview': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse scrollinto <selector>');
+      const resolved = bm.resolveRef(selector);
+      if ('locator' in resolved) {
+        await resolved.locator.scrollIntoViewIfNeeded({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      } else {
+        await page.locator(resolved.selector).scrollIntoViewIfNeeded({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      }
+      return `Scrolled ${selector} into view`;
+    }
+
+    case 'set': {
+      const sub = args[0];
+      if (!sub) throw new Error('Usage: browse set <geo|media> [args]\n  geo <lat> <lng>\n  media <dark|light|no-preference>');
+      switch (sub) {
+        case 'geo': {
+          const lat = parseFloat(args[1]);
+          const lng = parseFloat(args[2]);
+          if (isNaN(lat) || isNaN(lng)) throw new Error('Usage: browse set geo <latitude> <longitude>');
+          const context = bm.getContext();
+          if (!context) throw new Error('No browser context');
+          await context.grantPermissions(['geolocation']);
+          await context.setGeolocation({ latitude: lat, longitude: lng });
+          return `Geolocation set to ${lat}, ${lng}`;
+        }
+        case 'media': {
+          const scheme = args[1];
+          if (!scheme || !['dark', 'light', 'no-preference'].includes(scheme)) {
+            throw new Error('Usage: browse set media <dark|light|no-preference>');
+          }
+          await page.emulateMedia({ colorScheme: scheme as 'dark' | 'light' | 'no-preference' });
+          return `Color scheme set to ${scheme}`;
+        }
+        default:
+          throw new Error(`Unknown set subcommand: ${sub}. Use geo|media`);
+      }
     }
 
     case 'route': {

@@ -1,9 +1,9 @@
 {
   "title": "Quick-Win Feature Parity",
   "branch": "feat/quick-wins",
-  "mode": "EXPANSION",
-  "overview": "Close 27 feature gaps identified in features-comparison.md against agent-browser, gstack, and browser-use. All S-effort Playwright API calls — 5-15 line case blocks in existing switch statements.",
-  "scopeChallenge": "Every feature maps directly to an existing Playwright API and follows the same pattern as existing commands. EXPANSION mode selected for per-feature granularity.",
+  "mode": "REDUCTION",
+  "overview": "Close 30 feature gaps against agent-browser, gstack, and browser-use. All S-effort Playwright API calls. Batched by file to prevent merge conflicts.",
+  "scopeChallenge": "Original EXPANSION plan (27 tasks) revised to REDUCTION (9 tasks) after founder review identified merge conflict risk with 15+ tasks modifying same files. Added ref staleness detection. Merged set geo + set media.",
   "existingCodeLeverage": [
     { "subProblem": "Ref resolution", "existingCode": "src/commands/write.ts:77-82", "action": "reuse" },
     { "subProblem": "Frame context", "existingCode": "src/commands/write.ts:143", "action": "reuse" },
@@ -12,491 +12,189 @@
     { "subProblem": "Wait command", "existingCode": "src/commands/write.ts:167-195", "action": "extend" },
     { "subProblem": "Find command", "existingCode": "src/commands/meta.ts:735-774", "action": "extend" },
     { "subProblem": "Screenshot command", "existingCode": "src/commands/meta.ts:233-308", "action": "extend" },
-    { "subProblem": "Command registration", "existingCode": "src/server.ts:109-135", "action": "extend" }
+    { "subProblem": "Command registration", "existingCode": "src/server.ts:109-135", "action": "extend" },
+    { "subProblem": "Chain command sets", "existingCode": "src/commands/meta.ts:364-365", "action": "extend" },
+    { "subProblem": "Ref resolution", "existingCode": "src/browser-manager.ts:resolveRef()", "action": "extend" }
   ],
   "failureModes": [
-    { "risk": "tap fails on non-touch context", "affectedTasks": ["TASK-002"], "mitigation": "Catch Playwright error, rewrite to actionable message suggesting emulate" },
-    { "risk": "swipe touch events not supported in headless", "affectedTasks": ["TASK-003"], "mitigation": "Use page.evaluate to dispatch synthetic TouchEvents as fallback" },
-    { "risk": "set geo requires permission grant", "affectedTasks": ["TASK-008"], "mitigation": "Call context.grantPermissions(['geolocation']) before setGeolocation" },
-    { "risk": "Screenshot selector detection false positive", "affectedTasks": ["TASK-015"], "mitigation": "Use explicit heuristic: @e, ., #, [ prefixes only" },
-    { "risk": "Chain command sets out of sync", "affectedTasks": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-007", "TASK-008", "TASK-011", "TASK-012", "TASK-013"], "mitigation": "Update both server.ts sets AND meta.ts chain sets" },
-    { "risk": "--max-output truncates JSON wrapper", "affectedTasks": ["TASK-010"], "mitigation": "Apply truncation to data field only, not JSON wrapper" }
+    { "risk": "tap fails on non-touch context", "affectedTasks": ["TASK-001"], "mitigation": "Catch Playwright error, rewrite to actionable message suggesting emulate" },
+    { "risk": "swipe touch events not supported in headless", "affectedTasks": ["TASK-001"], "mitigation": "Use page.evaluate to dispatch synthetic TouchEvents as fallback" },
+    { "risk": "set geo requires permission grant", "affectedTasks": ["TASK-001"], "mitigation": "Call context.grantPermissions(['geolocation']) before setGeolocation" },
+    { "risk": "Screenshot selector detection false positive", "affectedTasks": ["TASK-003"], "mitigation": "Heuristic: @e, ., #, [ = selector. Contains / or ends .png/.jpg/.webp = path" },
+    { "risk": "--max-output truncates JSON wrapper", "affectedTasks": ["TASK-005"], "mitigation": "Apply truncation to raw result only, before JSON wrapping" },
+    { "risk": "resolveRef becomes async", "affectedTasks": ["TASK-004"], "mitigation": "Assess caller impact — if too many callers, do count check at call site instead" },
+    { "risk": "Chain command sets out of sync", "affectedTasks": ["TASK-001", "TASK-002"], "mitigation": "Explicitly update WRITE_SET/READ_SET in meta.ts:364-365 in same task" }
   ],
   "testCoverageMap": [
-    { "codepath": "rightclick via locator.click({button:'right'})", "coveringTask": "TASK-018", "testType": "integration" },
-    { "codepath": "mouse move/down/up/wheel", "coveringTask": "TASK-019", "testType": "integration" },
-    { "codepath": "wait --text/--fn/--load/--state/ms", "coveringTask": "TASK-020", "testType": "integration" },
-    { "codepath": "cookie clear + cookie set with options", "coveringTask": "TASK-021", "testType": "integration" },
-    { "codepath": "set geo + set media", "coveringTask": "TASK-022", "testType": "integration" },
-    { "codepath": "--max-output truncation", "coveringTask": "TASK-023", "testType": "integration" },
-    { "codepath": "box bounding box", "coveringTask": "TASK-024", "testType": "integration" },
-    { "codepath": "errors console filter", "coveringTask": "TASK-025", "testType": "integration" },
-    { "codepath": "find alt/title/first/last/nth", "coveringTask": "TASK-026", "testType": "integration" },
-    { "codepath": "screenshot element/ref + clip", "coveringTask": "TASK-027", "testType": "integration" }
+    { "codepath": "rightclick, mouse, wait extensions, tap, swipe, set geo/media, cookie clear/set", "coveringTask": "TASK-007", "testType": "integration" },
+    { "codepath": "box bounding box, errors console filter", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "find alt/title/first/last/nth, screenshot element/clip, ref staleness, --max-output, doctor", "coveringTask": "TASK-009", "testType": "integration" }
   ],
   "tasks": [
     {
       "id": "TASK-001",
-      "title": "Add rightclick command",
-      "description": "Add rightclick <sel> to src/commands/write.ts. Uses locator.click({ button: 'right' }). Register in WRITE_COMMANDS, WRITE_SET in chain, CLI help.",
+      "title": "Add all write commands (write.ts + server.ts WRITE_COMMANDS + chain WRITE_SET)",
+      "description": "Add rightclick, tap, swipe, mouse, keyboard inserttext, scrollinto/scrollintoview, set geo/media, extend wait and cookie (clear, set with options, export/import file). Register in WRITE_COMMANDS and WRITE_SET in chain.",
       "type": "feature",
-      "effort": "S",
+      "effort": "L",
       "priority": "P1",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "browse rightclick <sel> right-clicks the element",
-        "browse rightclick @e1 works with ref selectors",
-        "browse rightclick with no args throws usage error"
+        "All new commands return expected output format",
+        "All extended commands preserve backward compatibility",
+        "All new commands registered in WRITE_COMMANDS and WRITE_SET",
+        "tap on non-touch context throws actionable error",
+        "Missing args throw usage errors",
+        "cookie clear followed by cookies read returns empty",
+        "cookie export writes cookies to file, cookie import loads them back"
       ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
+      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/commands/meta.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
       "id": "TASK-002",
-      "title": "Add tap command",
-      "description": "Add tap <sel> to src/commands/write.ts. Uses locator.tap(). Requires hasTouch context. Register in WRITE_COMMANDS, WRITE_SET in chain, CLI help.",
+      "title": "Add all read commands (read.ts + server.ts READ_COMMANDS + chain READ_SET)",
+      "description": "Add box and errors commands. Register in READ_COMMANDS and READ_SET in chain.",
       "type": "feature",
       "effort": "S",
       "priority": "P1",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "browse tap <sel> taps the element when context has hasTouch",
-        "browse tap @e1 works with ref selectors",
-        "Tap on non-touch context throws actionable error"
+        "box returns valid JSON with numeric x, y, width, height",
+        "box with ref selectors works",
+        "box with nonexistent element throws clear error",
+        "errors returns only error-level entries",
+        "errors --clear clears error entries"
       ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
+      "filesToModify": ["src/commands/read.ts", "src/server.ts", "src/commands/meta.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
       "id": "TASK-003",
-      "title": "Add swipe command",
-      "description": "Add swipe <dir> [px] to src/commands/write.ts. Uses touchscreen API. Directions: up, down, left, right. Default distance: one viewport height/width.",
+      "title": "Extend meta commands (find, screenshot, doctor)",
+      "description": "Extend find with alt/title/first/last/nth. Extend screenshot with element/ref and --clip. Add doctor and upgrade commands.",
       "type": "feature",
-      "effort": "S",
-      "priority": "P2",
+      "effort": "M",
+      "priority": "P1",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "browse swipe down swipes down by one viewport height",
-        "browse swipe up 500 swipes up by 500px",
-        "browse swipe with no direction throws usage error"
+        "find alt/title finds elements by attribute",
+        "find first/last/nth returns correct match",
+        "screenshot @e1 produces element-only PNG",
+        "screenshot --clip produces clipped region",
+        "screenshot --clip + --full throws error",
+        "doctor reports Bun version and Chromium path",
+        "upgrade attempts to update the package",
+        "Existing find/screenshot behavior unchanged"
       ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
+      "filesToModify": ["src/commands/meta.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
       "id": "TASK-004",
-      "title": "Add mouse subcommands",
-      "description": "Add mouse move|down|up|wheel to src/commands/write.ts. Uses page.mouse API. Register mouse in WRITE_COMMANDS, WRITE_SET in chain, CLI help.",
+      "title": "Add ref staleness detection",
+      "description": "Add count check in resolveRef() in browser-manager.ts. Fails fast with actionable error if ref element no longer exists.",
       "type": "feature",
       "effort": "S",
       "priority": "P1",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "browse mouse move 100 200 moves cursor to (100, 200)",
-        "browse mouse wheel 300 scrolls down by 300px",
-        "browse mouse with no subcommand throws usage error"
+        "Stale ref throws immediately (~5ms) with message containing 'stale' and 'snapshot'",
+        "Valid ref works normally with no performance regression",
+        "Error message tells agent to re-run snapshot"
       ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
+      "filesToModify": ["src/browser-manager.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
       "id": "TASK-005",
-      "title": "Add keyboard inserttext command",
-      "description": "Add keyboard inserttext <text> to src/commands/write.ts. Uses page.keyboard.insertText(text). Register keyboard in WRITE_COMMANDS, WRITE_SET in chain, CLI help.",
+      "title": "CLI flags, registration, and help text",
+      "description": "Add --max-output flag, register all new commands (including doctor, upgrade) in server.ts sets, update SAFE_TO_RETRY, update CLI help text.",
       "type": "feature",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse keyboard inserttext 'hello' inserts text at cursor",
-        "browse keyboard with no subcommand throws usage error",
-        "browse keyboard inserttext with no text throws usage error"
-      ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-006",
-      "title": "Extend wait with --text, --fn, --load, --state hidden, millisecond wait",
-      "description": "Extend existing wait case in src/commands/write.ts:167-195 with five new modes. Update CLI help.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P0",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse wait --text 'Hello' waits for text to appear",
-        "browse wait --fn 'document.title === \"Done\"' waits for JS condition",
-        "browse wait --load domcontentloaded waits for load state",
-        "browse wait #spinner --state hidden waits for element to disappear",
-        "browse wait 2000 waits for 2 seconds",
-        "browse wait --text with no text arg throws usage error"
-      ],
-      "filesToModify": ["src/commands/write.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-007",
-      "title": "Extend cookie with clear and options",
-      "description": "Extend existing cookie case in src/commands/write.ts:205-219 with cookie clear and cookie set with --domain, --secure, --expires, --sameSite options.",
-      "type": "feature",
-      "effort": "S",
+      "effort": "M",
       "priority": "P1",
-      "dependsOn": [],
+      "dependsOn": ["TASK-001", "TASK-002", "TASK-003"],
       "acceptanceCriteria": [
-        "browse cookie clear clears all cookies",
-        "browse cookie set auth token123 --domain .example.com --secure sets cookie with options",
-        "Existing browse cookie name=value still works",
-        "browse cookie set with missing name/value throws usage error"
-      ],
-      "filesToModify": ["src/commands/write.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-008",
-      "title": "Add set geo subcommand",
-      "description": "Add set command with geo subcommand to src/commands/write.ts. Uses context.setGeolocation() + context.grantPermissions(['geolocation']). Register set in WRITE_COMMANDS, WRITE_SET in chain, CLI help.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse set geo 37.7749 -122.4194 sets geolocation",
-        "navigator.geolocation returns set coordinates (verify via browse js)",
-        "browse set geo with missing args throws usage error"
-      ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-009",
-      "title": "Add set media subcommand",
-      "description": "Extend set command (from TASK-008) with media subcommand. Uses context.emulateMedia({ colorScheme }). Values: dark, light, no-preference.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": ["TASK-008"],
-      "acceptanceCriteria": [
-        "browse set media dark sets color scheme to dark",
-        "window.matchMedia('(prefers-color-scheme: dark)').matches returns true",
-        "browse set media with no value throws usage error"
-      ],
-      "filesToModify": ["src/commands/write.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-010",
-      "title": "Add --max-output flag",
-      "description": "Add --max-output <n> flag to src/cli.ts and X-Browse-Max-Output header. In src/server.ts, truncate result before content boundaries/JSON wrapping. Support BROWSE_MAX_OUTPUT env var.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse --max-output 100 text truncates output to 100 chars with notice",
-        "BROWSE_MAX_OUTPUT=500 env var works as default",
-        "Output shorter than limit is returned unchanged"
+        "--max-output truncates output with notice",
+        "BROWSE_MAX_OUTPUT env var works",
+        "All new commands in help text",
+        "box, errors, doctor, upgrade in SAFE_TO_RETRY",
+        "All new commands registered in correct command set"
       ],
       "filesToModify": ["src/cli.ts", "src/server.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
-      "id": "TASK-011",
-      "title": "Add scrollinto alias",
-      "description": "Add scrollinto/scrollintoview as alias commands in src/commands/write.ts that delegate to the existing scroll-into-view behavior. Register in WRITE_COMMANDS, WRITE_SET in chain, CLI help.",
-      "type": "feature",
+      "id": "TASK-006",
+      "title": "Test fixtures",
+      "description": "Extend test/fixtures/interactions.html with elements for rightclick, find alt/title, mouse tracking, error trigger tests.",
+      "type": "chore",
       "effort": "S",
-      "priority": "P2",
+      "priority": "P0",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "browse scrollinto #bottom-marker scrolls element into view",
-        "browse scrollintoview @e1 works with refs",
-        "browse scrollinto with no selector throws usage error"
+        "New elements render correctly",
+        "Event handlers fire (contextmenu, mousemove)",
+        "Existing elements unchanged"
       ],
-      "filesToModify": ["src/commands/write.ts", "src/server.ts", "src/cli.ts"],
+      "filesToModify": ["test/fixtures/interactions.html"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
-      "id": "TASK-012",
-      "title": "Add box read command",
-      "description": "Add box <sel> to src/commands/read.ts. Uses locator.boundingBox() → returns JSON { x, y, width, height }. Register in READ_COMMANDS, READ_SET in chain, SAFE_TO_RETRY, CLI help.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse box #target returns JSON with x, y, width, height",
-        "browse box @e1 works with ref selectors",
-        "browse box with no selector throws usage error",
-        "Element not found returns clear error"
-      ],
-      "filesToModify": ["src/commands/read.ts", "src/server.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-013",
-      "title": "Add errors read command",
-      "description": "Add errors [--clear] to src/commands/read.ts. Filters console buffer for level === 'error'. Register in READ_COMMANDS, READ_SET in chain, SAFE_TO_RETRY, CLI help.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse errors returns only error-level console entries",
-        "browse errors --clear clears error entries",
-        "Returns (no errors) when no error entries exist"
-      ],
-      "filesToModify": ["src/commands/read.ts", "src/server.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-014",
-      "title": "Extend find with alt, title, first, last, nth",
-      "description": "Extend find case in src/commands/meta.ts:735-774 with getByAltText, getByTitle, locator.first(), .last(), .nth(n). Update error message and CLI help.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse find alt 'Logo' finds elements by alt text",
-        "browse find title 'Close' finds elements by title attribute",
-        "browse find first .item returns first match",
-        "browse find nth 2 .item returns third match (0-indexed)",
-        "browse find last .item returns last match"
-      ],
-      "filesToModify": ["src/commands/meta.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-015",
-      "title": "Extend screenshot with element/ref support",
-      "description": "Extend screenshot case in src/commands/meta.ts:233-308. Detect selector/ref vs path. Use locator.screenshot({ path }) for elements.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P1",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse screenshot @e1 shot.png screenshots the ref element",
-        "browse screenshot '#header' header.png screenshots by CSS selector",
-        "browse screenshot page.png still works as output path",
-        "browse screenshot @e1 without path uses default path"
-      ],
-      "filesToModify": ["src/commands/meta.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-016",
-      "title": "Extend screenshot with --clip region",
-      "description": "Extend screenshot case in src/commands/meta.ts:233-308. Add --clip x,y,w,h flag. Parse comma-separated values, pass as page.screenshot({ clip }). Mutual exclusion with selector and --full.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse screenshot --clip 0,0,400,300 region.png captures specified region",
-        "browse screenshot --clip with invalid format throws usage error",
-        "browse screenshot --clip 0,0,400,300 --full throws mutual exclusion error"
-      ],
-      "filesToModify": ["src/commands/meta.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-017",
-      "title": "Add doctor meta command",
-      "description": "Add doctor to src/commands/meta.ts. Checks Bun version, Playwright installed, Chromium binary exists, server health. Register in META_COMMANDS, SAFE_TO_RETRY, CLI help.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "browse doctor reports Bun version, Playwright status, Chromium path",
-        "Missing Chromium shows actionable message",
-        "Command works when server is running"
-      ],
-      "filesToModify": ["src/commands/meta.ts", "src/server.ts", "src/cli.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-018",
-      "title": "Test rightclick command",
-      "description": "Add test in test/interactions.test.ts. Extend test/fixtures/interactions.html with contextmenu event listener.",
+      "id": "TASK-007",
+      "title": "Tests for write commands",
+      "description": "Add tests in test/interactions.test.ts for rightclick, mouse, wait extensions, tap, set geo, set media, cookie clear/set.",
       "type": "test",
-      "effort": "S",
+      "effort": "M",
       "priority": "P2",
-      "dependsOn": ["TASK-001"],
+      "dependsOn": ["TASK-001", "TASK-006"],
       "acceptanceCriteria": [
-        "Test right-clicks element and verifies contextmenu event fired",
-        "Test verifies ref selector works with rightclick"
-      ],
-      "filesToModify": ["test/interactions.test.ts", "test/fixtures/interactions.html"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-019",
-      "title": "Test mouse subcommands",
-      "description": "Add test in test/interactions.test.ts. Test mouse move, down, up, wheel using JS event listeners.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-004"],
-      "acceptanceCriteria": [
-        "Test mouse move fires mousemove event at correct coordinates",
-        "Test mouse wheel changes scroll position",
-        "Test invalid subcommand throws error"
+        "All new write command tests pass",
+        "No regressions in existing tests",
+        "At least one failure/edge case test"
       ],
       "filesToModify": ["test/interactions.test.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
-      "id": "TASK-020",
-      "title": "Test extended wait variants",
-      "description": "Add test in test/interactions.test.ts. Test wait --text, --fn, --load, --state hidden, wait <ms>.",
+      "id": "TASK-008",
+      "title": "Tests for read commands",
+      "description": "Add tests in test/commands.test.ts for box and errors commands.",
       "type": "test",
       "effort": "S",
       "priority": "P2",
-      "dependsOn": ["TASK-006"],
+      "dependsOn": ["TASK-002", "TASK-006"],
       "acceptanceCriteria": [
-        "Test wait --text detects text appearing after delay",
-        "Test wait --fn detects JS condition becoming true",
-        "Test wait 100 completes after ~100ms",
-        "Test wait <sel> --state hidden detects element disappearing"
-      ],
-      "filesToModify": ["test/interactions.test.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-021",
-      "title": "Test extended cookie commands",
-      "description": "Add test in test/commands.test.ts. Test cookie clear and cookie set with options.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-007"],
-      "acceptanceCriteria": [
-        "Test cookie clear removes all cookies",
-        "Test cookie set with --domain applies correct domain",
-        "Test existing cookie name=value still works"
+        "box returns valid JSON with numeric values",
+        "errors filters correctly",
+        "errors --clear clears buffer",
+        "No regressions"
       ],
       "filesToModify": ["test/commands.test.ts"],
       "filesToCreate": [],
       "agent": "general-purpose"
     },
     {
-      "id": "TASK-022",
-      "title": "Test set geo and set media",
-      "description": "Add test in test/features.test.ts. Verify geolocation and color scheme via JS eval.",
+      "id": "TASK-009",
+      "title": "Tests for meta commands and features",
+      "description": "Add tests in test/features.test.ts for find extensions, screenshot element/clip, ref staleness, --max-output, doctor.",
       "type": "test",
-      "effort": "S",
+      "effort": "M",
       "priority": "P2",
-      "dependsOn": ["TASK-008", "TASK-009"],
+      "dependsOn": ["TASK-003", "TASK-004", "TASK-005", "TASK-006"],
       "acceptanceCriteria": [
-        "Test set geo changes geolocation (verify via JS navigator.geolocation)",
-        "Test set media dark changes color scheme (verify via JS matchMedia)"
-      ],
-      "filesToModify": ["test/features.test.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-023",
-      "title": "Test --max-output flag",
-      "description": "Add test in test/features.test.ts. Test truncation behavior on long output.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-010"],
-      "acceptanceCriteria": [
-        "Test output longer than limit is truncated with notice",
-        "Test output shorter than limit is returned unchanged"
-      ],
-      "filesToModify": ["test/features.test.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-024",
-      "title": "Test box read command",
-      "description": "Add test in test/commands.test.ts. Test bounding box returns valid JSON.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-012"],
-      "acceptanceCriteria": [
-        "Test box returns valid JSON with numeric x, y, width, height",
-        "Test box with ref selector works",
-        "Test box with nonexistent selector throws error"
-      ],
-      "filesToModify": ["test/commands.test.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-025",
-      "title": "Test errors read command",
-      "description": "Add test in test/commands.test.ts. Use js command to trigger console.error(), verify errors returns only error entries.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-013"],
-      "acceptanceCriteria": [
-        "Test errors shows error-level messages after console.error()",
-        "Test errors does not show console.log() messages",
-        "Test errors --clear clears error entries"
-      ],
-      "filesToModify": ["test/commands.test.ts"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-026",
-      "title": "Test extended find command",
-      "description": "Add test in test/interactions.test.ts. Extend interactions.html with alt/title attributes. Test first/last/nth.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-014"],
-      "acceptanceCriteria": [
-        "Test find alt finds image by alt text",
-        "Test find title finds element by title",
-        "Test find first .item returns first item",
-        "Test find nth 2 .item returns third item",
-        "Test find last .item returns last item"
-      ],
-      "filesToModify": ["test/interactions.test.ts", "test/fixtures/interactions.html"],
-      "filesToCreate": [],
-      "agent": "general-purpose"
-    },
-    {
-      "id": "TASK-027",
-      "title": "Test extended screenshot (element + clip)",
-      "description": "Add test in test/features.test.ts. Test element screenshot and clip screenshot produce valid PNG files.",
-      "type": "test",
-      "effort": "S",
-      "priority": "P2",
-      "dependsOn": ["TASK-015", "TASK-016"],
-      "acceptanceCriteria": [
-        "Test screenshot #header produces PNG smaller than full page",
-        "Test screenshot --clip 0,0,100,100 produces a cropped PNG",
-        "Test screenshot --clip with --full throws error"
+        "find alt/title/first/last/nth tests pass",
+        "screenshot element/clip produce valid PNGs",
+        "ref staleness fails fast with actionable error",
+        "--max-output truncation works",
+        "No regressions"
       ],
       "filesToModify": ["test/features.test.ts"],
       "filesToCreate": [],
@@ -508,28 +206,10 @@
     "TASK-002": [],
     "TASK-003": [],
     "TASK-004": [],
-    "TASK-005": [],
+    "TASK-005": ["TASK-001", "TASK-002", "TASK-003"],
     "TASK-006": [],
-    "TASK-007": [],
-    "TASK-008": [],
-    "TASK-009": ["TASK-008"],
-    "TASK-010": [],
-    "TASK-011": [],
-    "TASK-012": [],
-    "TASK-013": [],
-    "TASK-014": [],
-    "TASK-015": [],
-    "TASK-016": [],
-    "TASK-017": [],
-    "TASK-018": ["TASK-001"],
-    "TASK-019": ["TASK-004"],
-    "TASK-020": ["TASK-006"],
-    "TASK-021": ["TASK-007"],
-    "TASK-022": ["TASK-008", "TASK-009"],
-    "TASK-023": ["TASK-010"],
-    "TASK-024": ["TASK-012"],
-    "TASK-025": ["TASK-013"],
-    "TASK-026": ["TASK-014"],
-    "TASK-027": ["TASK-015", "TASK-016"]
+    "TASK-007": ["TASK-001", "TASK-006"],
+    "TASK-008": ["TASK-002", "TASK-006"],
+    "TASK-009": ["TASK-003", "TASK-004", "TASK-005", "TASK-006"]
   }
 }

@@ -234,8 +234,31 @@ export async function handleMetaCommand(
       const page = bm.getPage();
       const annotate = args.includes('--annotate');
       const isFullPage = args.includes('--full');
-      const filteredArgs = args.filter(a => a !== '--annotate' && a !== '--full');
-      const screenshotPath = filteredArgs[0] || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
+      const clipIdx = args.indexOf('--clip');
+      const clipArg = clipIdx >= 0 ? args[clipIdx + 1] : null;
+      const filteredArgs = args.filter((a, i) => a !== '--annotate' && a !== '--full' && a !== '--clip' && (clipIdx < 0 || i !== clipIdx + 1));
+
+      // Parse --clip x,y,w,h
+      let clip: { x: number; y: number; width: number; height: number } | undefined;
+      if (clipArg) {
+        const parts = clipArg.split(',').map(Number);
+        if (parts.length !== 4 || parts.some(isNaN)) throw new Error('Usage: browse screenshot --clip x,y,width,height [path]');
+        clip = { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+        if (isFullPage) throw new Error('Cannot use --clip with --full');
+      }
+
+      // Detect element/ref selector vs output path
+      // Selector: starts with @e, ., #, [ — Path: contains / or ends with image extension
+      let elementSelector: string | null = null;
+      let screenshotPath: string;
+      const firstArg = filteredArgs[0];
+      if (firstArg && (firstArg.startsWith('@e') || firstArg.startsWith('@c') || /^[.#\[]/.test(firstArg))) {
+        if (clip) throw new Error('Cannot use --clip with element selector');
+        elementSelector = firstArg;
+        screenshotPath = filteredArgs[1] || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
+      } else {
+        screenshotPath = firstArg || (currentSession ? `${currentSession.outputDir}/screenshot.png` : `${LOCAL_DIR}/browse-screenshot.png`);
+      }
 
       if (annotate) {
         const viewport = page.viewportSize() || { width: 1920, height: 1080 };
@@ -304,7 +327,14 @@ export async function handleMetaCommand(
         return `Screenshot saved: ${screenshotPath}\n\nLegend:\n${legend.join('\n')}`;
       }
 
-      await page.screenshot({ path: screenshotPath, fullPage: isFullPage });
+      if (elementSelector) {
+        const resolved = bm.resolveRef(elementSelector);
+        const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+        await locator.screenshot({ path: screenshotPath });
+        return `Screenshot saved: ${screenshotPath} (element: ${elementSelector})`;
+      }
+
+      await page.screenshot({ path: screenshotPath, fullPage: isFullPage, clip });
       return `Screenshot saved: ${screenshotPath}`;
     }
 
@@ -361,8 +391,8 @@ export async function handleMetaCommand(
       const { handleWriteCommand } = await import('./write');
       const { PolicyChecker } = await import('../policy');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline']);
-      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count','clipboard']);
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline','rightclick','tap','swipe','mouse','keyboard','scrollinto','scrollintoview','set']);
+      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count','clipboard','box','errors']);
 
       const sessionBuffers = currentSession?.buffers;
       const policy = new PolicyChecker();
@@ -731,11 +761,46 @@ export async function handleMetaCommand(
       throw new Error('Usage: browse video start [dir] | browse video stop | browse video status');
     }
 
+    // ─── Doctor ────────────────────────────────────────
+    case 'doctor': {
+      const lines: string[] = [];
+      lines.push(`Bun: ${typeof Bun !== 'undefined' ? Bun.version : 'not available'}`);
+      try {
+        const pw = await import('playwright');
+        lines.push(`Playwright: installed`);
+        try {
+          const chromium = pw.chromium;
+          lines.push(`Chromium: ${chromium.executablePath()}`);
+        } catch {
+          lines.push(`Chromium: NOT FOUND — run "bunx playwright install chromium"`);
+        }
+      } catch {
+        lines.push(`Playwright: NOT INSTALLED — run "bun install playwright"`);
+      }
+      lines.push(`Server: running (you're connected)`);
+      return lines.join('\n');
+    }
+
+    // ─── Upgrade ────────────────────────────────────────
+    case 'upgrade': {
+      const { execSync } = await import('child_process');
+      try {
+        const output = execSync('npm update -g @ulpi/browse 2>&1', { encoding: 'utf-8', timeout: 30000 });
+        return `Upgrade complete.\n${output.trim()}`;
+      } catch (err: any) {
+        if (err.message?.includes('EACCES') || err.message?.includes('permission')) {
+          return `Permission denied. Try: sudo npm update -g @ulpi/browse`;
+        }
+        return `Upgrade failed: ${err.message}\nManual: npm install -g @ulpi/browse`;
+      }
+    }
+
     // ─── Semantic Locator ──────────────────────────────
     case 'find': {
       const root = bm.getLocatorRoot();
+      const page = bm.getPage();
       const sub = args[0];
-      if (!sub) throw new Error('Usage: browse find role|text|label|placeholder|testid <query> [name]');
+      if (!sub) throw new Error('Usage: browse find role|text|label|placeholder|testid|alt|title|first|last|nth <query>');
       const query = args[1];
       if (!query) throw new Error(`Usage: browse find ${sub} <query>`);
 
@@ -758,8 +823,35 @@ export async function handleMetaCommand(
         case 'testid':
           locator = root.getByTestId(query);
           break;
+        case 'alt':
+          locator = root.getByAltText(query);
+          break;
+        case 'title':
+          locator = root.getByTitle(query);
+          break;
+        case 'first': {
+          locator = page.locator(query).first();
+          const text = await locator.textContent({ timeout: 2000 }).catch(() => '') || '';
+          const total = await page.locator(query).count();
+          return `Found ${total} match(es), first: "${text.trim().slice(0, 100)}"`;
+        }
+        case 'last': {
+          locator = page.locator(query).last();
+          const text = await locator.textContent({ timeout: 2000 }).catch(() => '') || '';
+          const total = await page.locator(query).count();
+          return `Found ${total} match(es), last: "${text.trim().slice(0, 100)}"`;
+        }
+        case 'nth': {
+          const n = parseInt(query, 10);
+          const sel = args[2];
+          if (isNaN(n) || !sel) throw new Error('Usage: browse find nth <index> <selector>');
+          locator = page.locator(sel).nth(n);
+          const text = await locator.textContent({ timeout: 2000 }).catch(() => '') || '';
+          const total = await page.locator(sel).count();
+          return `Found ${total} match(es), nth(${n}): "${text.trim().slice(0, 100)}"`;
+        }
         default:
-          throw new Error(`Unknown find type: ${sub}. Use role|text|label|placeholder|testid`);
+          throw new Error(`Unknown find type: ${sub}. Use role|text|label|placeholder|testid|alt|title|first|last|nth`);
       }
 
       const count = await locator.count();

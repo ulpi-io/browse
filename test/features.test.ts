@@ -1459,3 +1459,124 @@ describe('Chrome Discovery', () => {
     expect(elapsed).toBeLessThan(10_000);
   }, 10_000);
 });
+
+// ─── Find extensions ─────────────────────────────────────────────
+
+describe('Find extensions', () => {
+  test('find alt matches img alt text', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/interactions.html'], bm);
+    const result = await handleMetaCommand('find', ['alt', 'Test Logo'], bm, async () => {});
+    expect(result).toContain('1 match');
+  });
+
+  test('find title matches element title attribute', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/interactions.html'], bm);
+    const result = await handleMetaCommand('find', ['title', 'Close Dialog'], bm, async () => {});
+    expect(result).toContain('1 match');
+  });
+
+  test('find first returns first matching element', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/interactions.html'], bm);
+    const result = await handleMetaCommand('find', ['first', '.item'], bm, async () => {});
+    expect(result).toContain('Item 1');
+  });
+
+  test('find last returns last matching element', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/interactions.html'], bm);
+    const result = await handleMetaCommand('find', ['last', '.item'], bm, async () => {});
+    expect(result).toContain('Item 3');
+  });
+
+  test('find nth returns nth matching element (0-indexed)', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/interactions.html'], bm);
+    const result = await handleMetaCommand('find', ['nth', '1', '.item'], bm, async () => {});
+    expect(result).toContain('Item 2');
+  });
+});
+
+// ─── Screenshot extensions ───────────────────────────────────────
+
+describe('Screenshot extensions', () => {
+  const ssTempFiles: string[] = [];
+  afterAll(() => { for (const f of ssTempFiles) try { fs.unlinkSync(f); } catch {} });
+
+  test('element screenshot is smaller than full page', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const fullPath = `/tmp/browse-test-ss-full-${Date.now()}.png`;
+    const elemPath = `/tmp/browse-test-ss-elem-${Date.now()}.png`;
+    ssTempFiles.push(fullPath, elemPath);
+
+    await handleMetaCommand('screenshot', [fullPath], bm, async () => {});
+    // Use #title selector (h1 has id="title" in basic.html) — element selectors must start with ., #, or [
+    await handleMetaCommand('screenshot', ['#title', elemPath], bm, async () => {});
+
+    expect(fs.existsSync(elemPath)).toBe(true);
+    const fullSize = fs.statSync(fullPath).size;
+    const elemSize = fs.statSync(elemPath).size;
+    expect(elemSize).toBeLessThan(fullSize);
+  });
+
+  test('clip screenshot produces a valid PNG', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const clipPath = `/tmp/browse-test-ss-clip-${Date.now()}.png`;
+    ssTempFiles.push(clipPath);
+
+    await handleMetaCommand('screenshot', ['--clip', '0,0,100,100', clipPath], bm, async () => {});
+    expect(fs.existsSync(clipPath)).toBe(true);
+    expect(fs.statSync(clipPath).size).toBeGreaterThan(0);
+  });
+
+  test('--clip with --full throws error', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await expect(
+      handleMetaCommand('screenshot', ['--clip', '0,0,100,100', '--full'], bm, async () => {})
+    ).rejects.toThrow('Cannot use --clip with --full');
+  });
+});
+
+// ─── --max-output (handler-level text verification) ──────────────
+
+describe('--max-output handler baseline', () => {
+  test('text command returns content longer than 50 chars', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleReadCommand('text', [], bm);
+    // basic.html has headings, paragraphs, list items — well over 50 chars
+    expect(result.length).toBeGreaterThan(50);
+  });
+});
+
+// ─── Ref staleness ───────────────────────────────────────────────
+
+describe('Ref staleness', () => {
+  test('refs cleared after navigation — resolveRefChecked throws', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+
+    // Populate refs via snapshot
+    await handleMetaCommand('snapshot', ['-i'], bm, async () => {});
+    // Verify refs were created
+    expect(bm.getRefCount()).toBeGreaterThan(0);
+
+    // Navigate to a different page — framenavigated event clears the ref map
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+
+    // Refs should be cleared by navigation, so resolveRefChecked throws "not found"
+    try {
+      await bm.resolveRefChecked('@e1');
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      // Navigation clears refs, so the error says the ref is not found
+      // and suggests re-running snapshot to get fresh refs
+      expect(err.message).toContain('snapshot');
+    }
+  });
+});
+
+// ─── Doctor command ──────────────────────────────────────────────
+
+describe('Doctor command', () => {
+  test('doctor returns system info', async () => {
+    const result = await handleMetaCommand('doctor', [], bm, async () => {});
+    expect(result).toContain('Bun:');
+    expect(result).toContain('Playwright:');
+  });
+});

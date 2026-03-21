@@ -93,29 +93,55 @@ browse accessibility           # Raw ARIA snapshot tree
 
 ```bash
 browse click <sel>             # Click element
+browse rightclick <sel>        # Right-click element (context menu)
 browse dblclick <sel>          # Double-click element
 browse fill <sel> <val>        # Clear and fill input
 browse select <sel> <val>      # Select dropdown option
 browse hover <sel>             # Hover element
 browse focus <sel>             # Focus element
+browse tap <sel>               # Tap element (requires touch context via emulate)
 browse check <sel>             # Check checkbox
 browse uncheck <sel>           # Uncheck checkbox
 browse type <text>             # Type text via keyboard (current focus)
 browse press <key>             # Press key (Enter, Tab, etc.)
 browse keydown <key>           # Key down event
 browse keyup <key>             # Key up event
+browse keyboard inserttext <text> # Insert text without key events
 browse scroll [sel|up|down]    # Scroll element into view or direction
+browse scrollinto <sel>        # Scroll element into view (explicit)
+browse swipe <dir> [px]        # Swipe up/down/left/right (touch events)
 browse drag <src> <tgt>        # Drag and drop
 browse highlight <sel>         # Highlight element with visual overlay
 browse download <sel> [path]   # Download file triggered by click
 browse upload <sel> <files...> # Upload files to input
 ```
 
+### Mouse Control
+
+```bash
+browse mouse move <x> <y>     # Move mouse to coordinates
+browse mouse down [button]     # Press mouse button (left/right/middle)
+browse mouse up [button]       # Release mouse button
+browse mouse wheel <dy> [dx]   # Scroll wheel
+```
+
+### Settings
+
+```bash
+browse set geo <lat> <lng>     # Set geolocation
+browse set media <scheme>      # Set color scheme (dark/light/no-preference)
+```
+
 ### Wait
 
 ```bash
 browse wait <selector>         # Wait for element
+browse wait <selector> --state hidden  # Wait for element to disappear
+browse wait <ms>               # Wait for milliseconds
 browse wait --url <pattern>    # Wait for URL
+browse wait --text "Welcome"   # Wait for text to appear in page
+browse wait --fn "js expr"     # Wait for JavaScript condition
+browse wait --load <state>     # Wait for load state (load/domcontentloaded/networkidle)
 browse wait --network-idle     # Wait for network idle
 ```
 
@@ -153,6 +179,11 @@ browse find text <text>                       # By text content
 browse find label <label>                     # By label
 browse find placeholder <placeholder>         # By placeholder
 browse find testid <id>                       # By data-testid
+browse find alt <text>                        # By alt text
+browse find title <text>                      # By title attribute
+browse find first <sel>                       # First matching element
+browse find last <sel>                        # Last matching element
+browse find nth <n> <sel>                     # Nth matching element (0-indexed)
 ```
 
 ### Inspection
@@ -165,8 +196,10 @@ browse attrs <sel>             # Get element attributes as JSON
 browse element-state <sel>     # Element state (visible, enabled, checked, etc.)
 browse value <sel>             # Get input/select value
 browse count <sel>             # Count elements matching selector
+browse box <sel>               # Get bounding box as JSON {x, y, width, height}
 browse clipboard [write <text>] # Read or write clipboard
 browse console [--clear]       # Console log buffer
+browse errors [--clear]        # Page errors only (filtered from console)
 browse network [--clear]       # Network request buffer
 browse cookies                 # Browser cookies as JSON
 browse storage [set <k> <v>]   # localStorage/sessionStorage
@@ -177,10 +210,13 @@ browse devices [filter]        # List available device names
 ### Visual
 
 ```bash
-browse screenshot [path]       # Take screenshot
-browse screenshot --annotate   # Annotated screenshot with numbered element labels
-browse pdf [path]              # Save page as PDF
-browse responsive [prefix]     # Mobile/tablet/desktop screenshots
+browse screenshot [path]              # Take screenshot (viewport)
+browse screenshot --full [path]       # Full-page screenshot
+browse screenshot <sel|@ref> [path]   # Screenshot specific element
+browse screenshot --clip x,y,w,h [path] # Screenshot clipped region
+browse screenshot --annotate [path]   # Annotated screenshot with numbered labels
+browse pdf [path]                     # Save page as PDF
+browse responsive [prefix]            # Mobile/tablet/desktop screenshots
 ```
 
 ### Compare
@@ -219,6 +255,17 @@ browse viewport 1280x720       # Set viewport size
 
 100+ devices: iPhone 12–17, Pixel 5–7, iPad, Galaxy, and all Playwright built-ins.
 
+### Cookies
+
+```bash
+browse cookie <name>=<value>                        # Set cookie (simple)
+browse cookie set <n> <v> [--domain --secure ...]   # Set cookie with options
+browse cookie clear                                 # Clear all cookies
+browse cookie export <file>                         # Export cookies to JSON
+browse cookie import <file>                         # Import cookies from JSON
+browse cookies                                      # Read all cookies
+```
+
 ### Network
 
 ```bash
@@ -226,7 +273,6 @@ browse route <pattern> block                # Block matching requests
 browse route <pattern> fulfill <status> [body] # Mock response
 browse route clear                          # Remove all routes
 browse offline [on|off]                     # Toggle offline mode
-browse cookie <name>=<value>                # Set cookie
 browse header <name>:<value>                # Set extra HTTP header
 browse useragent <string>                   # Set user agent
 ```
@@ -284,6 +330,8 @@ echo '[["goto","https://example.com"],["snapshot","-i"],["text"]]' | browse chai
 ```bash
 browse status                  # Server health report
 browse instances               # List all running browse servers
+browse doctor                  # System check (Bun, Playwright, Chromium)
+browse upgrade                 # Self-update via npm
 browse stop                    # Stop server
 browse restart                 # Restart server
 browse inspect                 # Open DevTools (requires BROWSE_DEBUG_PORT)
@@ -453,6 +501,7 @@ Use browse to test the login flow. Run browse --help to see available commands.
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
+| `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Show browser window (not headless) |
 
 ## Environment Variables
@@ -469,6 +518,7 @@ Use browse to test the login flow. Run browse --help to see available commands.
 | `BROWSE_JSON` | (none) | Set to `1` for JSON output mode |
 | `BROWSE_CONTENT_BOUNDARIES` | (none) | Set to `1` for nonce-delimited output |
 | `BROWSE_ALLOWED_DOMAINS` | (none) | Comma-separated domain allowlist |
+| `BROWSE_MAX_OUTPUT` | (none) | Truncate output to N characters |
 | `BROWSE_HEADED` | (none) | Set to `1` for headed browser mode |
 | `BROWSE_CDP_URL` | (none) | Connect to remote Chrome via CDP |
 | `BROWSE_PROXY` | (none) | Proxy server URL |
