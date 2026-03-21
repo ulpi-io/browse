@@ -14,15 +14,14 @@
     "playwright-core": "^1.58.2"
   },
   "bin": {
-    "browse": "bin/browse.ts"
+    "browse": "dist/browse.mjs"
   },
   "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
   "engines": {
     "node": ">=18.0.0"
   },
   "files": [
-    "bin/",
-    "src/",
+    "dist/",
     "skill/",
     "LICENSE",
     "README.md",
@@ -42,7 +41,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --target=node18 --outfile=dist/browse.js --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi",
+    "build": "esbuild src/cli.ts --bundle --format=esm --platform=node --target=node18 --outfile=dist/browse.mjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --banner:js='#!/usr/bin/env node'",
     "build:all": "bash scripts/build-all.sh",
     "dev": "tsx src/cli.ts",
     "server": "tsx src/server.ts",

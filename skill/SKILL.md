@@ -1,6 +1,6 @@
 ---
 name: browse
-version: 2.7.0
+version: 2.8.0
 description: |
   Fast web browsing for AI coding agents via persistent headless Chromium daemon. Navigate to any URL,
   read page content, click elements, fill forms, run JavaScript, take screenshots,
@@ -31,8 +31,7 @@ fi
 
 If `NEEDS_INSTALL`:
 1. Tell the user: "browse needs a one-time install via npm. OK to proceed?"
-2. If they approve: `bun install -g @ulpi/browse`
-3. If `bun` is not installed: `curl -fsSL https://bun.sh/install | bash`
+2. If they approve: `npm install -g @ulpi/browse`
 
 ### Permissions check
 
