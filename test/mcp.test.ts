@@ -223,4 +223,18 @@ describe('MCP Server', () => {
     expect(count).toBeGreaterThanOrEqual(0);
     expect(result.isError).toBeFalsy();
   });
+
+  test('browse_provider list returns result', async () => {
+    const result = await callTool('browse_provider', { action: 'list' });
+    expect(result.isError).toBeFalsy();
+    // Should return provider list (may be empty)
+    expect(result.content[0].text).toBeDefined();
+  });
+
+  test('tool definitions include browse_provider', async () => {
+    const tools = await listTools();
+    const providerTool = tools.find((t: any) => t.name === 'browse_provider');
+    expect(providerTool).toBeTruthy();
+    expect(providerTool.description).toContain('cloud');
+  });
 });

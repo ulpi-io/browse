@@ -266,7 +266,7 @@ describe('drag', () => {
   });
 
   test('throws on missing args', async () => {
-    expect(handleWriteCommand('drag', [], bm)).rejects.toThrow('Usage');
+    await expect(handleWriteCommand('drag', [], bm)).rejects.toThrow('Usage');
   });
 });
 
@@ -285,7 +285,7 @@ describe('download', () => {
   });
 
   test('throws on missing selector', async () => {
-    expect(handleWriteCommand('download', [], bm)).rejects.toThrow('Usage');
+    await expect(handleWriteCommand('download', [], bm)).rejects.toThrow('Usage');
   });
 });
 

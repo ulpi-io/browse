@@ -987,6 +987,19 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ['action'],
     },
   },
+  {
+    name: 'browse_provider',
+    description: 'Manage cloud browser providers (Browserless, Browserbase). Save API keys, list configured providers, or delete credentials. Use "save" to store a provider API key, then set BROWSE_CDP_URL to connect via CDP.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'Operation to perform.', enum: ['save', 'list', 'delete'] },
+        name: { type: 'string', description: 'Provider name (e.g. "browserless", "browserbase"). Required for save and delete.' },
+        api_key: { type: 'string', description: 'API key for the provider. Required for save.' },
+      },
+      required: ['action'],
+    },
+  },
 ];
 
 // ─── Public API ────────────────────────────────────────────────────
@@ -1429,6 +1442,13 @@ export function mapToolCallToCommand(
       const args = [String(params.action)];
       if (params.selector) args.push(String(params.selector));
       return { command: 'react-devtools', args };
+    }
+
+    case 'provider': {
+      const args = [String(params.action)];
+      if (params.name) args.push(String(params.name));
+      if (params.api_key) args.push(String(params.api_key));
+      return { command: 'provider', args };
     }
 
     default:

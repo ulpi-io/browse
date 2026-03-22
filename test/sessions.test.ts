@@ -201,7 +201,7 @@ describe('Session lifecycle', () => {
   });
 
   test('closeSession throws on non-existent session', async () => {
-    expect(sm.closeSession('nonexistent')).rejects.toThrow('not found');
+    await expect(sm.closeSession('nonexistent')).rejects.toThrow('not found');
   });
 
   test('listSessions returns correct info', async () => {
