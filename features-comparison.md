@@ -186,11 +186,26 @@ Legend: **YES** = shipped, **—** = not available
 | HAR recording | YES | — | YES (`network har`) | — |
 | Video recording (WebM) | YES | — | YES (`record`) | — |
 | Command recording | YES (`record`) | — | — | — |
-| Export to Playwright script | YES | — | — | — |
-| Export to Puppeteer script | YES | — | — | — |
-| Export to JSON (replayable) | YES | — | — | — |
+| Export to Chrome DevTools Recorder | YES (`record export replay`) | — | — | — |
+| Export to chain JSON (replayable) | YES (`record export browse`) | — | — | — |
 | Chrome DevTools trace | — | — | YES (`trace`) | — |
 | CPU profiler | — | — | YES (`profiler`) | — |
+
+## React DevTools
+
+| Feature | **browse** | **gstack** | **agent-browser** | **browser-use** |
+|---|---|---|---|---|
+| Component tree | YES (`react-devtools tree`) | — | — | — |
+| Props/state inspection | YES (`react-devtools props`) | — | — | — |
+| Suspense boundaries | YES (`react-devtools suspense`) | — | — | — |
+| Error boundaries | YES (`react-devtools errors`) | — | — | — |
+| Render profiler | YES (`react-devtools profiler`) | — | — | — |
+| Hydration timing | YES (`react-devtools hydration`) | — | — | — |
+| Re-render tracking | YES (`react-devtools renders`) | — | — | — |
+| Owner chain | YES (`react-devtools owners`) | — | — | — |
+| Context inspection | YES (`react-devtools context`) | — | — | — |
+| On-demand enable/disable | YES | — | — | — |
+| Lazy hook download | YES (~50KB, cached) | — | — | — |
 
 ## Auth & Session Persistence
 
@@ -206,7 +221,7 @@ Legend: **YES** = shipped, **—** = not available
 | `--cdp <port>` flag | YES | — | YES | YES (`--cdp-url`) |
 | State cleanup (`state clean`) | YES | — | YES (`state clean`) | — |
 | Persistent profile (`--profile`) | YES | — | YES | YES |
-| Handoff to visible Chrome | — | YES | — | — |
+| Handoff to visible Chrome | YES (`handoff`/`resume`) | YES | — | — |
 | State save/load (manual) | YES | — | YES | — |
 
 ## Sessions & Isolation
@@ -287,12 +302,12 @@ Legend: **YES** = shipped, **—** = not available
 
 | Category | **browse** | **gstack** | **agent-browser** | **browser-use** |
 |---|---|---|---|---|
-| Total features (YES) | 139 | 60 | 136 | 51 |
+| Total features (YES) | 152 | 60 | 136 | 51 |
 | Blocked | 0 | — | — | — |
 
 ## Top Remaining Gaps
 
 1. **Cloud providers** — agent-browser has 4, we have 0 (L effort)
-2. **Handoff** — gstack exclusive, unlocker for CAPTCHA/MFA (M effort)
-3. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
-4. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
+2. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
+3. **Chrome DevTools trace** — agent-browser has `trace` command (S effort)
+4. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
