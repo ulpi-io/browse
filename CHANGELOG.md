@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.0 — React DevTools Integration
+
+- `react-devtools enable/disable` — on-demand React DevTools hook injection (lazy-downloaded, cached)
+- `react-devtools tree` — component tree with indentation and Suspense status
+- `react-devtools props <sel>` — inspect props, state, and hooks of any component
+- `react-devtools suspense` — find pending Suspense boundaries
+- `react-devtools errors` — find error boundaries and caught errors
+- `react-devtools profiler` — render timing per component (requires profiling build)
+- `react-devtools hydration` — hydration timing for Next.js apps
+- `react-devtools renders` — track what re-rendered
+- `react-devtools owners/context` — parent chain and context inspection
+- 11 subcommands total, all work with @ref selectors
+
 ## v1.0.4 — Bun CLI Shim (Performance)
 
 - Auto-detect Bun for CLI execution — 40-60ms per command (vs 100-150ms with Node)

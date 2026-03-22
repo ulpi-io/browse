@@ -302,6 +302,22 @@ browse record export browse [path]      # Export as chain-compatible JSON (repla
 browse record export replay [path]     # Export as Chrome DevTools Recorder (Playwright/Puppeteer)
 ```
 
+### React DevTools
+
+```bash
+browse react-devtools enable           # Enable (downloads hook on first use)
+browse react-devtools tree             # Component tree
+browse react-devtools props <sel>      # Props/state of component
+browse react-devtools suspense         # Suspense boundary status
+browse react-devtools errors           # Error boundaries
+browse react-devtools profiler         # Render timing
+browse react-devtools hydration        # Hydration timing
+browse react-devtools renders          # What re-rendered
+browse react-devtools owners <sel>     # Parent component chain
+browse react-devtools context <sel>    # Context values
+browse react-devtools disable          # Disable
+```
+
 ### State & Auth
 
 ```bash

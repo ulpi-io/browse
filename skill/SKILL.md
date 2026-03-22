@@ -291,6 +291,13 @@ browse handoff "stuck on CAPTCHA"
 # ... user solves in visible browser, tells you "done" ...
 browse resume
 
+# React debugging (enable DevTools, inspect components)
+browse react-devtools enable
+browse react-devtools tree
+browse react-devtools props @e3
+browse react-devtools suspense
+browse react-devtools disable
+
 # Stealth mode (bypasses bot detection)
 # Requires: npm install rebrowser-playwright && npx rebrowser-playwright install chromium
 browse --runtime rebrowser goto https://example.com
@@ -533,6 +540,21 @@ browse record export browse [path]     Export as chain-compatible JSON (replay w
 browse record export replay [path]    Export as Chrome DevTools Recorder (Playwright/Puppeteer)
 ```
 
+### React DevTools
+```
+browse react-devtools enable           Enable React DevTools (downloads hook, injects, reloads)
+browse react-devtools disable          Disable React DevTools
+browse react-devtools tree             Component tree with indentation
+browse react-devtools props <sel>      Props/state/hooks of component at element
+browse react-devtools suspense         Suspense boundaries + status
+browse react-devtools errors           Error boundaries + caught errors
+browse react-devtools profiler         Render timing per component
+browse react-devtools hydration        Hydration timing (Next.js)
+browse react-devtools renders          What re-rendered since last commit
+browse react-devtools owners <sel>     Parent component chain
+browse react-devtools context <sel>    Context values consumed by component
+```
+
 ### Server management
 ```
 browse status                  Server health, uptime, session count
@@ -709,6 +731,9 @@ If "Cancel" → resume anyway (closes headed browser), then try alternative appr
 | Limit output size | `--max-output 5000 text` |
 | See the browser | `browse --headed goto <url>` |
 | CAPTCHA / MFA blocker | `handoff "reason"` → user solves → `resume` (see Handoff Protocol) |
+| Debug React components | `react-devtools enable` → `tree` → `props @e3` |
+| Debug hydration issues | `react-devtools enable` → `hydration` |
+| Find suspense blockers | `react-devtools enable` → `suspense` |
 | Bypass bot detection | `--runtime rebrowser goto <url>` |
 | Persistent login state | `--profile mysite` → browse around → close → reopen (still logged in) |
 

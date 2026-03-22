@@ -397,6 +397,17 @@ export class BrowserManager {
     return this.isPersistent;
   }
 
+  // ─── React DevTools ──────────────────────────────────
+  private reactDevToolsEnabled = false;
+
+  getReactDevToolsEnabled(): boolean {
+    return this.reactDevToolsEnabled;
+  }
+
+  setReactDevToolsEnabled(enabled: boolean): void {
+    this.reactDevToolsEnabled = enabled;
+  }
+
   getIsHeaded(): boolean {
     return this.isHeaded;
   }

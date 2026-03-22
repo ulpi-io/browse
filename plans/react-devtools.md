@@ -416,8 +416,8 @@ Update SKILL.md, README, CHANGELOG:
 ```json
 {
   "TASK-001": [],
-  "TASK-002": [],
-  "TASK-003": ["TASK-001", "TASK-002"],
+  "TASK-002": ["TASK-001"],
+  "TASK-003": ["TASK-002"],
   "TASK-004": ["TASK-003"],
   "TASK-005": ["TASK-004"]
 }

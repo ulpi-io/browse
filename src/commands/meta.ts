@@ -1038,6 +1038,57 @@ export async function handleMetaCommand(
       throw new Error('Usage: browse profile list | delete <name> | clean [--older-than <days>]');
     }
 
+    // ─── React DevTools ──────────────────────────────────
+    case 'react-devtools': {
+      const sub = args[0];
+      if (!sub) throw new Error(
+        'Usage: browse react-devtools enable|disable|tree|props|suspense|errors|profiler|hydration|renders|owners|context'
+      );
+
+      const rd = await import('../react-devtools');
+
+      switch (sub) {
+        case 'enable': {
+          if (rd.isEnabled(bm)) return 'React DevTools already enabled.';
+          await rd.injectHook(bm);
+          await bm.getPage().reload();
+          return 'React DevTools enabled. Page reloaded.';
+        }
+        case 'disable': {
+          rd.removeHook(bm);
+          return 'React DevTools disabled. Takes effect on next navigation.';
+        }
+        case 'tree':
+          return await rd.getTree(bm, bm.getPage());
+        case 'props': {
+          if (!args[1]) throw new Error('Usage: browse react-devtools props <selector|@ref>');
+          return await rd.getProps(bm, bm.getPage(), args[1]);
+        }
+        case 'suspense':
+          return await rd.getSuspense(bm, bm.getPage());
+        case 'errors':
+          return await rd.getErrors(bm, bm.getPage());
+        case 'profiler':
+          return await rd.getProfiler(bm, bm.getPage());
+        case 'hydration':
+          return await rd.getHydration(bm, bm.getPage());
+        case 'renders':
+          return await rd.getRenders(bm, bm.getPage());
+        case 'owners': {
+          if (!args[1]) throw new Error('Usage: browse react-devtools owners <selector|@ref>');
+          return await rd.getOwners(bm, bm.getPage(), args[1]);
+        }
+        case 'context': {
+          if (!args[1]) throw new Error('Usage: browse react-devtools context <selector|@ref>');
+          return await rd.getContext(bm, bm.getPage(), args[1]);
+        }
+        default:
+          throw new Error(
+            `Unknown subcommand: ${sub}. Use: enable|disable|tree|props|suspense|errors|profiler|hydration|renders|owners|context`
+          );
+      }
+    }
+
     default:
       throw new Error(`Unknown meta command: ${command}`);
   }

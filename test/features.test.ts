@@ -1734,3 +1734,197 @@ describe('Handoff', () => {
     expect(resumeResult).toContain('basic.html');
   });
 });
+
+// ─── React DevTools ─────────────────────────────────────────────
+
+describe('React DevTools', () => {
+  const shutdown = async () => {};
+
+  // Minimal React DevTools hook script that provides the global hook object.
+  // React 18 dev build discovers this and calls hook.inject(internals),
+  // which populates renderers and fiber roots for tree introspection.
+  const MINIMAL_HOOK_SCRIPT = `
+(function() {
+  if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__) return;
+  var nextID = 1;
+  var renderers = new Map();
+  var rendererInterfaces = new Map();
+  var fiberRoots = new Map();
+  window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+    renderers: renderers,
+    rendererInterfaces: rendererInterfaces,
+    supportsFiber: true,
+    inject: function(renderer) {
+      var id = nextID++;
+      renderers.set(id, renderer);
+      fiberRoots.set(id, new Set());
+      return id;
+    },
+    onCommitFiberRoot: function(rendererID, root) {
+      var roots = fiberRoots.get(rendererID);
+      if (roots) roots.add(root);
+    },
+    onCommitFiberUnmount: function() {},
+    onScheduleFiberRoot: function() {},
+    onPostCommitFiberRoot: function() {},
+    getFiberRoots: function(rendererID) {
+      return fiberRoots.get(rendererID) || new Set();
+    },
+    checkDCE: function() {},
+    isDisabled: false
+  };
+})();
+`;
+
+  // Track whether React CDN is reachable and hook injection succeeds
+  let reactAvailable = false;
+  let hookCachePath: string;
+
+  beforeAll(async () => {
+    // Pre-populate the hook cache so ensureHook() skips the CDN download.
+    // This avoids a network dependency on unpkg.com for the DevTools hook.
+    hookCachePath = path.join(os.homedir(), '.cache', 'browse', 'react-devtools', 'installHook.js');
+    const cacheDir = path.dirname(hookCachePath);
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    // Only write if no cached hook exists (don't overwrite a real one)
+    const hadExistingHook = fs.existsSync(hookCachePath);
+    if (!hadExistingHook) {
+      fs.writeFileSync(hookCachePath, MINIMAL_HOOK_SCRIPT);
+    }
+
+    // Navigate to the React app fixture and check if React loaded from CDN
+    await handleWriteCommand('goto', [baseUrl + '/react-app.html'], bm);
+    // Wait for React to render (CDN scripts need time to load)
+    await new Promise(r => setTimeout(r, 3000));
+    const text = await handleReadCommand('text', [], bm);
+    reactAvailable = text.includes('React Test App');
+    if (!reactAvailable) {
+      console.warn('React CDN unreachable — skipping React DevTools tests');
+      // Clean up the minimal hook if we wrote it
+      if (!hadExistingHook && fs.existsSync(hookCachePath)) {
+        fs.unlinkSync(hookCachePath);
+      }
+    }
+  });
+
+  test('react-devtools enable injects hook and reloads', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['enable'], bm, shutdown);
+    expect(result).toContain('enabled');
+    expect(bm.getReactDevToolsEnabled()).toBe(true);
+
+    // Wait for page reload + React to re-render with hook present
+    await new Promise(r => setTimeout(r, 3000));
+  });
+
+  test('react-devtools tree returns component names', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['tree'], bm, shutdown);
+    expect(result).toContain('App');
+    expect(result).toContain('Header');
+    expect(result).toContain('Counter');
+  });
+
+  test('react-devtools suspense returns boundary info', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['suspense'], bm, shutdown);
+    expect(result).toContain('Suspense');
+    expect(result).toContain('resolved');
+  });
+
+  test('react-devtools props on counter button shows component info', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['props', '#counter-btn'], bm, shutdown);
+    expect(result).toContain('Counter');
+  });
+
+  test('react-devtools owners on counter button shows chain', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['owners', '#counter-btn'], bm, shutdown);
+    expect(result).toContain('Counter');
+    expect(result).toContain('App');
+  });
+
+  test('react-devtools errors returns no error boundaries', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['errors'], bm, shutdown);
+    expect(result).toContain('No error boundaries');
+  });
+
+  test('react-devtools renders returns render info', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['renders'], bm, shutdown);
+    // May report re-rendered components or "No components re-rendered" — both are valid
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test('react-devtools tree on non-React page returns no React', async () => {
+    if (!reactAvailable) return;
+
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    try {
+      await handleMetaCommand('react-devtools', ['tree'], bm, shutdown);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('No React');
+    }
+  });
+
+  test('react-devtools disable clears flag', async () => {
+    if (!reactAvailable) return;
+
+    const result = await handleMetaCommand('react-devtools', ['disable'], bm, shutdown);
+    expect(result).toContain('disabled');
+    expect(bm.getReactDevToolsEnabled()).toBe(false);
+  });
+
+  test('react-devtools tree without enable returns error', async () => {
+    if (!reactAvailable) return;
+
+    try {
+      await handleMetaCommand('react-devtools', ['tree'], bm, shutdown);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('not enabled');
+    }
+  });
+
+  test('react-devtools props without selector throws usage', async () => {
+    if (!reactAvailable) return;
+
+    try {
+      await handleMetaCommand('react-devtools', ['props'], bm, shutdown);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('Usage');
+    }
+  });
+
+  test('react-devtools unknown subcommand throws', async () => {
+    try {
+      await handleMetaCommand('react-devtools', ['invalid'], bm, shutdown);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('Unknown');
+    }
+  });
+
+  test('react-devtools without subcommand throws usage', async () => {
+    try {
+      await handleMetaCommand('react-devtools', [], bm, shutdown);
+      expect(true).toBe(false); // should not reach
+    } catch (err: any) {
+      expect(err.message).toContain('Usage');
+    }
+  });
+});

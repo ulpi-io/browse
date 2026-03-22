@@ -169,6 +169,7 @@ const META_COMMANDS = new Set([
   'frame', 'state', 'find',
   'auth', 'har', 'video', 'inspect', 'record', 'cookie-import',
   'doctor', 'upgrade', 'handoff', 'resume', 'profile',
+  'react-devtools',
 ]);
 
 // Commands excluded from recording — meta/diagnostic commands that don't represent user actions

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head><title>React Test</title></head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script>
+    const { useState, Suspense } = React;
+
+    function Header() {
+      return React.createElement('h1', null, 'React Test App');
+    }
+
+    function Counter() {
+      const [count, setCount] = useState(0);
+      return React.createElement('button', {
+        onClick: () => setCount(c => c + 1),
+        id: 'counter-btn'
+      }, 'Count: ' + count);
+    }
+
+    function App() {
+      return React.createElement('div', null,
+        React.createElement(Header),
+        React.createElement(Counter),
+        React.createElement(Suspense, { fallback: 'Loading...' },
+          React.createElement('p', { id: 'content' }, 'Content loaded')
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
