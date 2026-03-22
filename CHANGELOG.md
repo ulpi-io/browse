@@ -13,6 +13,13 @@
 - `react-devtools owners/context` — parent chain and context inspection
 - 11 subcommands total, all work with @ref selectors
 
+## v1.0.5 — Handoff (Human Takeover)
+
+- `handoff [reason]` — swap to visible browser for user to solve CAPTCHA/MFA/OAuth
+- `resume` — swap back to headless, returns fresh snapshot
+- Two-step protocol: agent asks permission via AskUserQuestion, then hands off
+- Server auto-suggests handoff after 3 consecutive command failures
+
 ## v1.0.4 — Bun CLI Shim (Performance)
 
 - Auto-detect Bun for CLI execution — 40-60ms per command (vs 100-150ms with Node)

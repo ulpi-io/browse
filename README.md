@@ -318,6 +318,15 @@ browse react-devtools context <sel>    # Context values
 browse react-devtools disable          # Disable
 ```
 
+### Handoff (Human Takeover)
+
+```bash
+browse handoff [reason]        # Swap to visible browser for CAPTCHA/MFA/OAuth
+browse resume                  # Swap back to headless, returns fresh snapshot
+```
+
+Agent asks permission first via AskUserQuestion, then hands off. Server auto-suggests handoff after 3 consecutive failures.
+
 ### State & Auth
 
 ```bash
