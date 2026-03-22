@@ -534,6 +534,61 @@ Core workflow:
 Use browse to test the login flow. Run browse --help to see available commands.
 ```
 
+## MCP Server Mode
+
+Run browse as an [MCP](https://modelcontextprotocol.io/) server for editors that support the Model Context Protocol.
+
+```bash
+browse --mcp
+```
+
+Use `--json` alongside `--mcp` for structured responses (`{success, data, command}`).
+
+> **Note:** Requires `npm install @modelcontextprotocol/sdk` alongside browse.
+
+### Cursor
+
+`.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "browse": {
+      "command": "browse",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+`claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "browse": {
+      "command": "browse",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+### Windsurf
+
+```json
+{
+  "mcpServers": {
+    "browse": {
+      "command": "browse",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
 ## Options
 
 | Flag | Description |

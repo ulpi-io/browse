@@ -407,6 +407,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda |
+| `--mcp` | Run as MCP server (for Cursor, Windsurf, Cline) |
 
 ## Reference Files
 

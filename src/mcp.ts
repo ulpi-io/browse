@@ -77,6 +77,31 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
         };
       }
 
+      // Snapshot commands: return structured refs alongside text content
+      if (command === 'snapshot') {
+        const refs: Record<string, { role: string; name: string }> = {};
+        for (const line of result.split('\n')) {
+          const match = line.match(/^(@e\d+)\s+\[(\w+)\]\s+"?([^"]*)"?/);
+          if (match) {
+            refs[match[1]] = { role: match[2], name: match[3] };
+          }
+        }
+
+        return {
+          content: [
+            { type: 'text' as const, text: jsonMode ? JSON.stringify({ success: true, data: result, command }) : result },
+            {
+              type: 'resource' as const,
+              resource: {
+                uri: 'browse://refs',
+                mimeType: 'application/json',
+                text: JSON.stringify(refs),
+              },
+            },
+          ],
+        };
+      }
+
       if (jsonMode) {
         const wrapped = JSON.stringify({ success: true, data: result, command });
         return {
