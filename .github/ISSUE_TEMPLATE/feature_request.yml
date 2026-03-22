@@ -1,0 +1,85 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for @ulpi/browse? Describe the problem you're solving and your proposed solution.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: |
+        What are you trying to do? What problem does this solve?
+        If you're building an AI agent workflow, describe the scenario.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Command category
+      description: "Where does this feature fit?"
+      options:
+        - "Read command (extracts data, no side effects)"
+        - "Write command (navigation or interaction)"
+        - "Meta command (tabs, server, visual, sessions)"
+        - "CLI behavior (flags, output format, error handling)"
+        - "Server / architecture"
+        - "Configuration (browse.json, policy, domain filter)"
+        - "Other / not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How should it work? Include example commands and expected output.
+        If it involves selectors, show both CSS and @ref usage.
+      placeholder: |
+        # Example usage:
+        browse new-command <arg>
+        # Expected output:
+        ...
+
+        # With @ref:
+        browse snapshot -i
+        browse new-command @e3
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Other approaches you've considered or workarounds you're using today.
+        Include any `browse js` or `browse eval` workarounds if applicable.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Breaking changes?
+      description: "Would this change existing command behavior?"
+      options:
+        - "No — purely additive"
+        - "Maybe — depends on implementation"
+        - "Yes — changes existing behavior"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Links to related issues, similar features in other tools,
+        or screenshots showing the problem you're solving.
+    validations:
+      required: false

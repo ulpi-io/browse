@@ -1,0 +1,143 @@
+name: Bug Report
+description: Report a bug in @ulpi/browse
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill out the sections below so we can reproduce and fix it.
+
+  - type: input
+    id: version
+    attributes:
+      label: Browse version
+      description: "Run `browse status` or `npm ls @ulpi/browse`"
+      placeholder: "1.1.1"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: "Run `node --version`"
+      placeholder: "v22.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation method
+      options:
+        - "npm install -g @ulpi/browse"
+        - "npm install @ulpi/browse (local)"
+        - From source (git clone)
+        - Compiled binary
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: "Browse auto-detects Bun if installed. Which runtime are you using?"
+      options:
+        - Node.js
+        - Bun
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Include error messages verbatim if possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Exact commands to reproduce. Include the full sequence from `goto` onwards.
+        If using sessions, include the `--session` flag.
+      placeholder: |
+        browse goto https://example.com
+        browse snapshot -i
+        browse click @e2
+        # Error: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened. Paste the exact CLI output.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console / network output
+      description: |
+        Paste output from `browse console` and/or `browse network` if relevant.
+        For server issues, also include `browse status` output.
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: session
+    attributes:
+      label: Using sessions?
+      description: "Were you using `--session` for multi-agent isolation?"
+      options:
+        - "No (default session)"
+        - "Yes (--session flag)"
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: |
+        Any relevant environment variables (BROWSE_PORT, BROWSE_CDP_URL, BROWSE_ALLOWED_DOMAINS, etc.),
+        browse.json config, or browse-policy.json. Redact sensitive values.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: "Did you find a workaround? This helps us prioritize."
+    validations:
+      required: false
