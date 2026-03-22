@@ -213,12 +213,22 @@ export async function handleWriteCommand(
         return `Load state reached: ${state}`;
       }
 
-      // wait --download [timeout] — wait for a download event
+      // wait --download [path] [timeout] — wait for download to complete
       if (selector === '--download') {
-        const timeout = args[1] ? parseInt(args[1], 10) : 30000;
+        const pathOrTimeout = args[1];
+        const timeout = args[2] ? parseInt(args[2], 10) : (pathOrTimeout && /^\d+$/.test(pathOrTimeout) ? parseInt(pathOrTimeout, 10) : 30000);
+        const savePath = pathOrTimeout && !/^\d+$/.test(pathOrTimeout) ? pathOrTimeout : null;
         const download = await page.waitForEvent('download', { timeout });
         const filename = download.suggestedFilename();
-        return `Download started: ${filename}`;
+        // Wait for download to finish (not just start)
+        const failure = await download.failure();
+        if (failure) return `Download failed: ${filename} — ${failure}`;
+        if (savePath) {
+          await download.saveAs(savePath);
+          return `Downloaded: ${savePath} (${filename})`;
+        }
+        const tmpPath = await download.path();
+        return `Downloaded: ${filename} (saved to ${tmpPath})`;
       }
 
       // wait <ms> — wait for milliseconds (numeric first arg)
