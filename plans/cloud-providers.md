@@ -108,28 +108,41 @@ const providers: Record<string, CloudProvider> = {
   browserless: {
     name: 'Browserless',
     async getCdpUrl(token) {
-      return { cdpUrl: `wss://chrome.browserless.io?token=${token}` };
+      // Browserless: direct WebSocket, no session creation needed
+      // Supports wss://production-sfo.browserless.io for specific regions via BROWSERLESS_URL env
+      const baseUrl = process.env.BROWSERLESS_URL || 'wss://production-sfo.browserless.io';
+      return { cdpUrl: `${baseUrl}?token=${token}` };
     }
   },
   browserbase: {
     name: 'Browserbase',
     async getCdpUrl(apiKey) {
+      // Browserbase: REST API creates session, returns connectUrl with auth baked in
+      // Requires BROWSERBASE_PROJECT_ID env var
       const projectId = process.env.BROWSERBASE_PROJECT_ID;
-      if (!projectId) throw new Error('Set BROWSERBASE_PROJECT_ID env var');
+      if (!projectId) throw new Error(
+        'Set BROWSERBASE_PROJECT_ID env var. Find it at https://browserbase.com/settings'
+      );
       const res = await fetch('https://api.browserbase.com/v1/sessions', {
         method: 'POST',
         headers: { 'x-bb-api-key': apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId }),
       });
-      if (!res.ok) throw new Error(`Browserbase API error: ${res.status}`);
-      const { id } = await res.json() as { id: string };
-      return { cdpUrl: `wss://connect.browserbase.com?sessionId=${id}&apiKey=${apiKey}`, sessionId: id };
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Browserbase API error ${res.status}: ${body}`);
+      }
+      const session = await res.json() as { id: string; connectUrl: string };
+      // connectUrl already includes auth: wss://connect.browserbase.com?sessionId=X&apiKey=Y
+      return { cdpUrl: session.connectUrl, sessionId: session.id };
     },
     async cleanup(apiKey, sessionId) {
+      // Best-effort: close the Browserbase session on server shutdown
       await fetch(`https://api.browserbase.com/v1/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: { 'x-bb-api-key': apiKey },
-      }).catch(() => {});  // best-effort cleanup
+        method: 'POST',
+        headers: { 'x-bb-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'REQUEST_RELEASE' }),
+      }).catch(() => {});
     }
   },
 };
