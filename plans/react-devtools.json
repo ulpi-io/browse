@@ -2,109 +2,98 @@
   "title": "React DevTools Integration",
   "branch": "feat/react-devtools",
   "mode": "HOLD",
-  "overview": "Add react-devtools meta command with subcommands for React inspection. Lazy-downloaded hook injected on-demand via enable. No env var, no auto-inject.",
-  "scopeChallenge": "next-browser implements this pattern. We adapt: lazy download instead of vendoring, CLI subcommands instead of programmatic API. No BROWSE_REACT_DEVTOOLS env var — purely on-demand.",
+  "overview": "Add React DevTools integration — component tree, suspense tracking, props inspection, render profiling. Lazy-downloaded hook injected via addInitScript.",
+  "scopeChallenge": "next-browser implements this pattern. We adapt: lazy download instead of vendoring, CLI commands instead of programmatic API. Core logic (hook injection + evaluate queries) is identical.",
   "existingCodeLeverage": [
     { "subProblem": "Init script injection", "existingCode": "src/browser-manager.ts addInitScript", "action": "reuse" },
-    { "subProblem": "Subcommand pattern", "existingCode": "src/commands/meta.ts record/profile/auth", "action": "reuse" },
-    { "subProblem": "Page evaluate", "existingCode": "src/commands/read.ts", "action": "reuse" },
-    { "subProblem": "Cache directory", "existingCode": "~/.cache/browse/", "action": "reuse" },
-    { "subProblem": "Hook API (fiber tree)", "existingCode": "next-browser/src/tree.ts:69-175", "action": "extend" },
-    { "subProblem": "Hook API (suspense)", "existingCode": "next-browser/src/suspense.ts:736-740", "action": "extend" },
-    { "subProblem": "Hook API (hydration)", "existingCode": "next-browser/src/browser.ts:308-393", "action": "extend" },
-    { "subProblem": "BrowserManager flag", "existingCode": "src/browser-manager.ts isPersistent pattern", "action": "reuse" }
+    { "subProblem": "Context creation hook", "existingCode": "src/session-manager.ts domain filter pattern", "action": "reuse" },
+    { "subProblem": "Page evaluate queries", "existingCode": "src/commands/read.ts", "action": "reuse" },
+    { "subProblem": "Hook script API", "existingCode": "next-browser/src/tree.ts + suspense.ts", "action": "extend" },
+    { "subProblem": "Cache directory", "existingCode": "~/.cache/browse/", "action": "reuse" }
   ],
   "failureModes": [
-    { "risk": "unpkg CDN down", "affectedTasks": ["TASK-001"], "mitigation": "Cache permanently. Error includes manual fallback: npm install -g react-devtools-core" },
-    { "risk": "React <16", "affectedTasks": ["TASK-002"], "mitigation": "Hook supports React 16+. Clear version error." },
-    { "risk": "Non-React page", "affectedTasks": ["TASK-002"], "mitigation": "Check __REACT_DEVTOOLS_GLOBAL_HOOK__ → No React detected" },
-    { "risk": "Production build", "affectedTasks": ["TASK-002"], "mitigation": "Tree/suspense work. Profiler needs profiling build. Document." },
-    { "risk": "Hook not active (no reload)", "affectedTasks": ["TASK-003"], "mitigation": "enable auto-reloads page" },
-    { "risk": "Multiple enable calls", "affectedTasks": ["TASK-003"], "mitigation": "Idempotent — no-op with message" },
-    { "risk": "Test fixture needs React CDN", "affectedTasks": ["TASK-004"], "mitigation": "Inline React dev build in fixture HTML" }
+    { "risk": "Download fails (network)", "affectedTasks": ["TASK-001"], "mitigation": "Cache permanently. Clear error with manual install instructions." },
+    { "risk": "React version mismatch", "affectedTasks": ["TASK-001"], "mitigation": "Hook is backward-compatible, supports React 16+." },
+    { "risk": "Hook not injected before page load", "affectedTasks": ["TASK-003"], "mitigation": "Lazy mode tells user to reload. BROWSE_REACT_DEVTOOLS=1 avoids this." },
+    { "risk": "Non-React page", "affectedTasks": ["TASK-002"], "mitigation": "Check hook existence. Return clear message." },
+    { "risk": "Production builds strip DevTools", "affectedTasks": ["TASK-001"], "mitigation": "Tree/suspense still work. Profiler needs profiling build. Document." }
   ],
   "testCoverageMap": [
-    { "codepath": "Hook download + cache", "coveringTask": "TASK-004", "testType": "integration" },
-    { "codepath": "Hook injection via addInitScript", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Lazy download + cache", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Hook injection", "coveringTask": "TASK-004", "testType": "integration" },
     { "codepath": "Component tree query", "coveringTask": "TASK-004", "testType": "integration" },
     { "codepath": "Non-React page handling", "coveringTask": "TASK-004", "testType": "integration" },
-    { "codepath": "Not-enabled error path", "coveringTask": "TASK-004", "testType": "integration" },
-    { "codepath": "Enable/disable lifecycle", "coveringTask": "TASK-004", "testType": "integration" },
-    { "codepath": "Props query", "coveringTask": "TASK-004", "testType": "integration" },
-    { "codepath": "Suspense query", "coveringTask": "TASK-004", "testType": "integration" }
+    { "codepath": "Suspense boundary query", "coveringTask": "TASK-004", "testType": "integration" }
   ],
   "tasks": [
     {
       "id": "TASK-001",
-      "title": "Hook download + injection",
-      "description": "Create src/react-devtools.ts with ensureHook(), injectHook(), removeHook(), isEnabled(). Add reactDevToolsEnabled flag to BrowserManager.",
-      "type": "feature",
-      "effort": "S",
-      "priority": "P0",
-      "dependsOn": [],
-      "acceptanceCriteria": [
-        "ensureHook downloads installHook.js from unpkg on first call",
-        "Second call uses cache (no network)",
-        "injectHook calls context.addInitScript with hook script",
-        "Download failure returns clear error with manual fallback"
-      ],
-      "filesToModify": ["src/browser-manager.ts"],
-      "filesToCreate": ["src/react-devtools.ts"],
-      "agent": "nodejs-cli-senior-engineer"
-    },
-    {
-      "id": "TASK-002",
-      "title": "Query functions",
-      "description": "Add query functions to src/react-devtools.ts: getTree, getProps, getSuspense, getErrors, getProfiler, getHydration, getRenders, getOwners, getContext. All via page.evaluate against __REACT_DEVTOOLS_GLOBAL_HOOK__. Reference: next-browser/src/tree.ts:69-175, suspense.ts:736-740, browser.ts:308-393.",
+      "title": "React DevTools module (lazy download + hook + queries)",
+      "description": "Create src/react-devtools.ts with ensureHook(), injectHook(), getTree(), getProps(), getSuspense(), getProfiler().",
       "type": "feature",
       "effort": "L",
       "priority": "P0",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "getTree returns formatted component tree with indentation",
-        "getTree returns not enabled when hook missing",
-        "getTree returns No React detected on non-React pages",
-        "getProps returns props/state for a DOM element",
-        "getSuspense returns boundary status (resolved/pending)"
+        "ensureHook downloads and caches installHook.js",
+        "injectHook installs via addInitScript",
+        "getTree returns component tree on React pages",
+        "getTree returns clear message on non-React pages",
+        "getSuspense returns boundary status"
       ],
-      "filesToModify": ["src/react-devtools.ts"],
+      "filesToModify": [],
+      "filesToCreate": ["src/react-devtools.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-002",
+      "title": "React meta commands",
+      "description": "Add react-tree, react-props, react-suspense, react-profiler to meta.ts and META_COMMANDS.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "react-tree returns component tree",
+        "react-props returns props/state at ref",
+        "react-suspense returns boundary status",
+        "react-profiler returns timing data",
+        "Clear error on non-React pages"
+      ],
+      "filesToModify": ["src/commands/meta.ts", "src/server.ts"],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer"
     },
     {
       "id": "TASK-003",
-      "title": "react-devtools meta command",
-      "description": "Add react-devtools to META_COMMANDS. Implement handler with subcommands: enable, disable, tree, props, suspense, errors, profiler, hydration, renders, owners, context. Add to SAFE_TO_RETRY.",
+      "title": "Auto-inject hook on context creation",
+      "description": "BROWSE_REACT_DEVTOOLS=1 auto-injects hook. Without flag, lazy injection on first react-* command with reload hint.",
       "type": "feature",
-      "effort": "M",
+      "effort": "S",
       "priority": "P1",
-      "dependsOn": ["TASK-001", "TASK-002"],
+      "dependsOn": ["TASK-001"],
       "acceptanceCriteria": [
-        "react-devtools enable downloads hook, injects, reloads page",
-        "react-devtools disable clears flag",
-        "react-devtools tree returns component tree after enable",
-        "react-devtools props @e3 returns props/state",
-        "All subcommands error clearly when not enabled",
-        "Unknown subcommand returns usage"
+        "BROWSE_REACT_DEVTOOLS=1 auto-injects on context creation",
+        "Without flag, lazy injection with reload hint",
+        "Hook survives context recreation"
       ],
-      "filesToModify": ["src/commands/meta.ts", "src/server.ts", "src/cli.ts"],
+      "filesToModify": ["src/server.ts"],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer"
     },
     {
       "id": "TASK-004",
       "title": "Integration tests",
-      "description": "Create test/fixtures/react-app.html with inline React 18. Test enable/disable lifecycle, tree, props, non-React pages, not-enabled error.",
+      "description": "Test React DevTools commands against a simple React page fixture.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
-      "dependsOn": ["TASK-003"],
+      "dependsOn": ["TASK-002", "TASK-003"],
       "acceptanceCriteria": [
-        "react-devtools enable on React page succeeds",
-        "react-devtools tree returns component names",
-        "react-devtools tree without enable returns not enabled error",
-        "react-devtools tree on non-React page returns No React detected",
-        "react-devtools disable sets flag to false",
+        "react-tree on React page returns component names",
+        "react-tree on non-React page returns No React detected",
+        "react-suspense returns boundary status",
+        "ensureHook downloads and caches",
         "All existing tests pass"
       ],
       "filesToModify": ["test/features.test.ts"],
@@ -114,16 +103,16 @@
     {
       "id": "TASK-005",
       "title": "Documentation",
-      "description": "Update SKILL.md, README, CHANGELOG with react-devtools command and all 11 subcommands.",
+      "description": "Update SKILL.md, README, CHANGELOG with React DevTools commands.",
       "type": "docs",
       "effort": "S",
       "priority": "P3",
       "dependsOn": ["TASK-004"],
       "acceptanceCriteria": [
-        "react-devtools documented with all subcommands",
-        "CHANGELOG has v1.1.0 entry",
-        "When to Use What table has React debugging entries",
-        "Quick reference shows enable → tree → props → disable flow"
+        "React commands in command reference",
+        "BROWSE_REACT_DEVTOOLS env var documented",
+        "CHANGELOG updated",
+        "When to Use What table updated"
       ],
       "filesToModify": ["skill/SKILL.md", "README.md", "CHANGELOG.md"],
       "filesToCreate": [],
@@ -133,8 +122,8 @@
   "dependencies": {
     "TASK-001": [],
     "TASK-002": ["TASK-001"],
-    "TASK-003": ["TASK-002"],
-    "TASK-004": ["TASK-003"],
+    "TASK-003": ["TASK-001"],
+    "TASK-004": ["TASK-002", "TASK-003"],
     "TASK-005": ["TASK-004"]
   }
 }

@@ -1649,3 +1649,88 @@ describe('Persistent Profiles', () => {
     expect(() => deleteProfile('/tmp/browse-nonexistent', 'fake')).toThrow('not found');
   });
 });
+
+// ─── Handoff / Resume ────────────────────────────────────────
+// Uses its own BrowserManager to avoid disrupting shared bm (handoff swaps the browser)
+
+describe('Handoff', () => {
+  let hbm: BrowserManager;
+
+  beforeAll(async () => {
+    hbm = new BrowserManager();
+    await hbm.launch();
+  });
+
+  afterAll(async () => {
+    // Force-close: the browser may have been swapped multiple times during tests.
+    // Use a race with timeout to avoid hanging the test suite.
+    const cleanup = async () => {
+      if (hbm.getIsHeaded()) await hbm.resume().catch(() => {});
+      await hbm.close().catch(() => {});
+    };
+    await Promise.race([cleanup(), new Promise(r => setTimeout(r, 5000))]);
+  }, 10000);
+
+  test('handoff swaps to headed mode', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], hbm);
+    const result = await hbm.handoff('test reason');
+    expect(result).toContain('Handoff active');
+    expect(result).toContain('test reason');
+    expect(result).toContain('basic.html');
+    expect(hbm.getIsHeaded()).toBe(true);
+  });
+
+  test('resume swaps back to headless', async () => {
+    const url = await hbm.resume();
+    expect(url).toContain('basic.html');
+    expect(hbm.getIsHeaded()).toBe(false);
+  });
+
+  test('cookie roundtrip across handoff', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], hbm);
+    await handleWriteCommand('cookie', ['handoff_test=roundtrip'], hbm);
+
+    const before = await handleReadCommand('cookies', [], hbm);
+    expect(before).toContain('handoff_test');
+
+    await hbm.handoff('cookie test');
+    await hbm.resume();
+
+    const after = await handleReadCommand('cookies', [], hbm);
+    expect(after).toContain('handoff_test');
+  });
+
+  test('double handoff returns already-headed message', async () => {
+    await hbm.handoff('first');
+    const result = await hbm.handoff('second');
+    expect(result).toContain('Already in headed mode');
+    await hbm.resume();
+  });
+
+  test('resume without handoff throws', async () => {
+    expect(hbm.getIsHeaded()).toBe(false);
+    await expect(hbm.resume()).rejects.toThrow('Not in handoff mode');
+  });
+
+  test('failure counter and hint', () => {
+    expect(hbm.getFailureHint()).toBeNull();
+    hbm.incrementFailures();
+    hbm.incrementFailures();
+    expect(hbm.getFailureHint()).toBeNull();
+    hbm.incrementFailures();
+    expect(hbm.getFailureHint()).toContain('consecutive failures');
+    expect(hbm.getFailureHint()).toContain('handoff');
+    hbm.resetFailures();
+    expect(hbm.getFailureHint()).toBeNull();
+  });
+
+  test('handoff/resume via meta handler', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], hbm);
+    const handoffResult = await handleMetaCommand('handoff', ['meta test'], hbm, async () => {});
+    expect(handoffResult).toContain('Handoff active');
+
+    const resumeResult = await handleMetaCommand('resume', [], hbm, async () => {});
+    expect(resumeResult).toContain('Resumed');
+    expect(resumeResult).toContain('basic.html');
+  });
+});

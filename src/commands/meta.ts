@@ -795,6 +795,20 @@ export async function handleMetaCommand(
       }
     }
 
+    // ─── Handoff ────────────────────────────────────────
+    case 'handoff': {
+      const message = args.join(' ') || 'User takeover requested';
+      return await bm.handoff(message);
+    }
+
+    case 'resume': {
+      const url = await bm.resume();
+      // Take fresh snapshot after resuming
+      const { handleSnapshot } = await import('../snapshot');
+      const snapshot = await handleSnapshot(['-i'], bm);
+      return `Resumed — back to headless.\nURL: ${url}\n\n${snapshot}`;
+    }
+
     // ─── Semantic Locator ──────────────────────────────
     case 'find': {
       const root = bm.getLocatorRoot();

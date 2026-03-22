@@ -16,7 +16,7 @@ next-browser (`/Users/ciprian/work_cip/next-browser`) already implements this pa
 - Queries `window.__REACT_DEVTOOLS_GLOBAL_HOOK__` via `page.evaluate()`
 - No Chrome extension UI — purely programmatic
 
-We adapt: lazy download instead of vendoring, CLI subcommands instead of programmatic API. No env var — purely on-demand via `react-devtools enable`.
+We adapt: lazy download instead of vendoring, CLI subcommands instead of programmatic API. Core logic (hook injection + fiber tree queries) is identical.
 
 HOLD mode: builds on existing `addInitScript` pattern. 5 tasks.
 
@@ -29,9 +29,9 @@ browse react-devtools enable
   src/react-devtools.ts
       │
       ├── TASK-001: ensureHook()    → download installHook.js to ~/.cache/browse/
-      │             injectHook()   → context.addInitScript(hookScript)
-      │             removeHook()   → clear flag
-      │             isEnabled()    → check flag
+      │              injectHook()   → context.addInitScript(hookScript)
+      │              removeHook()   → clear flag
+      │              isEnabled()    → check flag
       │
       ├── TASK-002: getTree(page)        → fiber tree walk
       │             getProps(page, sel)  → inspectElement
@@ -46,7 +46,6 @@ browse react-devtools enable
       ▼
   src/commands/meta.ts ──── TASK-003 (case 'react-devtools' with all subcommands)
   src/server.ts ─────────── TASK-003 (add to META_COMMANDS)
-  src/cli.ts ────────────── TASK-003 (add to SAFE_TO_RETRY)
       │
   test/features.test.ts ─── TASK-004 (integration tests)
   test/fixtures/react-app.html
@@ -63,11 +62,11 @@ browse react-devtools enable
 | Init script injection | `src/browser-manager.ts:227` `setInitScript()` + `addInitScript()` | Reuse — same pattern for hook injection |
 | Subcommand dispatch | `src/commands/meta.ts` `case 'record':`, `case 'profile':` | Reuse pattern — switch on `args[0]` |
 | Page evaluate | `src/commands/read.ts` `case 'js':` | Reuse — `page.evaluate()` |
-| Cache directory | `~/.cache/browse/` | Reuse directory |
+| Cache directory | `~/.cache/browse/` used by compile cache | Reuse directory |
 | Hook API (fiber tree) | `next-browser/src/tree.ts:69-175` | Study + adapt |
 | Hook API (suspense) | `next-browser/src/suspense.ts:736-740` | Study + adapt |
 | Hook API (hydration) | `next-browser/src/browser.ts:308-393` | Study + adapt |
-| BrowserManager flag | `src/browser-manager.ts` `isPersistent` pattern | Reuse — add `reactDevToolsEnabled` |
+| BrowserManager flag | `src/browser-manager.ts` `isPersistent`, `harRecording` | Reuse pattern — add `reactDevToolsEnabled` |
 
 ## Tasks
 
@@ -89,10 +88,7 @@ export async function ensureHook(): Promise<string> {
   if (fs.existsSync(HOOK_PATH)) return fs.readFileSync(HOOK_PATH, 'utf8');
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   const res = await fetch(HOOK_URL);
-  if (!res.ok) throw new Error(
-    `Failed to download React DevTools hook: ${res.status}.\n` +
-    `Manual fallback: npm install -g react-devtools-core, then copy installHook.js to ${HOOK_PATH}`
-  );
+  if (!res.ok) throw new Error(`Failed to download React DevTools hook: ${res.status}. Manual: npm install -g react-devtools-core`);
   const script = await res.text();
   fs.writeFileSync(HOOK_PATH, script);
   return script;
@@ -100,19 +96,19 @@ export async function ensureHook(): Promise<string> {
 ```
 
 **`injectHook(bm: BrowserManager)`:**
-- Get context via `bm.getContext()`
+- Get the context via `bm.getContext()`
 - Call `context.addInitScript(hookScript)`
-- Set `bm.setReactDevToolsEnabled(true)`
+- Set `bm.reactDevToolsEnabled = true` (add this field to BrowserManager)
 
 **`removeHook(bm: BrowserManager)`:**
-- Set `bm.setReactDevToolsEnabled(false)`
-- Note: can't remove init scripts — takes effect on next navigation
+- Set `bm.reactDevToolsEnabled = false`
+- Note: can't remove an init script — takes effect on next navigation
 
 **`isEnabled(bm: BrowserManager)`:**
-- Return `bm.getReactDevToolsEnabled()`
+- Return `bm.reactDevToolsEnabled`
 
 Also add to `src/browser-manager.ts`:
-- `private reactDevToolsEnabled = false`
+- `reactDevToolsEnabled: boolean = false` private field
 - `getReactDevToolsEnabled()` / `setReactDevToolsEnabled()` accessors
 
 **Files:** `src/react-devtools.ts` (create), `src/browser-manager.ts` (add flag)
@@ -122,10 +118,10 @@ Also add to `src/browser-manager.ts`:
 
 **Acceptance Criteria:**
 - [ ] `ensureHook()` downloads installHook.js from unpkg on first call
-- [ ] Second call uses cache (no network)
-- [ ] `injectHook()` calls `context.addInitScript()` with hook script
+- [ ] Second call uses cache (no network request)
+- [ ] `injectHook()` calls `context.addInitScript()` with the hook script
 - [ ] Download failure returns clear error with manual fallback
-- [ ] `isEnabled()` returns correct state
+- [ ] `isEnabled()` returns correct state after inject/remove
 
 **Agent:** nodejs-cli-senior-engineer
 
@@ -137,7 +133,7 @@ Also add to `src/browser-manager.ts`:
 
 Add query functions to `src/react-devtools.ts`. All use `page.evaluate()` against `window.__REACT_DEVTOOLS_GLOBAL_HOOK__`.
 
-**Reference implementation** (agent MUST read these for the API):
+**Reference implementation** (the agent MUST read these files for the API):
 - `/Users/ciprian/work_cip/next-browser/src/tree.ts` lines 69-175 — fiber tree walk
 - `/Users/ciprian/work_cip/next-browser/src/suspense.ts` lines 736-740 — renderer access
 - `/Users/ciprian/work_cip/next-browser/src/browser.ts` lines 308-393 — hydration timing
@@ -150,16 +146,16 @@ if (!hook) throw new Error("React DevTools hook not installed");
 const ri = hook.rendererInterfaces?.values().next().value;
 if (!ri) throw new Error("no React renderer attached");
 
-// ri methods:
+// Then use ri methods:
 // ri.flushInitialOperations() — triggers fiber tree serialization
 // ri.getDisplayNameForFiberID(id) — component name
 // ri.inspectElement(rendererID, fiberID) — props, state, hooks
 // ri.getOwnersList(fiberID) — parent chain
 ```
 
-**Functions:**
+**Functions to implement:**
 
-1. `getTree(page)` — Indented component tree:
+1. `getTree(page)` — Walk fiber tree, return indented component tree:
    ```
    App
      Layout
@@ -169,26 +165,30 @@ if (!ri) throw new Error("no React renderer attached");
        Footer
    ```
 
-2. `getProps(page, selector)` — Props + state + hooks of component at DOM element
+2. `getProps(page, selector)` — Find the fiber for the DOM element matching selector, return `{ props: {...}, state: {...}, hooks: [...] }`
 
-3. `getSuspense(page)` — All Suspense boundaries with status (resolved/pending/fallback)
+3. `getSuspense(page)` — Find all Suspense boundaries, return:
+   ```
+   Suspense @line42 — resolved (children visible)
+   Suspense @line67 — pending (showing fallback)
+   ```
 
-4. `getErrors(page)` — Error boundaries + caught errors
+4. `getErrors(page)` — Find error boundaries, return caught errors
 
-5. `getProfiler(page)` — Render timing per component (requires profiling build)
+5. `getProfiler(page)` — Read `console.timeStamp` entries that React emits for render phases (requires profiling build). Set up interceptor via init script.
 
-6. `getHydration(page)` — Hydration timing from React Performance Track entries
+6. `getHydration(page)` — Read React Performance Track entries for hydration timing
 
-7. `getRenders(page)` — What re-rendered since last call
+7. `getRenders(page)` — Compare fiber `actualDuration` since last snapshot
 
-8. `getOwners(page, selector)` — `_debugOwner` chain: `Button → Form → App`
+8. `getOwners(page, selector)` — Walk `_debugOwner` chain: `Button → Form → App`
 
-9. `getContext(page, selector)` — Context values from fiber `dependencies`
+9. `getContext(page, selector)` — Read context consumers from fiber `dependencies`
 
 **All functions must:**
-- Check `isEnabled()` → "React DevTools not enabled. Run 'browse react-devtools enable' first."
-- Check renderer exists → "No React detected on this page."
-- Handle production builds gracefully
+- Check `isEnabled()` first → return "React DevTools not enabled. Run 'browse react-devtools enable' first."
+- Check for renderer → return "No React detected on this page."
+- Handle production builds gracefully (some data unavailable)
 
 **Files:** `src/react-devtools.ts`
 
@@ -210,7 +210,7 @@ if (!ri) throw new Error("no React renderer attached");
 
 ### TASK-003: react-devtools meta command
 
-Add `'react-devtools'` to `META_COMMANDS` in `src/server.ts`. Add to `SAFE_TO_RETRY` in `src/cli.ts`. Implement handler in `src/commands/meta.ts`:
+Add `'react-devtools'` to `META_COMMANDS` in `src/server.ts`. Implement the handler in `src/commands/meta.ts`:
 
 ```typescript
 case 'react-devtools': {
@@ -218,7 +218,9 @@ case 'react-devtools': {
   if (!sub) throw new Error(
     'Usage: browse react-devtools enable|disable|tree|props|suspense|errors|profiler|hydration|renders|owners|context'
   );
+
   const rd = await import('../react-devtools');
+
   switch (sub) {
     case 'enable': {
       const hookScript = await rd.ensureHook();
@@ -252,10 +254,12 @@ case 'react-devtools': {
       return await rd.getContext(bm.getPage(), args[1]);
     }
     default:
-      throw new Error('Unknown: ' + sub + '. Use: enable|disable|tree|props|suspense|errors|profiler|hydration|renders|owners|context');
+      throw new Error(`Unknown subcommand: ${sub}. Use: enable|disable|tree|props|suspense|errors|profiler|hydration|renders|owners|context`);
   }
 }
 ```
+
+Also add `'react-devtools'` to `SAFE_TO_RETRY` in `src/cli.ts`.
 
 **Files:** `src/commands/meta.ts`, `src/server.ts`, `src/cli.ts`
 
@@ -267,8 +271,8 @@ case 'react-devtools': {
 - [ ] `react-devtools disable` clears flag, returns message
 - [ ] `react-devtools tree` returns component tree after enable
 - [ ] `react-devtools props @e3` returns props/state after enable
-- [ ] All subcommands return clear error when not enabled
-- [ ] Unknown subcommand returns usage with all options
+- [ ] `react-devtools tree` without enable returns clear error
+- [ ] Unknown subcommand returns usage with all options listed
 
 **Agent:** nodejs-cli-senior-engineer
 
@@ -279,7 +283,13 @@ case 'react-devtools': {
 
 ### TASK-004: Integration tests
 
-Create `test/fixtures/react-app.html` with inline React 18:
+Create `test/fixtures/react-app.html` with inline React 18 from CDN. Include:
+- A simple component tree (App → Header → Button)
+- A Suspense boundary
+- An error boundary
+- Testable props/state
+
+**Important:** Vendor a minimal React build in the fixture (inline `<script>`) rather than loading from CDN — tests must work offline.
 
 ```html
 <!DOCTYPE html>
@@ -295,7 +305,7 @@ Create `test/fixtures/react-app.html` with inline React 18:
       const [count, setCount] = useState(0);
       return React.createElement('div', null,
         React.createElement('h1', null, 'React Test App'),
-        React.createElement('button', { onClick: () => setCount(c => c + 1) }, 'Count: ' + count),
+        React.createElement('button', { onClick: () => setCount(c => c + 1) }, `Count: ${count}`),
         React.createElement(Suspense, { fallback: 'Loading...' },
           React.createElement('p', null, 'Content loaded')
         )
@@ -332,27 +342,31 @@ Add tests in `test/features.test.ts`:
 
 ### TASK-005: Documentation
 
+Update SKILL.md, README, CHANGELOG:
+
 **skill/SKILL.md:**
-- Quick reference:
+- Add quick reference example:
   ```bash
-  # React debugging
+  # React debugging (enable DevTools, inspect components)
   browse react-devtools enable
   browse react-devtools tree
   browse react-devtools props @e3
   browse react-devtools suspense
   browse react-devtools disable
   ```
-- Command reference section for all 11 subcommands
-- "When to Use What" entries:
+- Add command reference section for `react-devtools`
+- Add to "When to Use What" table:
   ```
-  | Debug React components | react-devtools enable → tree → props @e3 |
-  | Debug hydration issues | react-devtools enable → hydration |
-  | Find suspense blockers | react-devtools enable → suspense |
+  | Debug React components | `react-devtools enable` → `react-devtools tree` → `react-devtools props @e3` |
+  | Debug hydration issues | `react-devtools enable` → `react-devtools hydration` |
+  | Find suspense blockers | `react-devtools enable` → `react-devtools suspense` |
   ```
 
-**README.md:** Add to command reference section
+**README.md:**
+- Add `react-devtools` to command reference section
 
-**CHANGELOG.md:** Add v1.1.0 entry
+**CHANGELOG.md:**
+- Add v1.1.0 entry
 
 **Files:** `skill/SKILL.md`, `README.md`, `CHANGELOG.md`
 
@@ -376,13 +390,13 @@ Add tests in `test/features.test.ts`:
 
 | Risk | Affected Tasks | Mitigation |
 |------|---------------|------------|
-| unpkg CDN down or rate-limited | TASK-001 | Cache permanently after first download. Error includes manual fallback: `npm install -g react-devtools-core` |
-| React version too old (<16) | TASK-002 | Hook supports React 16+. Return "React version not supported" if renderer interface missing |
-| Non-React page (jQuery, vanilla) | TASK-002 | Check `__REACT_DEVTOOLS_GLOBAL_HOOK__` → "No React detected" |
-| Production React build (minified) | TASK-002 | Tree still works. Props may show minified names. Profiler needs profiling build. Document. |
-| Hook injected but page not reloaded | TASK-003 | `enable` auto-reloads. Subsequent navigations get hook automatically (init script persists). |
-| Multiple `enable` calls | TASK-003 | Idempotent — second call is no-op: "React DevTools already enabled" |
-| Test fixture React CDN unavailable | TASK-004 | Inline React dev build in fixture or accept network dependency in tests |
+| unpkg CDN down or rate-limited | TASK-001 | Cache permanently after first download. Error message includes manual fallback: `npm install -g react-devtools-core` then copy installHook.js |
+| React version too old (<16) | TASK-002 | DevTools hook supports React 16+. Return clear "React version not supported" if renderer interface missing |
+| Non-React page (e.g. jQuery, vanilla) | TASK-002 | Check `__REACT_DEVTOOLS_GLOBAL_HOOK__` existence → "No React detected" |
+| Production React build (minified, no debug info) | TASK-002 | Tree still works (component names available). Props may show minified names. Profiler/hydration need profiling build. Document this limitation. |
+| Hook injected but page not reloaded | TASK-003 | `enable` auto-reloads. If user navigates, hook activates on new page automatically (init script persists on context). |
+| Multiple `enable` calls | TASK-003 | Idempotent — second call is no-op with "already enabled" message |
+| Test fixture React CDN unavailable offline | TASK-004 | Inline React dev build in fixture HTML or use a local copy in test/fixtures/ |
 
 ## Test Coverage Map
 
@@ -402,8 +416,8 @@ Add tests in `test/features.test.ts`:
 ```json
 {
   "TASK-001": [],
-  "TASK-002": ["TASK-001"],
-  "TASK-003": ["TASK-002"],
+  "TASK-002": [],
+  "TASK-003": ["TASK-001", "TASK-002"],
   "TASK-004": ["TASK-003"],
   "TASK-005": ["TASK-004"]
 }

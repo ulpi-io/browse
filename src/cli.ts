@@ -772,6 +772,7 @@ Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
                 cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]
 State:          state save|load|list|show [name]
+Handoff:        handoff [reason] | resume
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | stop | restart | doctor | upgrade
 Setup:          install-skill [path]

@@ -238,6 +238,11 @@ export class BrowserManager {
   // Whether this instance uses a persistent browser context (profile mode)
   private isPersistent = false;
 
+  // ─── Handoff state ──────────────────────────────────────
+  private isHeaded = false;
+  private consecutiveFailures = 0;
+  private onCrashCallback: (() => void) | undefined;
+
   constructor(buffers?: SessionBuffers) {
     this.buffers = buffers || new SessionBuffers();
   }
@@ -261,6 +266,7 @@ export class BrowserManager {
   async launch(onCrash?: () => void) {
     this.browser = await chromium.launch({ headless: true });
     this.ownsBrowser = true;
+    this.onCrashCallback = onCrash;
 
     // Chromium crash → notify caller (server uses this to exit; tests ignore it)
     this.browser.on('disconnected', () => {
@@ -389,6 +395,253 @@ export class BrowserManager {
 
   getIsPersistent(): boolean {
     return this.isPersistent;
+  }
+
+  getIsHeaded(): boolean {
+    return this.isHeaded;
+  }
+
+  // ─── Failure tracking (auto-suggest handoff) ────────────
+  incrementFailures(): void {
+    this.consecutiveFailures++;
+  }
+
+  resetFailures(): void {
+    this.consecutiveFailures = 0;
+  }
+
+  getFailureHint(): string | null {
+    if (this.consecutiveFailures >= 3 && !this.isHeaded) {
+      return `HINT: ${this.consecutiveFailures} consecutive failures. Consider using 'handoff' to let the user help.`;
+    }
+    return null;
+  }
+
+  // ─── State save/restore (shared by handoff/resume) ──────
+  private async saveState(): Promise<{ cookies: any[]; pages: Array<{ url: string; isActive: boolean; storage: { localStorage: Record<string, string>; sessionStorage: Record<string, string> } | null }> }> {
+    if (!this.context) throw new Error('Browser not launched');
+
+    const cookies = await this.context.cookies();
+    const pages: Array<{ url: string; isActive: boolean; storage: any }> = [];
+
+    for (const [id, page] of this.pages) {
+      const url = page.url();
+      let storage = null;
+      try {
+        storage = await page.evaluate(() => ({
+          localStorage: { ...localStorage },
+          sessionStorage: { ...sessionStorage },
+        }));
+      } catch {}
+      pages.push({
+        url: url === 'about:blank' ? '' : url,
+        isActive: id === this.activeTabId,
+        storage,
+      });
+    }
+
+    return { cookies, pages };
+  }
+
+  private async applyContextOptions(context: BrowserContext): Promise<void> {
+    if (Object.keys(this.extraHeaders).length > 0) {
+      await context.setExtraHTTPHeaders(this.extraHeaders);
+    }
+    if (this.offline) {
+      await context.setOffline(true);
+    }
+    if (this.initScript) {
+      await context.addInitScript(this.initScript);
+    }
+    for (const r of this.userRoutes) {
+      if (r.action === 'block') {
+        await context.route(r.pattern, (route) => route.abort('blockedbyclient'));
+      } else {
+        await context.route(r.pattern, (route) => route.fulfill({ status: r.status || 200, body: r.body || '', contentType: 'text/plain' }));
+      }
+    }
+    if (this.domainFilter) {
+      const df = this.domainFilter;
+      await context.route('**/*', (route) => {
+        const url = route.request().url();
+        if (df.isAllowed(url)) { route.fallback(); } else { route.abort('blockedbyclient'); }
+      });
+    }
+  }
+
+  private async restoreState(state: { cookies: any[]; pages: Array<{ url: string; isActive: boolean; storage: any }> }): Promise<void> {
+    if (!this.context) throw new Error('Browser not launched');
+
+    if (state.cookies.length > 0) {
+      await this.context.addCookies(state.cookies);
+    }
+
+    await this.applyContextOptions(this.context);
+
+    let activeId: number | null = null;
+    for (const saved of state.pages) {
+      const page = await this.context.newPage();
+      const id = this.nextTabId++;
+      this.pages.set(id, page);
+      this.wirePageEvents(page);
+
+      if (saved.url) {
+        await page.goto(saved.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      }
+
+      if (saved.storage) {
+        try {
+          await page.evaluate((s: { localStorage: Record<string, string>; sessionStorage: Record<string, string> }) => {
+            if (s.localStorage) {
+              for (const [k, v] of Object.entries(s.localStorage)) localStorage.setItem(k, v);
+            }
+            if (s.sessionStorage) {
+              for (const [k, v] of Object.entries(s.sessionStorage)) sessionStorage.setItem(k, v);
+            }
+          }, saved.storage);
+        } catch {}
+      }
+
+      if (saved.isActive) activeId = id;
+    }
+
+    if (this.pages.size === 0) {
+      await this.newTab();
+    } else if (activeId !== null) {
+      this.activeTabId = activeId;
+    }
+
+    this.clearRefs();
+  }
+
+  // ─── Handoff: headless ↔ headed swap ─────────────────────
+  async handoff(message: string): Promise<string> {
+    if (this.isHeaded) {
+      return `Already in headed mode at ${this.getCurrentUrl()}`;
+    }
+    if (this.isPersistent) {
+      throw new Error('Handoff not supported in profile mode — the browser is already visible. Use cookie-import or auth login instead.');
+    }
+    if (!this.browser || !this.context) {
+      throw new Error('Browser not launched');
+    }
+
+    const state = await this.saveState();
+    const currentUrl = this.getCurrentUrl();
+
+    // Launch headed browser — if fails, headless stays untouched
+    let newBrowser: Browser;
+    try {
+      newBrowser = await chromium.launch({ headless: false, timeout: 15000 });
+    } catch (err: any) {
+      return `Cannot open headed browser — ${err.message}. Headless browser still running.`;
+    }
+
+    try {
+      const newContext = await newBrowser.newContext({
+        viewport: this.currentDevice?.viewport || { width: 1920, height: 1080 },
+        ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+        ...(this.currentDevice ? {
+          deviceScaleFactor: this.currentDevice.deviceScaleFactor,
+          isMobile: this.currentDevice.isMobile,
+          hasTouch: this.currentDevice.hasTouch,
+        } : {}),
+      });
+
+      // Swap browser/context — keep old browser alive (server owns it, other sessions may use it)
+      const oldContext = this.context;
+      this.browser = newBrowser;
+      this.context = newContext;
+      this.pages.clear();
+      this.nextTabId = 1;
+      this.tabSnapshots.clear();
+      this.activeFramePerTab.clear();
+
+      // Crash handler on new browser
+      const onCrash = this.onCrashCallback;
+      this.browser.on('disconnected', () => {
+        if (onCrash) onCrash();
+      });
+
+      await this.restoreState(state);
+      this.isHeaded = true;
+      this.ownsBrowser = true;
+
+      // Close old context only — don't close the browser (server owns it)
+      if (oldContext) {
+        await oldContext.close().catch(() => {});
+      }
+
+      return [
+        `Handoff active — browser opened in visible mode.`,
+        `Reason: ${message || 'manual intervention needed'}`,
+        `URL: ${currentUrl}`,
+        ``,
+        `The user can now interact with the visible browser.`,
+        `When done, run: browse resume`,
+      ].join('\n');
+    } catch (err: any) {
+      // Restore failed — close new browser, keep old
+      await newBrowser.close().catch(() => {});
+      return `Handoff failed during state restore — ${err.message}. Headless browser still running.`;
+    }
+  }
+
+  async resume(): Promise<string> {
+    if (!this.isHeaded) {
+      throw new Error('Not in handoff mode — run "handoff" first.');
+    }
+    if (!this.browser || !this.context) {
+      throw new Error('Browser not launched');
+    }
+
+    const state = await this.saveState();
+    const userUrl = this.getCurrentUrl();
+
+    // Launch headless browser — if fails, headed stays
+    let newBrowser: Browser;
+    try {
+      newBrowser = await chromium.launch({ headless: true });
+    } catch (err: any) {
+      return `Cannot launch headless browser — ${err.message}. Headed browser still running.`;
+    }
+
+    try {
+      const newContext = await newBrowser.newContext({
+        viewport: this.currentDevice?.viewport || { width: 1920, height: 1080 },
+        ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+        ...(this.currentDevice ? {
+          deviceScaleFactor: this.currentDevice.deviceScaleFactor,
+          isMobile: this.currentDevice.isMobile,
+          hasTouch: this.currentDevice.hasTouch,
+        } : {}),
+      });
+
+      const oldBrowser = this.browser;
+      this.browser = newBrowser;
+      this.context = newContext;
+      this.pages.clear();
+      this.nextTabId = 1;
+      this.tabSnapshots.clear();
+      this.activeFramePerTab.clear();
+
+      const onCrash = this.onCrashCallback;
+      this.browser.on('disconnected', () => {
+        if (onCrash) onCrash();
+      });
+
+      await this.restoreState(state);
+      this.isHeaded = false;
+      this.consecutiveFailures = 0;
+
+      oldBrowser.removeAllListeners('disconnected');
+      oldBrowser.close().catch(() => {});
+
+      return userUrl;
+    } catch (err: any) {
+      await newBrowser.close().catch(() => {});
+      return `Resume failed during state restore — ${err.message}. Headed browser still running.`;
+    }
   }
 
   // ─── Tab Management ────────────────────────────────────────
