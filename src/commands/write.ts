@@ -213,6 +213,14 @@ export async function handleWriteCommand(
         return `Load state reached: ${state}`;
       }
 
+      // wait --download [timeout] — wait for a download event
+      if (selector === '--download') {
+        const timeout = args[1] ? parseInt(args[1], 10) : 30000;
+        const download = await page.waitForEvent('download', { timeout });
+        const filename = download.suggestedFilename();
+        return `Download started: ${filename}`;
+      }
+
       // wait <ms> — wait for milliseconds (numeric first arg)
       if (/^\d+$/.test(selector)) {
         const ms = parseInt(selector, 10);
