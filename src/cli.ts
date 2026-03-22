@@ -789,6 +789,8 @@ Options:
   --state <path>           Load state file (cookies/storage) before first command
   --connect                Auto-discover and connect to running Chrome
   --cdp <port>             Connect to Chrome on specific debugging port
+  --mcp                    Run as MCP server (for Cursor, Windsurf, Cline)
+  --mcp --json             MCP server with JSON-wrapped responses
 
 Snapshot flags:
   -i            Interactive elements only (terse flat list by default)
@@ -825,7 +827,11 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
   await sendCommand(state, command, commandArgs, 0, sessionId);
 }
 
-if (process.env.__BROWSE_SERVER_MODE === '1') {
+if (process.argv.includes('--mcp')) {
+  // MCP server mode — JSON-RPC over stdio
+  const jsonMode = process.argv.includes('--json');
+  import('./mcp').then(m => m.startMcpServer(jsonMode));
+} else if (process.env.__BROWSE_SERVER_MODE === '1') {
   import('./server');
 } else if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename_cli)) {
   // Direct execution: tsx src/cli.ts <command>
