@@ -558,35 +558,60 @@ you MUST follow this exact 3-step protocol. Do NOT skip any step.
 
 ### Step 1 — Ask permission (REQUIRED before handoff)
 
-Before running handoff, you MUST ask the user for permission. Tell them:
-- What you're stuck on
-- That you need to open a visible browser
-- What they'll need to do
+Use `AskUserQuestion` (or your platform's equivalent interactive prompt tool) to ask
+the user before opening the browser. Do NOT just print text and proceed — you MUST
+wait for an explicit response.
 
-Example: "I'm stuck on a CAPTCHA at the login page. Can I open a visible browser so you can solve it?"
+```
+AskUserQuestion:
+  question: "I'm stuck on a CAPTCHA at [URL]. Can I open a visible browser so you can solve it?"
+  options:
+    - label: "Yes, open browser"
+      description: "Opens a visible Chrome window with your current session"
+    - label: "No, try something else"
+      description: "I'll try cookie-import, auth login, or a different approach"
+```
 
-Wait for the user to confirm before proceeding. If they say no, try `cookie-import`, `auth login`, or a different approach instead.
+If your platform does not have `AskUserQuestion`, ask the user via text and wait for
+their response before proceeding. Do NOT run handoff without explicit user confirmation.
+
+If the user says no → do NOT handoff. Try `cookie-import`, `auth login`, or a different approach.
 
 ### Step 2 — Handoff + wait for user (REQUIRED)
 
-Run the handoff command, then tell the user what to do and wait:
+Run the handoff command, then use `AskUserQuestion` (or equivalent) to wait for the
+user to finish:
 
 ```bash
 browse handoff "Stuck on CAPTCHA at login page"
 ```
 
-Then tell the user: "Browser is open. Please solve the CAPTCHA, then tell me 'done'."
+Then immediately prompt the user:
 
-Do NOT proceed or do any other work. Wait for the user to say they're done.
+```
+AskUserQuestion:
+  question: "Browser is open. Please solve the CAPTCHA, then click Done."
+  options:
+    - label: "Done"
+      description: "I've solved it, return to headless mode"
+    - label: "Cancel"
+      description: "Close the browser, try something else"
+```
+
+Do NOT proceed or do any other work while waiting. The user is interacting with the
+visible browser — wait for their response.
 
 ### Step 3 — Resume
 
-After the user confirms they're done:
+After the user responds:
 
 ```bash
 browse resume
 # Returns fresh snapshot — continue working with it
 ```
+
+If "Done" → continue with the fresh snapshot from resume.
+If "Cancel" → resume anyway (closes headed browser), then try alternative approach.
 
 ### When to Handoff
 - CAPTCHA or bot detection blocking progress
