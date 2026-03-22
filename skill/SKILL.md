@@ -1,6 +1,6 @@
 ---
 name: browse
-version: 3.3.0
+version: 3.4.0
 description: |
   Fast web browsing and web app testing for AI coding agents via persistent headless Chromium daemon.
   Browse any URL, read page content, click elements, fill forms, run JavaScript, take screenshots,
@@ -194,6 +194,7 @@ browse keyup <key>             Release key
 browse keyboard inserttext <t> Insert text without key events
 browse scroll [sel|up|down]    Scroll element/viewport/bottom
 browse scrollinto <sel>        Scroll element into view (explicit)
+browse scrollintoview <sel>    Alias for scrollinto
 browse swipe <dir> [px]        Swipe up/down/left/right (touch events)
 browse mouse move <x> <y>     Move mouse to coordinates
 browse mouse down [button]     Press mouse button (left/right/middle)
@@ -213,6 +214,8 @@ browse wait --download 60000              Custom timeout (ms)
 browse wait --download ./file.pdf 60000   Both path and timeout
 browse set geo <lat> <lng>     Set geolocation
 browse set media <scheme>      Set color scheme (dark/light/no-preference)
+browse header <name>:<value>   Set request header
+browse useragent <string>      Set user agent string
 browse viewport <WxH>          Set viewport size (e.g. 375x812)
 browse upload <sel> <files>    Upload file(s) to a file input
 browse highlight <selector>    Highlight element (visual debugging)
@@ -222,6 +225,15 @@ browse dialog-dismiss          Set dialogs to auto-dismiss (default)
 browse emulate <device>        Emulate device (iphone, pixel, etc.)
 browse emulate reset           Reset to desktop (1920x1080)
 browse offline [on|off]        Toggle offline mode
+```
+
+### Cookies
+```
+browse cookie <n>=<v>                  Set cookie (shorthand)
+browse cookie set <n> <v> [--domain d --secure]  Set cookie with options
+browse cookie clear                    Clear all cookies
+browse cookie export <file>            Export cookies to JSON file
+browse cookie import <file>            Import cookies from JSON file
 ```
 
 ### Network
@@ -337,7 +349,7 @@ browse cookie-import <browser> --profile <p> --domain <d>   Specific Chrome prof
 
 ### Auth vault
 ```
-browse auth save <name> <url> <user> <pass>   Save credentials (encrypted)
+browse auth save <name> <url> <user> <pass|--password-stdin>   Save credentials (encrypted)
 browse auth login <name>                       Auto-login using saved credentials
 browse auth list                               List saved credentials
 browse auth delete <name>                      Delete credentials

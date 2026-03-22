@@ -776,22 +776,25 @@ Interaction:    click <sel> | rightclick <sel> | dblclick <sel>
                 check <sel> | uncheck <sel> | drag <src> <tgt>
                 type <text> | press <key> | keydown <key> | keyup <key>
                 keyboard inserttext <text>
-                scroll [sel|up|down] | scrollinto <sel>
+                scroll [sel|up|down] | scrollinto <sel> | scrollintoview <sel>
                 swipe <up|down|left|right> [px]
                 wait <sel|ms|--url|--text|--fn|--load|--network-idle>
                 viewport <WxH> | highlight <sel> | download <sel> [path]
+                upload <sel> <files...>
+                dialog-accept [text] | dialog-dismiss
 Mouse:          mouse move <x> <y> | mouse down [btn] | mouse up [btn]
                 mouse wheel <dy> [dx]
 Settings:       set geo <lat> <lng> | set media <dark|light|no-preference>
 Device:         emulate <device> | emulate reset | devices [filter]
 Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
-                element-state <sel> | box <sel>
+                element-state <sel> | box <sel> | dialog
                 console [--clear] | errors [--clear] | network [--clear]
                 cookies | storage [set <k> <v>] | perf
                 value <sel> | count <sel> | clipboard [write <text>]
 Visual:         screenshot [sel|@ref] [path] [--full] [--clip x,y,w,h]
                 screenshot --annotate | pdf [path] | responsive [prefix]
 Snapshot:       snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]
+                snapshot-diff
 Find:           find role|text|label|placeholder|testid|alt|title <query>
                 find first|last <sel> | find nth <n> <sel>
 Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
@@ -807,11 +810,13 @@ Recording:      har start | har stop [path]
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
+Profiles:       --profile <name> | profile list|delete|clean
 Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 auth login <name> | auth list | auth delete <name>
                 cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]
-State:          state save|load|list|show [name]
+State:          state save|load|list|show|clean [name]
 Handoff:        handoff [reason] | resume
+React:          react-devtools enable|disable|tree|props|suspense|errors|profiler
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | stop | restart | doctor | upgrade
 Setup:          install-skill [path]

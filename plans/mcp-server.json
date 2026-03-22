@@ -1,0 +1,166 @@
+{
+  "title": "MCP Server Mode",
+  "branch": "feat/mcp-server",
+  "mode": "EXPANSION",
+  "overview": "Add browse --mcp mode that runs browse as an MCP server over stdio. Makes browse available to Cursor, Windsurf, Cline, and any MCP-compatible editor. Each command becomes an MCP tool with typed parameters.",
+  "scopeChallenge": "No existing MCP code. MCP SDK handles JSON-RPC framing. Command handlers already take (command, args, bm) and return string — MCP adapter is a thin mapping layer. EXPANSION for comprehensive tool definitions and tests.",
+  "existingCodeLeverage": [
+    { "subProblem": "Command dispatch", "existingCode": "src/server.ts:308-328", "action": "reuse" },
+    { "subProblem": "Command handlers", "existingCode": "src/commands/read.ts, write.ts, meta.ts", "action": "reuse" },
+    { "subProblem": "Browser lifecycle", "existingCode": "src/browser-manager.ts:261 (launch)", "action": "reuse" },
+    { "subProblem": "Session buffers", "existingCode": "src/buffers.ts (SessionBuffers)", "action": "reuse" },
+    { "subProblem": "Error rewriting", "existingCode": "src/server.ts:230 (rewriteError)", "action": "reuse" },
+    { "subProblem": "Command sets", "existingCode": "src/server.ts:142-173", "action": "reuse" }
+  ],
+  "failureModes": [
+    { "risk": "MCP SDK too large for bundling", "affectedTasks": ["TASK-004"], "mitigation": "Externalize with --external or verify bundle size" },
+    { "risk": "Tool count overwhelms MCP client", "affectedTasks": ["TASK-001"], "mitigation": "Group related commands as params on fewer tools (~40)" },
+    { "risk": "Browser crash in MCP mode", "affectedTasks": ["TASK-002"], "mitigation": "Catch disconnect, return error, attempt restart" },
+    { "risk": "Tests hang waiting for server", "affectedTasks": ["TASK-006"], "mitigation": "Use tools/list as ready signal, 10s timeout" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "MCP tool definitions", "coveringTask": "TASK-006", "testType": "integration" },
+    { "codepath": "MCP tool call dispatch", "coveringTask": "TASK-006", "testType": "integration" },
+    { "codepath": "MCP error handling", "coveringTask": "TASK-006", "testType": "integration" },
+    { "codepath": "MCP server lifecycle", "coveringTask": "TASK-006", "testType": "integration" },
+    { "codepath": "CLI --mcp flag", "coveringTask": "TASK-006", "testType": "integration" },
+    { "codepath": "Build with MCP SDK", "coveringTask": "TASK-004", "testType": "build" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Define MCP tool schemas",
+      "description": "Create src/mcp-tools.ts with tool definitions for all browse commands. One tool per command, typed JSON Schema params. Export getToolDefinitions() and mapToolCallToCommand().",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Every registered command has a corresponding MCP tool",
+        "mapToolCallToCommand correctly maps params to args array",
+        "Tools with required params have required in schema",
+        "Invalid tool name throws clear error"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/mcp-tools.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Create MCP server module",
+      "description": "Create src/mcp.ts using @modelcontextprotocol/sdk. Launch browser, register tools/list and tools/call handlers, connect via StdioServerTransport. Route tool calls to existing command handlers.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "startMcpServer() launches browser and connects to stdio",
+        "tools/list returns all tool definitions",
+        "tools/call dispatches to correct command handler",
+        "Errors return as content, not crash",
+        "SIGINT closes browser cleanly"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/mcp.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Wire --mcp flag in CLI",
+      "description": "Detect --mcp in process.argv before main(). Start MCP server instead of HTTP client. Add to help text.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "browse --mcp starts MCP server",
+        "browse --mcp does NOT start HTTP server",
+        "--mcp appears in browse --help",
+        "Works in compiled binary"
+      ],
+      "filesToModify": ["src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Add MCP SDK dependency and build integration",
+      "description": "Install @modelcontextprotocol/sdk. Update esbuild config. Verify build and binary work.",
+      "type": "infra",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "npm run build succeeds with MCP SDK",
+        "node dist/browse.cjs --mcp starts without import errors",
+        "Package size increase under 500KB",
+        "Existing commands still work"
+      ],
+      "filesToModify": ["package.json"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Documentation — SKILL.md, README, MCP config examples",
+      "description": "Add MCP setup instructions for Cursor, Windsurf, Cline, Claude Desktop. Update SKILL.md flags table and features-comparison.md.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": ["TASK-003"],
+      "acceptanceCriteria": [
+        "README has MCP section with config examples",
+        "SKILL.md has --mcp in CLI flags",
+        "features-comparison.md shows YES for MCP"
+      ],
+      "filesToModify": ["README.md", "skill/SKILL.md", "features-comparison.md"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Integration tests for MCP server",
+      "description": "Create test/mcp.test.ts. Spawn MCP server as child process, use MCP Client to send tool calls, verify responses. Test listing, execution, errors, shutdown.",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-002", "TASK-003", "TASK-004"],
+      "acceptanceCriteria": [
+        "All MCP protocol tests pass",
+        "Tool count matches registered commands",
+        "No orphan Chromium processes",
+        "Works with tsx and compiled binary"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/mcp.test.ts"],
+      "agent": "general-purpose"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Snapshot tool returns structured refs",
+      "description": "For browse_snapshot via MCP, return structured JSON refs alongside text content. Agents can parse refs programmatically instead of regex.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "browse_snapshot via MCP returns text content + structured resource",
+        "Structured refs contain role and name per ref",
+        "Other commands return text only",
+        "CLI mode unaffected"
+      ],
+      "filesToModify": ["src/mcp.ts"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-002"],
+    "TASK-004": [],
+    "TASK-005": ["TASK-003"],
+    "TASK-006": ["TASK-002", "TASK-003", "TASK-004"],
+    "TASK-007": ["TASK-002"]
+  }
+}

@@ -46,21 +46,40 @@ export function installSkill(targetDir?: string) {
     process.exit(1);
   }
 
-  // 1. Copy SKILL.md
+  // 1. Copy all skill .md files (SKILL.md + supporting reference files)
   const skillDir = path.join(dir, '.claude', 'skills', 'browse');
   fs.mkdirSync(skillDir, { recursive: true });
 
-  const skillSource = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'skill', 'SKILL.md');
-  const skillDest = path.join(skillDir, 'SKILL.md');
+  const skillSourceDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'skill');
 
-  if (!fs.existsSync(skillSource)) {
-    console.error(`SKILL.md not found at ${skillSource}`);
+  if (!fs.existsSync(skillSourceDir)) {
+    console.error(`Skill directory not found at ${skillSourceDir}`);
     console.error('Is @ulpi/browse installed correctly?');
     process.exit(1);
   }
 
-  fs.copyFileSync(skillSource, skillDest);
-  console.log(`Skill installed: ${path.relative(dir, skillDest)}`);
+  const mdFiles = fs.readdirSync(skillSourceDir).filter(f => f.endsWith('.md'));
+  if (mdFiles.length === 0) {
+    console.error(`No .md files found in ${skillSourceDir}`);
+    process.exit(1);
+  }
+
+  for (const file of mdFiles) {
+    fs.copyFileSync(path.join(skillSourceDir, file), path.join(skillDir, file));
+    console.log(`Skill installed: ${path.relative(dir, path.join(skillDir, file))}`);
+  }
+
+  // Copy references/ subdirectory if it exists
+  const refsSourceDir = path.join(skillSourceDir, 'references');
+  if (fs.existsSync(refsSourceDir)) {
+    const refsDestDir = path.join(skillDir, 'references');
+    fs.mkdirSync(refsDestDir, { recursive: true });
+    const refFiles = fs.readdirSync(refsSourceDir).filter(f => f.endsWith('.md'));
+    for (const file of refFiles) {
+      fs.copyFileSync(path.join(refsSourceDir, file), path.join(refsDestDir, file));
+      console.log(`Skill installed: ${path.relative(dir, path.join(refsDestDir, file))}`);
+    }
+  }
 
   // 2. Update .claude/settings.json with permissions
   const settingsPath = path.join(dir, '.claude', 'settings.json');
