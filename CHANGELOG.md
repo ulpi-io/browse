@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.1
+
+- `wait --download [path] [timeout]` — wait for download to complete (not just start), optionally save to path
+- Updated skill structure with references (commands.md, guides.md, permissions.md)
+
 ## v1.1.0 — React DevTools Integration
 
 - `react-devtools enable/disable` — on-demand React DevTools hook injection (lazy-downloaded, cached)
