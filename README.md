@@ -143,6 +143,7 @@ browse wait --text "Welcome"   # Wait for text to appear in page
 browse wait --fn "js expr"     # Wait for JavaScript condition
 browse wait --load <state>     # Wait for load state (load/domcontentloaded/networkidle)
 browse wait --network-idle     # Wait for network idle
+browse wait --download [path]  # Wait for download to complete
 ```
 
 ### Snapshot
@@ -340,6 +341,10 @@ browse auth save <name> <url> <user> --password-stdin  # Password from stdin
 browse auth login <name>       # Auto-login with saved credential
 browse auth list               # List saved credentials
 browse auth delete <name>      # Delete credential
+
+browse cookie-import --list                            # List browsers with cookies
+browse cookie-import chrome [--domain .example.com]    # Import cookies from Chrome
+browse cookie-import chrome --profile "Profile 1"      # Specific browser profile
 ```
 
 ### Multi-Step (Chaining)
