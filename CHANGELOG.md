@@ -3,8 +3,6 @@
 ## v1.2.1
 
 - `--runtime <name>` CLI flag — select browser engine (playwright, rebrowser, lightpanda)
-- Previously env-var-only (`BROWSE_RUNTIME`), now a proper CLI flag
-- MCP server mode (`--mcp`) now respects `BROWSE_RUNTIME` / `--runtime`
 - Help text: added all 11 react-devtools subcommands, provider commands
 
 ## v1.2.0 — Cloud Providers
@@ -14,6 +12,13 @@
 - `--provider browserbase` — connect to Browserbase (REST API + CDP)
 - API keys encrypted at rest (AES-256-GCM) — never visible to agents
 - Browserbase session cleanup on server shutdown
+
+## v1.1.2 — MCP Server Mode
+
+- `--mcp` flag — run browse as a Model Context Protocol server over stdio
+- Works with Cursor, Windsurf, Cline, and any MCP-compatible client
+- All browse commands exposed as MCP tools
+- Supports `--mcp --json` for JSON-wrapped responses
 
 ## v1.1.1
 
