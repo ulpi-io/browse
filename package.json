@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@lightpanda/browser": "^1.2.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@ulpi/browse": "^0.3.0",
     "better-sqlite3": "^11.0.0",
     "diff": "^7.0.0",
@@ -41,7 +42,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
+    "build": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --external:@modelcontextprotocol/sdk --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
     "build:all": "bash scripts/build-all.sh",
     "dev": "tsx src/cli.ts",
     "server": "tsx src/server.ts",

@@ -5,6 +5,7 @@ export default defineConfig({
     testTimeout: 60000,
     hookTimeout: 60000,
     globals: false,
+    exclude: ['**/node_modules/**', '**/.claude/worktrees/**'],
     // Run all tests in the same thread — shared BrowserManager + test server
     // (same behavior as bun test which runs everything in one process)
     pool: 'forks',

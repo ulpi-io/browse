@@ -35,6 +35,7 @@ const cliFlags = {
   cdpUrl: '' as string,
   profile: '' as string,
   provider: '' as string,
+  runtime: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -275,7 +276,7 @@ async function startServer(): Promise<ServerState> {
     const spawnCmd = SERVER_SCRIPT === '__self__'
       ? [nodeExec, selfPath]
       : [nodeExec, '--import', 'tsx', SERVER_SCRIPT];
-    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}) } as NodeJS.ProcessEnv;
+    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}), ...(cliFlags.runtime ? { BROWSE_RUNTIME: cliFlags.runtime } : {}) } as NodeJS.ProcessEnv;
     const proc = spawn(spawnCmd[0], spawnCmd.slice(1), {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: spawnEnv,
@@ -549,7 +550,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime') i++;
     }
     return a.length;
   }
@@ -592,6 +593,19 @@ export async function main() {
     }
     args.splice(providerIdx, 2);
   }
+
+  // Extract --runtime flag (only before command)
+  let runtimeName: string | undefined;
+  const runtimeIdx = args.indexOf('--runtime');
+  if (runtimeIdx !== -1 && runtimeIdx < findCommandIndex(args)) {
+    runtimeName = args[runtimeIdx + 1];
+    if (!runtimeName) {
+      console.error('Usage: browse --runtime <playwright|rebrowser|lightpanda> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(runtimeIdx, 2);
+  }
+  runtimeName = runtimeName || process.env.BROWSE_RUNTIME || undefined;
 
   if (sessionId && profileName) {
     console.error('Cannot use --profile and --session together. Profiles use their own Chromium; sessions share one.');
@@ -725,6 +739,7 @@ export async function main() {
   cliFlags.maxOutput = maxOutput;
   cliFlags.cdpUrl = cdpUrl;
   cliFlags.profile = profileName || '';
+  cliFlags.runtime = runtimeName || '';
   cliFlags.provider = providerName || '';
 
   // Resolve cloud provider CDP URL
@@ -816,7 +831,9 @@ Auth:           auth save <name> <url> <user> <pass|--password-stdin>
                 cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]
 State:          state save|load|list|show|clean [name]
 Handoff:        handoff [reason] | resume
-React:          react-devtools enable|disable|tree|props|suspense|errors|profiler
+React:          react-devtools enable|disable|tree|props|suspense|errors
+                react-devtools profiler|hydration|renders|owners|context
+Providers:      provider save|list|delete <name> [api-key]
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | stop | restart | doctor | upgrade
 Setup:          install-skill [path]
@@ -833,6 +850,9 @@ Options:
   --connect                Auto-discover and connect to running Chrome
   --cdp <port>             Connect to Chrome on specific debugging port
   --provider <name>        Cloud browser provider (browserless, browserbase)
+  --runtime <name>         Browser engine (playwright, rebrowser, lightpanda)
+  --mcp                    Run as MCP server (for Cursor, Windsurf, Cline)
+  --mcp --json             MCP server with JSON-wrapped responses
 
 Snapshot flags:
   -i            Interactive elements only (terse flat list by default)
@@ -869,7 +889,11 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
   await sendCommand(state, command, commandArgs, 0, sessionId);
 }
 
-if (process.env.__BROWSE_SERVER_MODE === '1') {
+if (process.argv.includes('--mcp')) {
+  // MCP server mode — JSON-RPC over stdio
+  const jsonMode = process.argv.includes('--json');
+  import('./mcp').then(m => m.startMcpServer(jsonMode));
+} else if (process.env.__BROWSE_SERVER_MODE === '1') {
   import('./server');
 } else if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename_cli)) {
   // Direct execution: tsx src/cli.ts <command>

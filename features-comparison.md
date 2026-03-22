@@ -285,7 +285,7 @@ Legend: **YES** = shipped, **—** = not available
 | Batch/chain execution | YES (`chain`) | YES (`chain`) | YES (`batch`) | — |
 | Runtime abstraction | YES (playwright/rebrowser/lightpanda) | — | YES (chrome/lightpanda) | — |
 | Browser extensions | — | — | YES (`--extension`) | — |
-| MCP server mode | — | — | — | YES (`--mcp`) |
+| MCP server mode | YES (`--mcp`) | — | — | YES (`--mcp`) |
 | Homebrew install | — | — | YES | — |
 | Cargo install | — | — | YES | — |
 
