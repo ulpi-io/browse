@@ -89,7 +89,8 @@ If the file is missing or does not contain browse permission rules in `permissio
 "Bash(browse scrollintoview:*)", "Bash(browse set:*)",
 "Bash(browse box:*)", "Bash(browse errors:*)",
 "Bash(browse doctor:*)", "Bash(browse upgrade:*)",
-"Bash(browse --max-output:*)"
+"Bash(browse --max-output:*)",
+"Bash(browse handoff:*)", "Bash(browse resume:*)"
 ```
 
 ## IMPORTANT
@@ -283,6 +284,12 @@ browse screenshot-diff baseline.png current.png
 
 # Headed mode (visible browser)
 browse --headed goto https://example.com
+
+# Handoff (human takeover for CAPTCHA/MFA — see Handoff Protocol section)
+# MUST ask user permission first, then wait for them to finish
+browse handoff "stuck on CAPTCHA"
+# ... user solves in visible browser, tells you "done" ...
+browse resume
 
 # Stealth mode (bypasses bot detection)
 # Requires: npm install rebrowser-playwright && npx rebrowser-playwright install chromium
@@ -538,6 +545,67 @@ browse restart                 Kill + restart server
 browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 ```
 
+### Handoff (human takeover)
+```
+browse handoff [reason]        Swap to visible browser for user to solve CAPTCHA/MFA
+browse resume                  Swap back to headless, returns fresh snapshot
+```
+
+## Handoff Protocol (MANDATORY)
+
+When the browser hits a blocker you can't solve (CAPTCHA, MFA, OAuth popup),
+you MUST follow this exact 3-step protocol. Do NOT skip any step.
+
+### Step 1 — Ask permission (REQUIRED before handoff)
+
+Before running handoff, you MUST ask the user for permission. Tell them:
+- What you're stuck on
+- That you need to open a visible browser
+- What they'll need to do
+
+Example: "I'm stuck on a CAPTCHA at the login page. Can I open a visible browser so you can solve it?"
+
+Wait for the user to confirm before proceeding. If they say no, try `cookie-import`, `auth login`, or a different approach instead.
+
+### Step 2 — Handoff + wait for user (REQUIRED)
+
+Run the handoff command, then tell the user what to do and wait:
+
+```bash
+browse handoff "Stuck on CAPTCHA at login page"
+```
+
+Then tell the user: "Browser is open. Please solve the CAPTCHA, then tell me 'done'."
+
+Do NOT proceed or do any other work. Wait for the user to say they're done.
+
+### Step 3 — Resume
+
+After the user confirms they're done:
+
+```bash
+browse resume
+# Returns fresh snapshot — continue working with it
+```
+
+### When to Handoff
+- CAPTCHA or bot detection blocking progress
+- Multi-factor authentication requiring a physical device
+- OAuth popup that redirects to a third-party login
+- Any blocker after 2-3 failed attempts at the same step
+- The server auto-suggests handoff after 3 consecutive failures (look for HINT in error messages)
+
+### When NOT to Handoff
+- Normal navigation/interaction failures — retry or try a different selector
+- Pages that just need more time to load — use `wait` commands
+- Cookie/auth issues — try `cookie-import` or `auth login` first
+
+### Rules
+- NEVER run `browse handoff` without asking the user first (Step 1)
+- NEVER proceed without waiting for the user to finish (Step 2)
+- ALWAYS tell the user what they need to do in the visible browser
+- ALWAYS run `browse resume` after the user is done
+
 ## CLI Flags
 
 | Flag | Description |
@@ -615,6 +683,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Export/import cookies | `cookie export ./cookies.json` / `cookie import ./cookies.json` |
 | Limit output size | `--max-output 5000 text` |
 | See the browser | `browse --headed goto <url>` |
+| CAPTCHA / MFA blocker | `handoff "reason"` → user solves → `resume` (see Handoff Protocol) |
 | Bypass bot detection | `--runtime rebrowser goto <url>` |
 | Persistent login state | `--profile mysite` → browse around → close → reopen (still logged in) |
 
