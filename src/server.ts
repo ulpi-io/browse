@@ -168,7 +168,7 @@ const META_COMMANDS = new Set([
   'sessions', 'session-close',
   'frame', 'state', 'find',
   'auth', 'har', 'video', 'inspect', 'record', 'cookie-import',
-  'doctor', 'upgrade', 'profile',
+  'doctor', 'upgrade', 'handoff', 'resume', 'profile',
 ]);
 
 // Commands excluded from recording — meta/diagnostic commands that don't represent user actions
@@ -326,6 +326,9 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       });
     }
 
+    // Reset failure counter on success
+    session.manager.resetFailures();
+
     // Record step if recording is active
     if (session.recording && !RECORDING_SKIP.has(command)) {
       session.recording.push({ command, args, timestamp: Date.now() });
@@ -353,7 +356,10 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       status: 200, headers: { 'Content-Type': 'text/plain' },
     });
   } catch (err: any) {
-    const friendlyError = rewriteError(err.message);
+    session.manager.incrementFailures();
+    let friendlyError = rewriteError(err.message);
+    const hint = session.manager.getFailureHint();
+    if (hint) friendlyError += '\n' + hint;
     if (opts.jsonMode) {
       return new Response(JSON.stringify({ success: false, error: friendlyError, command }), {
         status: 500, headers: { 'Content-Type': 'application/json' },

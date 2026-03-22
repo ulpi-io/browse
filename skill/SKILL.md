@@ -89,7 +89,8 @@ If the file is missing or does not contain browse permission rules in `permissio
 "Bash(browse scrollintoview:*)", "Bash(browse set:*)",
 "Bash(browse box:*)", "Bash(browse errors:*)",
 "Bash(browse doctor:*)", "Bash(browse upgrade:*)",
-"Bash(browse --max-output:*)"
+"Bash(browse --max-output:*)",
+"Bash(browse handoff:*)", "Bash(browse resume:*)"
 ```
 
 ## IMPORTANT
@@ -538,6 +539,46 @@ browse restart                 Kill + restart server
 browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 ```
 
+### Handoff (human takeover)
+```
+browse handoff [reason]        Swap to visible browser for user to solve CAPTCHA/MFA
+browse resume                  Swap back to headless, returns fresh snapshot
+```
+
+## Handoff Protocol
+
+When the browser hits a blocker you can't solve (CAPTCHA, MFA, OAuth popup),
+use the two-step handoff protocol:
+
+**Step 1 — Ask permission:**
+Use AskUserQuestion: "I'm stuck on [CAPTCHA/MFA/etc] at [URL]. Can I open a visible browser so you can solve it?"
+Options: "Yes, open browser" / "No, try something else"
+
+**Step 2 — If yes, handoff + wait:**
+Run `browse handoff "reason"`, then immediately ask:
+AskUserQuestion: "Browser is open at [URL]. Solve the [CAPTCHA/MFA/etc], then click Done."
+Options: "Done" / "Cancel"
+
+**Step 3 — Resume:**
+If Done → run `browse resume` → continue with fresh snapshot
+If Cancel → run `browse resume` → try alternative approach
+
+### When to Use Handoff
+- CAPTCHA or bot detection blocking progress
+- Multi-factor authentication requiring a physical device
+- OAuth popup that redirects to a third-party login
+- Any blocker after 2-3 failed attempts at the same step
+
+### When NOT to Use Handoff
+- Normal navigation/interaction failures — retry or try a different selector
+- Pages that just need more time to load — use `wait` commands
+- Cookie/auth issues — try `cookie-import` or `auth login` first
+
+### Rules
+- NEVER run handoff without the two-step ask flow above
+- ALWAYS explain what the user needs to do in the visible browser
+- After 3 consecutive command failures, the server auto-suggests handoff in error messages
+
 ## CLI Flags
 
 | Flag | Description |
@@ -615,6 +656,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | Export/import cookies | `cookie export ./cookies.json` / `cookie import ./cookies.json` |
 | Limit output size | `--max-output 5000 text` |
 | See the browser | `browse --headed goto <url>` |
+| CAPTCHA / MFA blocker | `handoff "reason"` → user solves → `resume` |
 | Bypass bot detection | `--runtime rebrowser goto <url>` |
 | Persistent login state | `--profile mysite` → browse around → close → reopen (still logged in) |
 
