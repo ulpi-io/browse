@@ -548,8 +548,8 @@ export class BrowserManager {
         } : {}),
       });
 
-      // Swap browser/context — close old after
-      const oldBrowser = this.browser;
+      // Swap browser/context — keep old browser alive (server owns it, other sessions may use it)
+      const oldContext = this.context;
       this.browser = newBrowser;
       this.context = newContext;
       this.pages.clear();
@@ -565,10 +565,12 @@ export class BrowserManager {
 
       await this.restoreState(state);
       this.isHeaded = true;
+      this.ownsBrowser = true;
 
-      // Close old headless browser (fire-and-forget — close() can hang with multiple Playwright instances)
-      oldBrowser.removeAllListeners('disconnected');
-      oldBrowser.close().catch(() => {});
+      // Close old context only — don't close the browser (server owns it)
+      if (oldContext) {
+        await oldContext.close().catch(() => {});
+      }
 
       return [
         `Handoff active — browser opened in visible mode.`,
