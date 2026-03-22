@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.1
+
+- `--runtime <name>` CLI flag — select browser engine (playwright, rebrowser, lightpanda)
+- Previously env-var-only (`BROWSE_RUNTIME`), now a proper CLI flag
+- MCP server mode (`--mcp`) now respects `BROWSE_RUNTIME` / `--runtime`
+- Help text: added all 11 react-devtools subcommands, provider commands
+
 ## v1.2.0 — Cloud Providers
 
 - `provider save/list/delete` — encrypted API key vault for cloud browsers

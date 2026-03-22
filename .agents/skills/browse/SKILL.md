@@ -533,7 +533,7 @@ browse upgrade                 Self-update via npm
 | `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--headed` | Run browser in headed (visible) mode |
-| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth) |
+| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda |
 | `--max-output <n>` | Truncate output to N characters |
 
 ## Speed Rules

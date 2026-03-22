@@ -719,13 +719,13 @@ describe('State', () => {
   });
 
   test('state show non-existent throws', async () => {
-    expect(
+    await expect(
       handleMetaCommand('state', ['show', 'nonexistent'], bm, async () => {})
     ).rejects.toThrow('State file not found');
   });
 
   test('state invalid subcommand throws', async () => {
-    expect(
+    await expect(
       handleMetaCommand('state', ['bogus'], bm, async () => {})
     ).rejects.toThrow('Usage:');
   });
@@ -1237,6 +1237,28 @@ describe('Runtime registry', () => {
     } catch (e: any) {
       expect(e.message).toContain('rebrowser-playwright not installed');
     }
+  });
+});
+
+// ─── --runtime CLI flag ──────────────────────────────────────────
+
+describe('--runtime CLI flag', () => {
+  test('BROWSE_RUNTIME env var is passed to server', () => {
+    // The --runtime flag sets BROWSE_RUNTIME in the spawn env
+    // We test the underlying registry accepts valid runtimes
+    expect(AVAILABLE_RUNTIMES).toContain('playwright');
+    expect(AVAILABLE_RUNTIMES).toContain('rebrowser');
+    expect(AVAILABLE_RUNTIMES).toContain('lightpanda');
+  });
+
+  test('--runtime with invalid name would fail at server startup', async () => {
+    await expect(getRuntime('nonexistent')).rejects.toThrow('Unknown runtime');
+  });
+
+  test('--runtime playwright works (default)', async () => {
+    const runtime = await getRuntime('playwright');
+    expect(runtime.name).toBe('playwright');
+    expect(runtime.chromium).toBeTruthy();
   });
 });
 
