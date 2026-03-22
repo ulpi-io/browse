@@ -1,0 +1,129 @@
+{
+  "title": "Cloud Providers (Browserless + Browserbase)",
+  "branch": "feat/cloud-providers",
+  "mode": "EXPANSION",
+  "overview": "Add provider command for encrypted API key vault and --provider flag for Browserless and Browserbase cloud browsers. Reuses AuthVault encryption pattern.",
+  "scopeChallenge": "Existing CDP + encryption covers 80%. New: provider vault, --provider flag, 2 provider implementations.",
+  "existingCodeLeverage": [
+    { "subProblem": "CDP connection", "existingCode": "src/server.ts:494-497 connectOverCDP", "action": "reuse" },
+    { "subProblem": "Encryption", "existingCode": "src/encryption.ts", "action": "reuse" },
+    { "subProblem": "Vault pattern", "existingCode": "src/auth-vault.ts AuthVault", "action": "extend" },
+    { "subProblem": "CLI flag parsing", "existingCode": "src/cli.ts --session pattern", "action": "reuse" },
+    { "subProblem": "Subcommand dispatch", "existingCode": "src/commands/meta.ts auth case", "action": "reuse" }
+  ],
+  "failureModes": [
+    { "risk": "Browserbase API changes", "affectedTasks": ["TASK-001"], "mitigation": "Use versioned /v1/ endpoint" },
+    { "risk": "Missing BROWSERBASE_PROJECT_ID", "affectedTasks": ["TASK-001"], "mitigation": "Check env var, throw clear error" },
+    { "risk": "Provider key not saved", "affectedTasks": ["TASK-003"], "mitigation": "Throw with 'browse provider save' instructions" },
+    { "risk": "--provider + --cdp conflict", "affectedTasks": ["TASK-003"], "mitigation": "Validate mutual exclusion early" }
+  ],
+  "testCoverageMap": [
+    { "codepath": "Vault save/load/delete", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Provider URL construction", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "--provider flag + mutual exclusion", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Missing provider error", "coveringTask": "TASK-004", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Cloud provider registry + vault",
+      "description": "Create src/cloud-providers.ts with ProviderVault (encrypted key storage) and provider implementations for Browserless (URL construction) and Browserbase (REST API + WebSocket).",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "ProviderVault encrypts API keys with AES-256-GCM",
+        "save writes to .browse/providers/<name>.json with mode 0o600",
+        "Browserless returns correct WebSocket URL",
+        "Browserbase calls REST API and returns WebSocket URL",
+        "Missing provider throws clear error"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/cloud-providers.ts"],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Provider management commands",
+      "description": "Add provider to META_COMMANDS. Implement save/list/delete subcommands in meta.ts.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "provider save encrypts and stores",
+        "provider save unknown provider throws",
+        "provider list shows saved without keys",
+        "provider delete removes file",
+        "provider delete non-existent throws"
+      ],
+      "filesToModify": ["src/commands/meta.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-003",
+      "title": "--provider CLI flag",
+      "description": "Add --provider <name> to CLI. Resolves CDP URL from vault, passes as BROWSE_CDP_URL to server. Mutual exclusion with --cdp/--connect.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "--provider resolves CDP URL from vault",
+        "--provider + --cdp throws mutual exclusion error",
+        "No saved key throws with save instructions",
+        "Help text documents --provider"
+      ],
+      "filesToModify": ["src/cli.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Integration tests",
+      "description": "Test vault encryption, URL construction, list/delete, mutual exclusion. No real API connections.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-002", "TASK-003"],
+      "acceptanceCriteria": [
+        "Vault save encrypts, file has mode 0o600",
+        "Vault list shows saved provider",
+        "Vault delete removes file",
+        "Browserless URL format correct",
+        "--provider + --cdp mutual exclusion",
+        "All existing tests pass"
+      ],
+      "filesToModify": ["test/features.test.ts"],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Documentation",
+      "description": "Update SKILL.md, README, CHANGELOG with provider commands and --provider flag.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P3",
+      "dependsOn": ["TASK-004"],
+      "acceptanceCriteria": [
+        "Provider commands documented",
+        "--provider in Options table",
+        "CHANGELOG updated",
+        "Security note about encrypted keys"
+      ],
+      "filesToModify": ["skill/SKILL.md", "README.md", "CHANGELOG.md"],
+      "filesToCreate": [],
+      "agent": "general-purpose"
+    }
+  ],
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-001"],
+    "TASK-004": ["TASK-002", "TASK-003"],
+    "TASK-005": ["TASK-004"]
+  }
+}
