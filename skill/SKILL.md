@@ -120,6 +120,12 @@ browse cookie-import chrome --domain .site.com
 
 # Persistent profiles
 browse --profile mysite goto https://app.com
+
+# Cloud providers (encrypted API keys, never visible to agents)
+browse provider save browserbase <api-key>
+browse --provider browserbase goto https://example.com
+browse provider list
+browse provider delete browserbase
 ```
 
 ## Command Reference
@@ -374,6 +380,13 @@ browse react-devtools owners <sel>     Parent component chain
 browse react-devtools context <sel>    Context values consumed by component
 ```
 
+### Cloud Providers
+```
+browse provider save <name> <key>  Save provider API key (encrypted)
+browse provider list               List saved providers
+browse provider delete <name>      Delete provider key
+```
+
 ### Handoff (human takeover)
 ```
 browse handoff [reason]        Swap to visible browser for user to solve CAPTCHA/MFA
@@ -406,6 +419,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--headed` | Run browser in headed (visible) mode |
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
+| `--provider <name>` | Cloud browser provider (browserless, browserbase) |
 | `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda |
 
 ## Reference Files

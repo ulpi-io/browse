@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.0 — Cloud Providers
+
+- `provider save/list/delete` — encrypted API key vault for cloud browsers
+- `--provider browserless` — connect to Browserless (direct WebSocket)
+- `--provider browserbase` — connect to Browserbase (REST API + CDP)
+- API keys encrypted at rest (AES-256-GCM) — never visible to agents
+- Browserbase session cleanup on server shutdown
+
 ## v1.1.1
 
 - `wait --download [path] [timeout]` — wait for download to complete (not just start), optionally save to path

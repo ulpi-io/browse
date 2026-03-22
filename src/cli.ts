@@ -34,6 +34,7 @@ const cliFlags = {
   maxOutput: 0,
   cdpUrl: '' as string,
   profile: '' as string,
+  provider: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -406,7 +407,7 @@ export const SAFE_TO_RETRY = new Set([
   // Meta commands that are read-only or idempotent
   'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record', 'cookie-import',
   'box', 'errors', 'doctor', 'upgrade',
-  'react-devtools',
+  'react-devtools', 'provider',
 ]);
 
 // Commands that return static data independent of page state.
@@ -548,7 +549,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider') i++;
     }
     return a.length;
   }
@@ -579,6 +580,18 @@ export async function main() {
   }
   // Also check env var
   profileName = profileName || process.env.BROWSE_PROFILE || undefined;
+
+  // Extract --provider flag (only before command)
+  let providerName: string | undefined;
+  const providerIdx = args.indexOf('--provider');
+  if (providerIdx !== -1 && providerIdx < findCommandIndex(args)) {
+    providerName = args[providerIdx + 1];
+    if (!providerName) {
+      console.error('Usage: browse --provider <name> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(providerIdx, 2);
+  }
 
   if (sessionId && profileName) {
     console.error('Cannot use --profile and --session together. Profiles use their own Chromium; sessions share one.');
@@ -697,6 +710,12 @@ export async function main() {
     }
   }
 
+  // Validate mutual exclusion: --provider vs --cdp/--connect
+  if (providerName && (cdpPort || connectFlag)) {
+    console.error('Cannot use --provider with --cdp or --connect. They are different ways to connect to a remote browser.');
+    process.exit(1);
+  }
+
   // Set global flags for sendCommand()
   cliFlags.json = jsonMode;
   cliFlags.contentBoundaries = contentBoundaries;
@@ -706,6 +725,25 @@ export async function main() {
   cliFlags.maxOutput = maxOutput;
   cliFlags.cdpUrl = cdpUrl;
   cliFlags.profile = profileName || '';
+  cliFlags.provider = providerName || '';
+
+  // Resolve cloud provider CDP URL
+  if (providerName) {
+    const { resolveProviderCdpUrl } = await import('./cloud-providers');
+    try {
+      const result = await resolveProviderCdpUrl(providerName, LOCAL_DIR);
+      cliFlags.cdpUrl = result.cdpUrl;
+      // Store provider info for cleanup on shutdown
+      if (result.sessionId) {
+        process.env.__BROWSE_PROVIDER_NAME = result.providerName;
+        process.env.__BROWSE_PROVIDER_SESSION_ID = result.sessionId;
+        process.env.__BROWSE_PROVIDER_API_KEY = result.apiKey;
+      }
+    } catch (err: any) {
+      console.error(`[browse] Provider "${providerName}": ${err.message}`);
+      process.exit(1);
+    }
+  }
 
   // ─── Local commands (no server needed) ─────────────────────
   if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') {
@@ -789,6 +827,7 @@ Options:
   --state <path>           Load state file (cookies/storage) before first command
   --connect                Auto-discover and connect to running Chrome
   --cdp <port>             Connect to Chrome on specific debugging port
+  --provider <name>        Cloud browser provider (browserless, browserbase)
 
 Snapshot flags:
   -i            Interactive elements only (terse flat list by default)

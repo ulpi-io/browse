@@ -1089,6 +1089,46 @@ export async function handleMetaCommand(
       }
     }
 
+    // ─── Cloud Providers ─────────────────────────────────
+    case 'provider': {
+      const sub = args[0];
+      if (!sub) throw new Error('Usage: browse provider save|list|delete <name> [api-key]');
+
+      const { ProviderVault, listProviderNames } = await import('../cloud-providers');
+      const vault = new ProviderVault(LOCAL_DIR);
+
+      if (sub === 'save') {
+        const name = args[1];
+        const apiKey = args[2];
+        if (!name || !apiKey) {
+          throw new Error(
+            `Usage: browse provider save <name> <api-key>\nAvailable providers: ${listProviderNames().join(', ')}`
+          );
+        }
+        vault.save(name, apiKey);
+        return `Provider "${name}" saved (API key encrypted)`;
+      }
+
+      if (sub === 'list') {
+        const saved = vault.list();
+        if (saved.length === 0) {
+          return `No providers saved. Available: ${listProviderNames().join(', ')}\nRun: browse provider save <name> <api-key>`;
+        }
+        return saved.map(p => `${p.name}  saved: ${p.createdAt}`).join('\n');
+      }
+
+      if (sub === 'delete') {
+        const name = args[1];
+        if (!name) throw new Error('Usage: browse provider delete <name>');
+        vault.delete(name);
+        return `Provider "${name}" deleted`;
+      }
+
+      throw new Error(
+        `Unknown subcommand: ${sub}. Usage: browse provider save|list|delete <name> [api-key]`
+      );
+    }
+
     default:
       throw new Error(`Unknown meta command: ${command}`);
   }

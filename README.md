@@ -328,6 +328,18 @@ browse resume                  # Swap back to headless, returns fresh snapshot
 
 Agent asks permission first via AskUserQuestion, then hands off. Server auto-suggests handoff after 3 consecutive failures.
 
+### Cloud Providers
+
+```bash
+browse provider save browserbase <api-key>     # Save API key (encrypted)
+browse provider save browserless <token>       # Save token (encrypted)
+browse --provider browserbase goto https://...  # Use cloud browser
+browse provider list                           # List saved providers
+browse provider delete <name>                  # Remove saved key
+```
+
+API keys are encrypted at rest in `.browse/providers/` — never visible to agents.
+
 ### State & Auth
 
 ```bash
@@ -547,6 +559,7 @@ Use browse to test the login flow. Run browse --help to see available commands.
 | `--headed` | Show browser window (not headless) |
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
+| `--provider <name>` | Cloud browser provider (browserless, browserbase) |
 | `--runtime <name>` | Browser runtime: playwright (default), rebrowser (stealth), lightpanda |
 
 ## Environment Variables

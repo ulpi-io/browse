@@ -23,6 +23,7 @@ import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../
 import { sanitizeName } from '../src/sanitize';
 import { findInstalledBrowsers, CookieImportError } from '../src/cookie-import';
 import { discoverChrome } from '../src/chrome-discover';
+import { ProviderVault, getProvider, listProviderNames } from '../src/cloud-providers';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -1926,5 +1927,85 @@ describe('React DevTools', () => {
     } catch (err: any) {
       expect(err.message).toContain('Usage');
     }
+  });
+});
+
+// ─── Cloud Providers ────────────────────────────────────────────
+
+describe('Cloud Providers', () => {
+  const testDir = `/tmp/browse-provider-test-${Date.now()}`;
+
+  beforeAll(() => {
+    fs.mkdirSync(testDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    fs.rmSync(testDir, { recursive: true, force: true });
+  });
+
+  test('ProviderVault save encrypts and stores key', () => {
+    const vault = new ProviderVault(testDir);
+    vault.save('browserless', 'test-token-123');
+
+    // File should exist
+    const filePath = path.join(testDir, 'providers', 'browserless.json');
+    expect(fs.existsSync(filePath)).toBe(true);
+
+    // Should be encrypted (not contain plaintext token)
+    const content = fs.readFileSync(filePath, 'utf-8');
+    expect(content).not.toContain('test-token-123');
+    expect(content).toContain('"encrypted": true');
+  });
+
+  test('ProviderVault load decrypts key', () => {
+    const vault = new ProviderVault(testDir);
+    const key = vault.load('browserless');
+    expect(key).toBe('test-token-123');
+  });
+
+  test('ProviderVault list shows saved providers', () => {
+    const vault = new ProviderVault(testDir);
+    const list = vault.list();
+    expect(list.length).toBe(1);
+    expect(list[0].name).toBe('browserless');
+  });
+
+  test('ProviderVault save unknown provider throws', () => {
+    const vault = new ProviderVault(testDir);
+    expect(() => vault.save('nonexistent', 'key')).toThrow('Unknown provider');
+  });
+
+  test('ProviderVault load missing key throws', () => {
+    const vault = new ProviderVault(testDir);
+    expect(() => vault.load('browserbase')).toThrow('No API key saved');
+  });
+
+  test('ProviderVault delete removes key', () => {
+    const vault = new ProviderVault(testDir);
+    vault.delete('browserless');
+    expect(vault.list().length).toBe(0);
+  });
+
+  test('ProviderVault delete non-existent throws', () => {
+    const vault = new ProviderVault(testDir);
+    expect(() => vault.delete('browserless')).toThrow();
+  });
+
+  test('getProvider returns known providers', () => {
+    expect(getProvider('browserless')).toBeDefined();
+    expect(getProvider('browserbase')).toBeDefined();
+    expect(listProviderNames()).toContain('browserless');
+    expect(listProviderNames()).toContain('browserbase');
+  });
+
+  test('getProvider unknown throws with available list', () => {
+    expect(() => getProvider('invalid')).toThrow('Available');
+  });
+
+  test('Browserless getCdpUrl returns correct WebSocket URL', async () => {
+    const provider = getProvider('browserless');
+    const result = await provider.getCdpUrl('my-token');
+    expect(result.cdpUrl).toContain('wss://');
+    expect(result.cdpUrl).toContain('token=my-token');
   });
 });

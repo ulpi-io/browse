@@ -154,6 +154,7 @@ Read this section when you're unsure which command to use for a task.
 | Find suspense blockers | `react-devtools enable` then `suspense` |
 | Bypass bot detection | `--runtime rebrowser goto <url>` |
 | Persistent login state | `--profile mysite` then browse then close then reopen (still logged in) |
+| Cloud browser (CI/CD) | `provider save browserbase <key>` then `--provider browserbase goto <url>` |
 
 ## Architecture
 
