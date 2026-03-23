@@ -614,7 +614,7 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Show browser window (not headless) |
-| `--chrome` | Launch system Chrome (uses real browser, bypasses bot detection) |
+| `--chrome` | Shortcut for `--runtime chrome --headed` |
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--provider <name>` | Cloud browser provider (browserless, browserbase) |

@@ -255,20 +255,7 @@ export async function launchChrome(): Promise<ChromeLaunchResult> {
   const dataDir = path.join(localDir, 'chrome-data');
   const realDataDir = getChromeUserDataDir();
 
-  if (realDataDir && !fs.existsSync(path.join(dataDir, 'Default', 'Preferences'))) {
-    // First launch: copy real Chrome profile
-    console.log('[browse] Copying Chrome profile (first-time setup)...');
-    fs.mkdirSync(dataDir, { recursive: true });
-    execSync(`cp -a "${realDataDir}/Default" "${dataDir}/Default"`, { stdio: 'pipe', timeout: 30000 });
-    // Copy top-level files Chrome needs (Local State has encryption keys, etc.)
-    for (const f of ['Local State', 'First Run']) {
-      const src = path.join(realDataDir, f);
-      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dataDir, f));
-    }
-    console.log('[browse] Profile copied.');
-  } else {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+  fs.mkdirSync(dataDir, { recursive: true });
 
   cleanStaleLock(dataDir);
 
@@ -315,6 +302,28 @@ export async function launchChrome(): Promise<ChromeLaunchResult> {
 
   const pw = await import('playwright');
   const browser = await pw.chromium.connectOverCDP(wsUrl);
+
+  // Import cookies from real Chrome profile into this clean Chrome instance
+  if (realDataDir) {
+    try {
+      const { importCookies, listDomains } = await import('./cookie-import');
+      const { domains } = listDomains('chrome');
+      if (domains.length > 0) {
+        const allDomains = domains.map(d => d.domain);
+        const result = await importCookies('chrome', allDomains);
+        if (result.cookies.length > 0) {
+          const context = browser.contexts()[0];
+          if (context) {
+            await context.addCookies(result.cookies);
+            console.log(`[browse] Imported ${result.cookies.length} cookies from Chrome.`);
+          }
+        }
+      }
+    } catch (err: any) {
+      // Cookie import is best-effort — may fail if Chrome DB is locked or Keychain denied
+      console.log(`[browse] Cookie import skipped: ${err.message}`);
+    }
+  }
 
   return {
     browser,

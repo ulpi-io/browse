@@ -770,6 +770,11 @@ export async function main() {
     headed = true;
   }
 
+  // --runtime chrome always implies headed mode
+  if (runtimeName === 'chrome') {
+    headed = true;
+  }
+
   // Set global flags for sendCommand()
   cliFlags.json = jsonMode;
   cliFlags.contentBoundaries = contentBoundaries;

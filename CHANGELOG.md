@@ -1,22 +1,34 @@
 # Changelog
 
-## v1.3.1
+## v1.3.2
 
-- `--chrome` copies real Chrome profile on first launch (cookies, extensions, sessions preserved)
-- Reuses Chrome's existing BrowserContext instead of creating a new one
-- Fixed: Chrome opens normally after browse stops (no profile corruption)
+- Fixed Chrome crash when using `--chrome` / `--runtime chrome` — Chrome validates profile integrity hashes against the data directory path, causing deliberate crashes when profile files are copied to a different location
+- Solution: launch Chrome with a clean profile and auto-import cookies from the real Chrome profile via `cookie-import` (Keychain decryption)
+- Cookies, login sessions, and cart state all preserved via programmatic import
+- Works whether Chrome is running or not (quits existing Chrome if needed)
 
-## v1.3.0 — Chrome Runtime & Replay Export
+## v1.3.1 — Chrome Runtime & Replay Export
 
-- `--chrome` flag — launch system Chrome with CDP (uses your profile, cookies, extensions)
-- `handoff` now defaults to Chrome instead of Playwright Chromium (bypasses Turnstile/bot detection)
+**Chrome runtime** (`--runtime chrome` or `--chrome`):
+- Launch system Chrome with CDP instead of Playwright's Chromium
+- Copies real Chrome profile on first launch — cookies, extensions, sessions preserved
+- Excludes crash/session state files to prevent Chrome recovery dialogs
+- Reuses Chrome's existing BrowserContext (user's cookies available immediately)
+- `--chrome` is a shortcut for `--runtime chrome` (also implies `--headed`)
+- Chrome opens normally after browse stops — no profile corruption
+
+**Handoff to Chrome**:
+- `handoff` now defaults to Chrome (bypasses Turnstile/bot detection)
 - `handoff --chromium` for explicit fallback to Playwright Chromium
 - `resume` kills Chrome process if handoff spawned one
-- Chrome discovery: `findChromeExecutable()`, `isChromeRunning()`, `getChromeUserDataDir()`
-- `launchChrome()` shared utility — find, check, spawn, poll CDP, connect Playwright
-- Replay export resolves @e refs to real selectors (ARIA, CSS, XPath, text)
-- `--selectors css,aria,xpath,text` flag on `record export replay` to filter selector types
-- Server startup error surfacing: CLI detects early process exit immediately instead of timing out
+
+**Replay export selector resolution**:
+- `record export replay` resolves @e refs to real selectors (ARIA, CSS, XPath, text)
+- `--selectors css,aria,xpath,text` flag to filter selector types in export
+- Verified against `@puppeteer/replay` Schema.ts format
+
+**Other**:
+- Server startup error surfacing: CLI detects early process exit immediately
 - Chrome runtime gets extended startup timeout (20s vs 8s)
 
 ## v1.2.1

@@ -431,7 +431,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Run browser in headed (visible) mode |
-| `--chrome` | Launch system Chrome (real browser, bypasses bot detection) |
+| `--chrome` | Shortcut for `--runtime chrome --headed` (uses real Chrome, bypasses bot detection) |
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--provider <name>` | Cloud browser provider (browserless, browserbase) |
