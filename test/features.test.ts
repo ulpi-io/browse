@@ -12,6 +12,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { sharedBm as bm, sharedBaseUrl as baseUrl } from './setup';
 import { BrowserManager, getProfileDir, listProfiles, deleteProfile } from '../src/browser-manager';
 import { resolveRefSelectors, exportReplay, exportBrowse, type RecordedStep } from '../src/record-export';
+import { findChromeExecutable, isChromeRunning, getChromeUserDataDir } from '../src/chrome-discover';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
@@ -2180,5 +2181,54 @@ describe('replay export with resolved selectors', () => {
     const clickStep = output.steps.find((s: any) => s.type === 'click');
     // No xpath selectors resolved, falls back to raw @e3
     expect(clickStep.selectors).toEqual([['@e3']]);
+  });
+});
+
+// ─── Chrome discovery ─────────────────────────────────────────
+
+describe('Chrome discovery', () => {
+  test('findChromeExecutable returns string or null', () => {
+    const result = findChromeExecutable();
+    expect(result === null || typeof result === 'string').toBe(true);
+    if (result) {
+      const fs = require('fs');
+      expect(fs.existsSync(result)).toBe(true);
+    }
+  });
+
+  test('findChromeExecutable respects BROWSE_CHROME_PATH override', () => {
+    const original = process.env.BROWSE_CHROME_PATH;
+    try {
+      process.env.BROWSE_CHROME_PATH = '/nonexistent/chrome';
+      expect(findChromeExecutable()).toBeNull();
+
+      process.env.BROWSE_CHROME_PATH = process.execPath; // node binary exists
+      expect(findChromeExecutable()).toBe(process.execPath);
+    } finally {
+      if (original) process.env.BROWSE_CHROME_PATH = original;
+      else delete process.env.BROWSE_CHROME_PATH;
+    }
+  });
+
+  test('isChromeRunning returns correct shape', () => {
+    const result = isChromeRunning();
+    expect(result).toHaveProperty('running');
+    expect(result).toHaveProperty('hasDebugPort');
+    expect(typeof result.running).toBe('boolean');
+    expect(typeof result.hasDebugPort).toBe('boolean');
+    if (result.hasDebugPort) {
+      expect(typeof result.debugPort).toBe('number');
+    }
+  });
+
+  test('getChromeUserDataDir returns string or null', () => {
+    const result = getChromeUserDataDir();
+    expect(result === null || typeof result === 'string').toBe(true);
+    if (result && process.platform === 'darwin') {
+      expect(result).toContain('Google/Chrome');
+    }
+    if (result && process.platform === 'linux') {
+      expect(result).toContain('google-chrome');
+    }
   });
 });

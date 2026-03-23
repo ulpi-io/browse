@@ -301,6 +301,7 @@ browse record stop             # Stop recording
 browse record status           # Check recording status
 browse record export browse [path]      # Export as chain-compatible JSON (replay with browse chain)
 browse record export replay [path]     # Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+browse record export replay --selectors css,aria [path]  # Filter selector types in export
 ```
 
 ### React DevTools
@@ -322,11 +323,12 @@ browse react-devtools disable          # Disable
 ### Handoff (Human Takeover)
 
 ```bash
-browse handoff [reason]        # Swap to visible browser for CAPTCHA/MFA/OAuth
+browse handoff [reason]        # Swap to Chrome for CAPTCHA/MFA/OAuth (falls back to Chromium)
+browse handoff --chromium      # Force Playwright Chromium instead of Chrome
 browse resume                  # Swap back to headless, returns fresh snapshot
 ```
 
-Agent asks permission first via AskUserQuestion, then hands off. Server auto-suggests handoff after 3 consecutive failures.
+Handoff defaults to your system Chrome (bypasses Turnstile and bot detection). Falls back to Playwright Chromium if Chrome is not installed. Agent asks permission first via AskUserQuestion, then hands off. Server auto-suggests handoff after 3 consecutive failures.
 
 ### Cloud Providers
 
@@ -612,10 +614,11 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Show browser window (not headless) |
+| `--chrome` | Launch system Chrome (uses real browser, bypasses bot detection) |
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--provider <name>` | Cloud browser provider (browserless, browserbase) |
-| `--runtime <name>` | Browser runtime: playwright (default), rebrowser (stealth), lightpanda |
+| `--runtime <name>` | Browser runtime: playwright (default), rebrowser (stealth), lightpanda, chrome |
 
 ## Environment Variables
 
@@ -642,7 +645,9 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 | `BROWSE_CONFIRM_ACTIONS` | (none) | Commands requiring confirmation |
 | `BROWSE_ENCRYPTION_KEY` | auto-generated | 64-char hex AES key for credential vault |
 | `BROWSE_AUTH_PASSWORD` | (none) | Password for `auth save` (alt to `--password-stdin`) |
-| `BROWSE_RUNTIME` | playwright | Browser runtime (playwright, rebrowser, lightpanda) |
+| `BROWSE_RUNTIME` | playwright | Browser runtime (playwright, rebrowser, lightpanda, chrome) |
+| `BROWSE_CHROME` | (none) | Set to `1` to use system Chrome |
+| `BROWSE_CHROME_PATH` | auto-detected | Override Chrome executable path |
 
 ## Architecture
 

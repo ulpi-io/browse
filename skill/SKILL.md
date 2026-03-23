@@ -1,6 +1,6 @@
 ---
 name: browse
-version: 3.4.0
+version: 3.5.0
 description: |
   Fast web browsing and web app testing for AI coding agents via persistent headless Chromium daemon.
   Browse any URL, read page content, click elements, fill forms, run JavaScript, take screenshots,
@@ -375,6 +375,7 @@ browse record stop                     Stop recording, keep steps for export
 browse record status                   Recording state and step count
 browse record export browse [path]     Export as chain-compatible JSON (replay with browse chain)
 browse record export replay [path]    Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+browse record export replay --selectors css,aria [path]  Filter selector types in export
 ```
 
 ### React DevTools
@@ -401,7 +402,8 @@ browse provider delete <name>      Delete provider key
 
 ### Handoff (human takeover)
 ```
-browse handoff [reason]        Swap to visible browser for user to solve CAPTCHA/MFA
+browse handoff [reason]        Swap to Chrome for user to solve CAPTCHA/MFA (bypasses bot detection)
+browse handoff --chromium      Force Playwright Chromium instead of Chrome
 browse resume                  Swap back to headless, returns fresh snapshot
 ```
 
@@ -429,10 +431,11 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
 | `--max-output <n>` | Truncate output to N characters |
 | `--headed` | Run browser in headed (visible) mode |
+| `--chrome` | Launch system Chrome (real browser, bypasses bot detection) |
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--provider <name>` | Cloud browser provider (browserless, browserbase) |
-| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda |
+| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda, chrome |
 | `--mcp` | Run as MCP server (for Cursor, Windsurf, Cline) |
 
 ## Reference Files

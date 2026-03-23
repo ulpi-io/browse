@@ -82,7 +82,7 @@ function resolveLocalDir(): string {
 
 const LOCAL_DIR = resolveLocalDir();
 const STATE_FILE = process.env.BROWSE_STATE_FILE || path.join(LOCAL_DIR, `browse-server${INSTANCE_SUFFIX}.json`);
-const MAX_START_WAIT = 8000; // 8 seconds to start
+const MAX_START_WAIT = parseInt(process.env.BROWSE_START_TIMEOUT || '0', 10) || 8000;
 const LOCK_FILE = STATE_FILE + '.lock';
 const LOCK_STALE_MS = DEFAULTS.LOCK_STALE_THRESHOLD_MS;
 
@@ -276,7 +276,9 @@ async function startServer(): Promise<ServerState> {
     const spawnCmd = SERVER_SCRIPT === '__self__'
       ? [nodeExec, selfPath]
       : [nodeExec, '--import', 'tsx', SERVER_SCRIPT];
-    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}), ...(cliFlags.runtime ? { BROWSE_RUNTIME: cliFlags.runtime } : {}) } as NodeJS.ProcessEnv;
+    // Chrome runtime needs a longer startup timeout (CDP connection + profile load)
+    const startTimeout = cliFlags.runtime === 'chrome' ? String(DEFAULTS.CHROME_CDP_TIMEOUT_MS + 5000) : '';
+    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}), ...(cliFlags.runtime ? { BROWSE_RUNTIME: cliFlags.runtime } : {}), ...(startTimeout ? { BROWSE_START_TIMEOUT: startTimeout } : {}) } as NodeJS.ProcessEnv;
     const proc = spawn(spawnCmd[0], spawnCmd.slice(1), {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: spawnEnv,
@@ -287,9 +289,26 @@ async function startServer(): Promise<ServerState> {
     proc.unref();
     if (proc.stderr) (proc.stderr as any).unref();
 
-    // Wait for state file to appear
+    // Collect stderr as it arrives (for error reporting if startup fails)
+    const stderrChunks: Buffer[] = [];
+    let procExited = false;
+    if (proc.stderr) {
+      proc.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+    }
+    proc.on('exit', () => { procExited = true; });
+
+    // Wait for state file to appear (Chrome runtime needs longer — CDP + profile load)
+    const waitTimeout = cliFlags.runtime === 'chrome' ? DEFAULTS.CHROME_CDP_TIMEOUT_MS + 5000 : MAX_START_WAIT;
     const start = Date.now();
-    while (Date.now() - start < MAX_START_WAIT) {
+    while (Date.now() - start < waitTimeout) {
+      // Server process died → surface the error immediately
+      if (procExited) {
+        if (stderrChunks.length > 0) {
+          const errText = Buffer.concat(stderrChunks).toString('utf8');
+          throw new Error(`Server failed to start:\n${errText}`);
+        }
+        throw new Error('Server process exited before becoming ready');
+      }
       const state = readState();
       if (state && isProcessAlive(state.pid)) {
         return state;
@@ -297,19 +316,12 @@ async function startServer(): Promise<ServerState> {
       await sleep(100);
     }
 
-    // If we get here, server didn't start in time
-    // Try to read stderr for error message
-    const stderr = proc.stderr;
-    if (stderr) {
-      const stderrChunks: Buffer[] = [];
-      stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-      await new Promise(resolve => stderr.once('end', resolve));
-      if (stderrChunks.length > 0) {
-        const errText = Buffer.concat(stderrChunks).toString('utf8');
-        throw new Error(`Server failed to start:\n${errText}`);
-      }
+    // Timed out
+    if (stderrChunks.length > 0) {
+      const errText = Buffer.concat(stderrChunks).toString('utf8');
+      throw new Error(`Server failed to start:\n${errText}`);
     }
-    throw new Error(`Server failed to start within ${MAX_START_WAIT / 1000}s`);
+    throw new Error(`Server failed to start within ${waitTimeout / 1000}s`);
   } finally {
     releaseLock();
   }
@@ -652,6 +664,15 @@ export async function main() {
   }
   headed = headed || process.env.BROWSE_HEADED === '1';
 
+  // Extract --chrome flag (only before command)
+  let chromeFlag = false;
+  const chromeIdx = args.indexOf('--chrome');
+  if (chromeIdx !== -1 && chromeIdx < findCommandIndex(args)) {
+    chromeFlag = true;
+    args.splice(chromeIdx, 1);
+  }
+  chromeFlag = chromeFlag || process.env.BROWSE_CHROME === '1';
+
   // Extract --connect flag (only before command)
   let connectFlag = false;
   const connectIdx = args.indexOf('--connect');
@@ -728,6 +749,25 @@ export async function main() {
   if (providerName && (cdpPort || connectFlag)) {
     console.error('Cannot use --provider with --cdp or --connect. They are different ways to connect to a remote browser.');
     process.exit(1);
+  }
+
+  // Validate mutual exclusion: --chrome vs other browser flags
+  if (chromeFlag) {
+    if (connectFlag || cdpPort) {
+      console.error('Cannot use --chrome with --cdp or --connect. --chrome launches Chrome; --connect/--cdp discovers an existing one.');
+      process.exit(1);
+    }
+    if (runtimeName) {
+      console.error('Cannot use --chrome with --runtime. --chrome uses the system Chrome browser.');
+      process.exit(1);
+    }
+    if (providerName) {
+      console.error('Cannot use --chrome with --provider. --chrome uses local Chrome; --provider uses cloud browsers.');
+      process.exit(1);
+    }
+    // --chrome implies runtime=chrome and headed mode
+    runtimeName = 'chrome';
+    headed = true;
   }
 
   // Set global flags for sendCommand()
@@ -845,6 +885,7 @@ Options:
   --content-boundaries     Wrap page content in nonce-delimited markers
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
   --headed                 Run browser in headed (visible) mode
+  --chrome                 Launch system Chrome (uses your profile, cookies, extensions)
   --max-output <n>         Truncate output to N characters
   --state <path>           Load state file (cookies/storage) before first command
   --connect                Auto-discover and connect to running Chrome

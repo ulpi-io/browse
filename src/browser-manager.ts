@@ -526,7 +526,9 @@ export class BrowserManager {
   }
 
   // ─── Handoff: headless ↔ headed swap ─────────────────────
-  async handoff(message: string): Promise<string> {
+  private handoffCleanup: (() => Promise<void>) | null = null;
+
+  async handoff(message: string, useChromium = false): Promise<string> {
     if (this.isHeaded) {
       return `Already in headed mode at ${this.getCurrentUrl()}`;
     }
@@ -540,12 +542,32 @@ export class BrowserManager {
     const state = await this.saveState();
     const currentUrl = this.getCurrentUrl();
 
-    // Launch headed browser — if fails, headless stays untouched
+    // Try Chrome first (bypasses bot detection), fall back to Playwright Chromium
     let newBrowser: Browser;
-    try {
-      newBrowser = await chromium.launch({ headless: false, timeout: 15000 });
-    } catch (err: any) {
-      return `Cannot open headed browser — ${err.message}. Headless browser still running.`;
+    let cleanup: (() => Promise<void>) | null = null;
+    let usingChrome = false;
+
+    if (!useChromium) {
+      try {
+        const { launchChrome } = await import('./chrome-discover');
+        const result = await launchChrome();
+        newBrowser = result.browser;
+        cleanup = result.close;
+        usingChrome = true;
+      } catch {
+        // Chrome not available — fall back to Chromium
+        try {
+          newBrowser = await chromium.launch({ headless: false, timeout: 15000 });
+        } catch (err: any) {
+          return `Cannot open browser — ${err.message}. Headless browser still running.`;
+        }
+      }
+    } else {
+      try {
+        newBrowser = await chromium.launch({ headless: false, timeout: 15000 });
+      } catch (err: any) {
+        return `Cannot open headed browser — ${err.message}. Headless browser still running.`;
+      }
     }
 
     try {
@@ -567,6 +589,7 @@ export class BrowserManager {
       this.nextTabId = 1;
       this.tabSnapshots.clear();
       this.activeFramePerTab.clear();
+      this.handoffCleanup = cleanup;
 
       // Crash handler on new browser
       const onCrash = this.onCrashCallback;
@@ -583,8 +606,9 @@ export class BrowserManager {
         await oldContext.close().catch(() => {});
       }
 
+      const browserType = usingChrome ? 'Chrome' : 'Chromium';
       return [
-        `Handoff active — browser opened in visible mode.`,
+        `Handoff active — ${browserType} opened in visible mode.`,
         `Reason: ${message || 'manual intervention needed'}`,
         `URL: ${currentUrl}`,
         ``,
@@ -593,7 +617,8 @@ export class BrowserManager {
       ].join('\n');
     } catch (err: any) {
       // Restore failed — close new browser, keep old
-      await newBrowser.close().catch(() => {});
+      if (cleanup) await cleanup().catch(() => {});
+      else await newBrowser!.close().catch(() => {});
       return `Handoff failed during state restore — ${err.message}. Headless browser still running.`;
     }
   }
@@ -647,6 +672,12 @@ export class BrowserManager {
 
       oldBrowser.removeAllListeners('disconnected');
       oldBrowser.close().catch(() => {});
+
+      // Clean up Chrome process if handoff spawned one
+      if (this.handoffCleanup) {
+        await this.handoffCleanup().catch(() => {});
+        this.handoffCleanup = null;
+      }
 
       return userUrl;
     } catch (err: any) {

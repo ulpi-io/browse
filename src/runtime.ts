@@ -152,6 +152,13 @@ const registry: Record<string, RuntimeLoader> = {
       },
     };
   },
+
+  chrome: async () => {
+    const pw = await import('playwright');
+    const { launchChrome } = await import('./chrome-discover');
+    const { browser, close } = await launchChrome();
+    return { name: 'chrome', chromium: pw.chromium, browser, close };
+  },
 };
 
 export const AVAILABLE_RUNTIMES: string[] = Object.keys(registry);

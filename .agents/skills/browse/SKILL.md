@@ -1,6 +1,6 @@
 ---
 name: browse
-version: 2.10.0
+version: 3.5.0
 description: |
   Fast web browsing and web app testing for AI coding agents via persistent headless Chromium daemon.
   Browse any URL, read page content, click elements, fill forms, run JavaScript, take screenshots,
@@ -34,60 +34,12 @@ If not installed, tell the user:
 > ```bash
 > npm install -g @ulpi/browse
 > ```
->
-> If you don't have bun, install it first from https://bun.sh then run the command above.
 
 **Do NOT install anything automatically.** Wait for the user to confirm they have installed it before proceeding.
 
 ### Permissions (optional)
 
-To avoid being prompted on every browse command, tell the user they can add browse permissions to `.claude/settings.json` under `permissions.allow`:
-
-```json
-"Bash(browse:*)",
-"Bash(browse goto:*)", "Bash(browse back:*)", "Bash(browse forward:*)",
-"Bash(browse reload:*)", "Bash(browse url:*)", "Bash(browse text:*)",
-"Bash(browse html:*)", "Bash(browse links:*)", "Bash(browse forms:*)",
-"Bash(browse accessibility:*)", "Bash(browse snapshot:*)",
-"Bash(browse snapshot-diff:*)", "Bash(browse click:*)",
-"Bash(browse dblclick:*)", "Bash(browse fill:*)", "Bash(browse select:*)",
-"Bash(browse hover:*)", "Bash(browse focus:*)",
-"Bash(browse check:*)", "Bash(browse uncheck:*)",
-"Bash(browse type:*)", "Bash(browse press:*)",
-"Bash(browse keydown:*)", "Bash(browse keyup:*)",
-"Bash(browse scroll:*)", "Bash(browse wait:*)",
-"Bash(browse viewport:*)", "Bash(browse upload:*)",
-"Bash(browse drag:*)", "Bash(browse highlight:*)", "Bash(browse download:*)",
-"Bash(browse dialog-accept:*)", "Bash(browse dialog-dismiss:*)",
-"Bash(browse js:*)", "Bash(browse eval:*)", "Bash(browse css:*)",
-"Bash(browse attrs:*)", "Bash(browse element-state:*)", "Bash(browse dialog:*)",
-"Bash(browse console:*)", "Bash(browse network:*)",
-"Bash(browse cookies:*)", "Bash(browse storage:*)", "Bash(browse perf:*)",
-"Bash(browse value:*)", "Bash(browse count:*)",
-"Bash(browse devices:*)", "Bash(browse emulate:*)",
-"Bash(browse screenshot:*)", "Bash(browse pdf:*)",
-"Bash(browse responsive:*)", "Bash(browse diff:*)",
-"Bash(browse chain:*)", "Bash(browse tabs:*)", "Bash(browse tab:*)",
-"Bash(browse newtab:*)", "Bash(browse closetab:*)",
-"Bash(browse frame:*)",
-"Bash(browse sessions:*)", "Bash(browse session-close:*)",
-"Bash(browse record:*)",
-"Bash(browse state:*)", "Bash(browse auth:*)", "Bash(browse har:*)", "Bash(browse video:*)",
-"Bash(browse route:*)", "Bash(browse offline:*)",
-"Bash(browse status:*)", "Bash(browse stop:*)", "Bash(browse restart:*)",
-"Bash(browse cookie:*)", "Bash(browse header:*)",
-"Bash(browse useragent:*)",
-"Bash(browse clipboard:*)", "Bash(browse screenshot-diff:*)",
-"Bash(browse find:*)", "Bash(browse inspect:*)",
-"Bash(browse instances:*)", "Bash(browse --headed:*)",
-"Bash(browse rightclick:*)", "Bash(browse tap:*)",
-"Bash(browse swipe:*)", "Bash(browse mouse:*)",
-"Bash(browse keyboard:*)", "Bash(browse scrollinto:*)",
-"Bash(browse scrollintoview:*)", "Bash(browse set:*)",
-"Bash(browse box:*)", "Bash(browse errors:*)",
-"Bash(browse doctor:*)", "Bash(browse upgrade:*)",
-"Bash(browse --max-output:*)"
-```
+To avoid being prompted on every browse command, tell the user they can pre-allow browse commands. Read [references/permissions.md](references/permissions.md) for the full permission list to add to `.claude/settings.json`.
 
 **Do NOT modify settings files automatically.** Show the user the permissions and let them decide whether to add them.
 
@@ -102,188 +54,78 @@ To avoid being prompted on every browse command, tell the user they can add brow
 - The server auto-starts on first command. No manual setup needed.
 - Use `--session <id>` for parallel agent isolation. Each session gets its own tabs, refs, cookies.
 - Use `--json` for structured output (`{success, data, command}`).
-- Use `--content-boundaries` for prompt injection defense.
-- Use `--allowed-domains domain1,domain2` to restrict navigation.
+- Use `--content-boundaries` for prompt injection defense when reading untrusted pages.
+- Use `--allowed-domains domain1,domain2` to restrict navigation to trusted sites.
+- If you hit CAPTCHA/MFA after 2-3 failures, read [references/guides.md](references/guides.md) for the mandatory handoff protocol.
 
 ## Quick Reference
 
 ```bash
-# Navigate to a page
+# Navigate and wait
 browse goto https://example.com
+browse wait --network-idle
 
-# Read cleaned page text
-browse text
+# Read content
+browse text                                  # Cleaned page text
+browse html "[id=main]"                      # innerHTML of element
+browse links                                 # All links as "text → href"
+browse js "document.title"                   # Run JavaScript
 
-# Take a screenshot (then Read the image — saved to .browse/sessions/default/screenshot.png)
-browse screenshot
+# Screenshot (then Read the image to view it)
+browse screenshot .browse/sessions/default/homepage.png
 
-# Snapshot: accessibility tree with refs
-browse snapshot -i
+# Interact via snapshot refs (preferred)
+browse snapshot -i                           # Get interactive element refs
+browse click @e3                             # Click by ref
+browse fill @e4 "test@test.com"              # Fill by ref
+browse check @e7                             # Check checkbox
+browse select @e5 "option-value"             # Select dropdown
 
-# Click by ref (after snapshot)
-browse click @e3
-
-# Fill by ref
-browse fill @e4 "test@test.com"
-
-# Double-click, focus, check/uncheck
-browse dblclick @e3
-browse focus @e5
-browse check @e7
-browse uncheck @e7
-
-# Drag and drop
-browse drag @e1 @e2
-
-# Run JavaScript
-browse js "document.title"
-
-# Get all links
-browse links
-
-# Get input value / count elements
-browse value "[id=email]"
-browse count ".search-result"
-
-# Click by CSS selector
+# Interact via CSS selectors (use [id=...] instead of #)
 browse click "button.submit"
-
-# Fill a form by CSS selector (use [id=...] instead of # to avoid shell issues)
 browse fill "[id=email]" "test@test.com"
 browse fill "[id=password]" "abc123"
 browse click "button[type=submit]"
 
+# Wait variants
+browse wait ".loaded"                        # Wait for element
+browse wait --url "**/dashboard"             # Wait for URL
+browse wait --network-idle                   # Wait for network idle
+browse wait 2000                             # Wait milliseconds
+
+# Element queries
+browse count ".search-result"                # Count elements
+browse value "[id=email]"                    # Get input value
+browse css @e3 "color"                       # Get computed CSS
+browse attrs @e3                             # Get attributes
+browse console                               # View console messages
+browse errors                                # View page errors
+
 # Scroll
-browse scroll up
 browse scroll down
 browse scroll "[id=target]"
 
-# Wait for navigation or network
-browse wait ".loaded"
-browse wait --url "**/dashboard"
-browse wait --network-idle
-
-# iframe targeting
-browse frame "[id=my-iframe]"
-browse text                    # reads from inside the iframe
-browse click @e3               # clicks inside the iframe
-browse frame main              # back to main page
-
-# Highlight an element (visual debugging)
-browse highlight @e5
-
-# Download a file
-browse download @e3 ./file.pdf
+# iframes
+browse frame "[id=my-iframe]"               # Target iframe
+browse text                                  # Read inside iframe
+browse frame main                            # Back to main page
 
 # Network mocking
-browse route "**/*.png" block
 browse route "**/api/data" fulfill 200 '{"mock":true}'
+browse route "**/*.png" block
 browse route clear
 
-# Offline mode
-browse offline on
-browse offline off
+# Cookie import from real browsers (macOS)
+browse cookie-import chrome --domain .site.com
 
-# JSON output mode
-browse --json goto https://example.com
+# Persistent profiles
+browse --profile mysite goto https://app.com
 
-# Security: content boundaries
-browse --content-boundaries text
-
-# Security: domain restriction
-browse --allowed-domains example.com,*.cdn.example.com goto https://example.com
-
-# State persistence
-browse state save mysite
-browse state load mysite
-browse state clean                    # delete states older than 7 days
-browse state clean --older-than 30    # custom threshold
-
-# Cookie management
-browse cookie clear                                      # clear all cookies
-browse cookie set auth token --domain .example.com       # set with options
-browse cookie export ./cookies.json                      # export to file
-browse cookie import ./cookies.json                      # import from file
-
-# Cookie import from real browsers (macOS — Chrome, Arc, Brave, Edge)
-browse cookie-import --list                              # show installed browsers
-browse cookie-import chrome --domain .example.com        # import cookies for a domain
-browse cookie-import arc --domain .github.com            # import from Arc
-browse cookie-import chrome --profile "Profile 1" --domain .site.com  # specific Chrome profile
-
-# Session auto-persistence (named sessions survive restarts)
-browse --session myapp goto https://app.com/login        # login...
-browse session-close myapp                               # state auto-saved (encrypted if BROWSE_ENCRYPTION_KEY set)
-browse --session myapp goto https://app.com/dashboard    # cookies auto-restored
-
-# Load state at launch
-browse --state auth.json goto https://app.com            # load cookies before first command
-
-# Auth vault (credentials never visible to LLM)
-browse auth save github https://github.com/login user pass123
-browse auth login github
-
-# HAR recording
-browse har start
-browse goto https://example.com
-browse har stop ./recording.har
-
-# Video recording (watch a .webm of the session)
-browse video start ./videos
-browse goto https://example.com
-browse click @e3
-browse video stop
-
-# Command recording (export replayable scripts)
-browse record start
-browse goto https://example.com
-browse click "a"
-browse fill "[id=search]" "test query"
-browse record stop
-browse record export replay ./recording.json    # replay with: npx @puppeteer/replay ./recording.json
-browse record export browse ./steps.json        # replay with: cat steps.json | browse chain
-
-# Both together (video + replayable script)
-browse video start ./videos
-browse record start
-browse goto https://example.com
-browse snapshot -i
-browse click @e3
-browse fill "[id=email]" "user@test.com"
-browse record stop
-browse video stop
-browse record export replay ./recording.json
-
-# Device emulation
-browse emulate iphone
-browse emulate reset
-
-# Parallel sessions
-browse --session agent-a goto https://site1.com
-browse --session agent-b goto https://site2.com
-
-# Clipboard
-browse clipboard
-browse clipboard write "copied text"
-
-# Find elements semantically
-browse find role button
-browse find text "Submit"
-browse find testid "login-btn"
-
-# Screenshot diff (visual regression)
-browse screenshot-diff baseline.png current.png
-
-# Headed mode (visible browser)
-browse --headed goto https://example.com
-
-# Stealth mode (bypasses bot detection)
-# Requires: bun add rebrowser-playwright && npx rebrowser-playwright install chromium
-browse --runtime rebrowser goto https://example.com
-
-# State list / show
-browse state list
-browse state show mysite
+# Cloud providers (encrypted API keys, never visible to agents)
+browse provider save browserbase <api-key>
+browse --provider browserbase goto https://example.com
+browse provider list
+browse provider delete browserbase
 ```
 
 ## Command Reference
@@ -341,22 +183,23 @@ browse fill <selector> <value> Fill input field
 browse select <selector> <val> Select dropdown value
 browse hover <selector>        Hover over element
 browse focus <selector>        Focus element
+browse tap <selector>          Tap element (requires touch context via emulate)
 browse check <selector>        Check checkbox
 browse uncheck <selector>      Uncheck checkbox
-browse tap <selector>          Tap element (requires touch context via emulate)
 browse drag <src> <tgt>        Drag source to target
 browse type <text>             Type into focused element
 browse press <key>             Press key (Enter, Tab, Escape, etc.)
 browse keydown <key>           Hold key down
-browse keyboard inserttext <t> Insert text without key events
 browse keyup <key>             Release key
+browse keyboard inserttext <t> Insert text without key events
+browse scroll [sel|up|down]    Scroll element/viewport/bottom
 browse scrollinto <sel>        Scroll element into view (explicit)
+browse scrollintoview <sel>    Alias for scrollinto
 browse swipe <dir> [px]        Swipe up/down/left/right (touch events)
 browse mouse move <x> <y>     Move mouse to coordinates
 browse mouse down [button]     Press mouse button (left/right/middle)
 browse mouse up [button]       Release mouse button
 browse mouse wheel <dy> [dx]   Scroll wheel
-browse scroll [sel|up|down]    Scroll element/viewport/bottom
 browse wait <sel>              Wait for element to appear
 browse wait <sel> --state hidden  Wait for element to disappear
 browse wait <ms>               Wait for milliseconds
@@ -365,8 +208,14 @@ browse wait --fn "expr"        Wait for JavaScript condition
 browse wait --load <state>     Wait for load state
 browse wait --url <pattern>    Wait for URL match
 browse wait --network-idle     Wait for network idle
+browse wait --download                    Wait for download, return temp path
+browse wait --download ./report.pdf       Wait and save to path
+browse wait --download 60000              Custom timeout (ms)
+browse wait --download ./file.pdf 60000   Both path and timeout
 browse set geo <lat> <lng>     Set geolocation
 browse set media <scheme>      Set color scheme (dark/light/no-preference)
+browse header <name>:<value>   Set request header
+browse useragent <string>      Set user agent string
 browse viewport <WxH>          Set viewport size (e.g. 375x812)
 browse upload <sel> <files>    Upload file(s) to a file input
 browse highlight <selector>    Highlight element (visual debugging)
@@ -376,6 +225,15 @@ browse dialog-dismiss          Set dialogs to auto-dismiss (default)
 browse emulate <device>        Emulate device (iphone, pixel, etc.)
 browse emulate reset           Reset to desktop (1920x1080)
 browse offline [on|off]        Toggle offline mode
+```
+
+### Cookies
+```
+browse cookie <n>=<v>                  Set cookie (shorthand)
+browse cookie set <n> <v> [--domain d --secure]  Set cookie with options
+browse cookie clear                    Clear all cookies
+browse cookie export <file>            Export cookies to JSON file
+browse cookie import <file>            Import cookies from JSON file
 ```
 
 ### Network
@@ -393,11 +251,11 @@ browse css <selector> <prop>   Get computed CSS property
 browse attrs <selector>        Get element attributes as JSON
 browse element-state <selector> Element state (visible/enabled/checked/focused)
 browse value <selector>        Get input field value
-browse box <selector>          Get bounding box as JSON {x, y, width, height}
 browse count <selector>        Count matching elements
+browse box <selector>          Get bounding box as JSON {x, y, width, height}
 browse dialog                  Last dialog info or "(no dialog detected)"
-browse errors [--clear]        View/clear page errors (filtered from console)
 browse console [--clear]       View/clear console messages
+browse errors [--clear]        View/clear page errors (filtered from console)
 browse network [--clear]       View/clear network requests
 browse cookies                 Dump all cookies as JSON
 browse storage [set <k> <v>]   View/set localStorage
@@ -410,9 +268,9 @@ browse clipboard write <text>  Write text to system clipboard
 ### Visual
 ```
 browse screenshot [path]              Viewport screenshot (default: .browse/sessions/{id}/screenshot.png)
+browse screenshot --full [path]       Full-page screenshot (entire scrollable page)
 browse screenshot <sel|@ref> [path]   Screenshot specific element
 browse screenshot --clip x,y,w,h [path]  Screenshot clipped region
-browse screenshot --full [path]       Full-page screenshot (entire scrollable page)
 browse screenshot --annotate [path]   Screenshot with numbered badges + legend
 browse pdf [path]                     Save as PDF
 browse responsive [prefix]            Screenshots at mobile/tablet/desktop
@@ -464,6 +322,14 @@ browse sessions                List active sessions
 browse session-close <id>      Close a session
 ```
 
+### Profiles
+```
+browse --profile <name> <cmd>             Use persistent browser profile
+browse profile list                       List profiles with disk size
+browse profile delete <name>              Delete a profile
+browse profile clean [--older-than <d>]   Remove old profiles (default: 7 days)
+```
+
 ### State persistence
 ```
 browse state save [name]       Save cookies + localStorage (all origins)
@@ -483,7 +349,7 @@ browse cookie-import <browser> --profile <p> --domain <d>   Specific Chrome prof
 
 ### Auth vault
 ```
-browse auth save <name> <url> <user> <pass>   Save credentials (encrypted)
+browse auth save <name> <url> <user> <pass|--password-stdin>   Save credentials (encrypted)
 browse auth login <name>                       Auto-login using saved credentials
 browse auth list                               List saved credentials
 browse auth delete <name>                      Delete credentials
@@ -509,18 +375,48 @@ browse record stop                     Stop recording, keep steps for export
 browse record status                   Recording state and step count
 browse record export browse [path]     Export as chain-compatible JSON (replay with browse chain)
 browse record export replay [path]    Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+browse record export replay --selectors css,aria [path]  Filter selector types in export
+```
+
+### React DevTools
+```
+browse react-devtools enable           Enable React DevTools (downloads hook, injects, reloads)
+browse react-devtools disable          Disable React DevTools
+browse react-devtools tree             Component tree with indentation
+browse react-devtools props <sel>      Props/state/hooks of component at element
+browse react-devtools suspense         Suspense boundaries + status
+browse react-devtools errors           Error boundaries + caught errors
+browse react-devtools profiler         Render timing per component
+browse react-devtools hydration        Hydration timing (Next.js)
+browse react-devtools renders          What re-rendered since last commit
+browse react-devtools owners <sel>     Parent component chain
+browse react-devtools context <sel>    Context values consumed by component
+```
+
+### Cloud Providers
+```
+browse provider save <name> <key>  Save provider API key (encrypted)
+browse provider list               List saved providers
+browse provider delete <name>      Delete provider key
+```
+
+### Handoff (human takeover)
+```
+browse handoff [reason]        Swap to Chrome for user to solve CAPTCHA/MFA (bypasses bot detection)
+browse handoff --chromium      Force Playwright Chromium instead of Chrome
+browse resume                  Swap back to headless, returns fresh snapshot
 ```
 
 ### Server management
 ```
 browse status                  Server health, uptime, session count
 browse instances               List all running browse servers (instance, PID, port, status)
+browse version                 Print CLI version
+browse doctor                  System check (Node, Playwright, Chromium)
+browse upgrade                 Self-update via npm
 browse stop                    Shutdown server
 browse restart                 Kill + restart server
 browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
-browse version                 Print CLI version
-browse doctor                  System check (Bun, Playwright, Chromium)
-browse upgrade                 Self-update via npm
 ```
 
 ## CLI Flags
@@ -528,92 +424,26 @@ browse upgrade                 Self-update via npm
 | Flag | Description |
 |------|-------------|
 | `--session <id>` | Named session (isolates tabs, refs, cookies — auto-persists on close) |
+| `--profile <name>` | Persistent browser profile (own Chromium, full state) |
 | `--state <path>` | Load state file (cookies/storage) before first command |
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
-| `--headed` | Run browser in headed (visible) mode |
-| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda |
 | `--max-output <n>` | Truncate output to N characters |
+| `--headed` | Run browser in headed (visible) mode |
+| `--chrome` | Launch system Chrome (real browser, bypasses bot detection) |
+| `--cdp <port>` | Connect to Chrome on a specific debugging port |
+| `--connect` | Auto-discover and connect to a running Chrome instance |
+| `--provider <name>` | Cloud browser provider (browserless, browserbase) |
+| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda, chrome |
+| `--mcp` | Run as MCP server (for Cursor, Windsurf, Cline) |
 
-## Speed Rules
+## Reference Files
 
-1. **Navigate once, query many times.** `goto` loads the page; then `text`, `js`, `css`, `screenshot` all run against the loaded page instantly.
-2. **Use `snapshot -i` for interaction.** Get refs for all interactive elements, then click/fill by ref. No need to guess CSS selectors.
-3. **Use `snapshot -C` for SPAs.** Catches cursor:pointer divs and onclick handlers that ARIA misses.
-4. **Use `js` for precision.** `js "document.querySelector('.price').textContent"` is faster than parsing full page text.
-5. **Use `links` to survey.** Faster than `text` when you just need navigation structure.
-6. **Use `chain` for multi-step flows.** Avoids CLI overhead per step.
-7. **Use `responsive` for layout checks.** One command = 3 viewport screenshots.
-8. **Use `--session` for parallel work.** Multiple agents can browse simultaneously without interference.
-9. **Use `value`/`count` instead of `js`.** Purpose-built commands are cleaner than `js "document.querySelector(...).value"`.
-10. **Use `frame` for iframes.** Don't try to reach into iframes with CSS — use `frame [id=x]` first.
+For extended examples, operational guides, or first-time setup:
 
-## When to Use What
-
-| Task | Commands |
-|------|----------|
-| Read a page | `goto <url>` then `text` |
-| Interact with elements | `snapshot -i` then `click @e3` |
-| Find hidden clickables | `snapshot -i -C` then `click @e15` |
-| Check if element exists | `count ".thing"` |
-| Get input value | `value "[id=email]"` |
-| Extract specific data | `js "document.querySelector('.price').textContent"` |
-| Visual check | `screenshot` then `Read .browse/sessions/default/screenshot.png` |
-| Fill and submit form | `snapshot -i` → `fill @e4 "val"` → `click @e5` |
-| Check/uncheck boxes | `check @e7` / `uncheck @e7` |
-| Check CSS | `css "selector" "property"` or `css @e3 "property"` |
-| Inspect DOM | `html "selector"` or `attrs @e3` |
-| Debug console errors | `console` |
-| Check network requests | `network` |
-| Mock API responses | `route "**/api/*" fulfill 200 '{"data":[]}'` |
-| Block ads/trackers | `route "**/*.doubleclick.net/*" block` |
-| Test offline behavior | `offline on` → test → `offline off` |
-| Interact in iframe | `frame "[id=payment]"` → `fill @e2 "4242..."` → `frame main` |
-| Check local dev | `goto http://127.0.0.1:3000` |
-| Compare two pages | `diff <url1> <url2>` |
-| Mobile layout check | `responsive .browse/sessions/default/resp` |
-| Test on mobile device | `emulate iphone` → `goto <url>` → `screenshot` |
-| Save/restore session | `state save mysite` / `state load mysite` |
-| Auto-login | `auth save gh https://github.com/login user pass` → `auth login gh` |
-| Record network | `har start` → browse around → `har stop ./out.har` |
-| Record video | `video start ./vids` → browse around → `video stop` |
-| Export automation script | `record start` → browse around → `record export replay ./recording.json` |
-| Parallel agents | `--session agent-a <cmd>` / `--session agent-b <cmd>` |
-| Multi-step flow | `echo '[...]' \| browse chain` |
-| Secure browsing | `--allowed-domains example.com goto https://example.com` |
-| Scroll through results | `scroll down` → `text` → `scroll down` → `text` |
-| Drag and drop | `drag @e1 @e2` |
-| Read/write clipboard | `clipboard` / `clipboard write "text"` |
-| Find by accessibility | `find role button` / `find text "Submit"` |
-| Visual regression | `screenshot-diff baseline.png` |
-| Debug with DevTools | `inspect` (set BROWSE_DEBUG_PORT first) |
-| See the browser | `browse --headed goto <url>` |
-| Bypass bot detection | `--runtime rebrowser goto <url>` |
-| Get element position | `box @e3` |
-| Check page errors | `errors` |
-| Right-click context menu | `rightclick @e3` |
-| Test mobile gestures | `emulate iphone` → `tap @e1` / `swipe down` |
-| Set dark mode | `set media dark` |
-| Test geolocation | `set geo 37.7 -122.4` → verify in page |
-| Export/import cookies | `cookie export ./cookies.json` / `cookie import ./cookies.json` |
-| Limit output size | `--max-output 5000 text` |
-
-## Architecture
-
-- Persistent Chromium daemon on localhost (port 9400-10400)
-- Bearer token auth per session
-- One server per project directory — `--session` handles agent isolation
-- Session multiplexing: multiple agents share one Chromium via isolated BrowserContexts
-- For separate servers: set `BROWSE_INSTANCE` env var (e.g., fault isolation between teams)
-- `browse instances` — discover all running servers (PID, port, status, session count)
-- Project-local state: `.browse/` directory at project root (auto-created, self-gitignored)
-  - `sessions/{id}/` — per-session screenshots, logs, PDFs
-  - `states/{name}.json` — saved browser state (cookies + localStorage)
-  - `browse-server.json` — server PID, port, auth token
-- Auto-shutdown when all sessions idle past 30 min
-- Chromium crash → server exits → auto-restarts on next command
-- AI-friendly error messages: Playwright errors rewritten to actionable hints
-- CDP remote connection: `BROWSE_CDP_URL` to connect to existing Chrome
-- Policy enforcement: `browse-policy.json` for allow/deny/confirm rules
-- Two browser engines: playwright (default) and rebrowser (stealth, bypasses bot detection)
+| File | Read when... |
+|------|-------------|
+| [references/permissions.md](references/permissions.md) | First-time setup — user wants to pre-allow browse commands in `.claude/settings.json` |
+| [references/guides.md](references/guides.md) | You hit a CAPTCHA/MFA blocker (handoff protocol), want optimization tips (speed rules), or need help choosing which command to use (decision table) |
+| [references/commands.md](references/commands.md) | You want extended usage examples beyond the Quick Reference above |

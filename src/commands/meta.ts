@@ -797,8 +797,10 @@ export async function handleMetaCommand(
 
     // ─── Handoff ────────────────────────────────────────
     case 'handoff': {
-      const message = args.join(' ') || 'User takeover requested';
-      return await bm.handoff(message);
+      const useChromium = args.includes('--chromium');
+      const filteredArgs = args.filter(a => a !== '--chromium');
+      const message = filteredArgs.join(' ') || 'User takeover requested';
+      return await bm.handoff(message, useChromium);
     }
 
     case 'resume': {

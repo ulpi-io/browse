@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.0 — Chrome Runtime & Replay Export
+
+- `--chrome` flag — launch system Chrome with CDP (uses your profile, cookies, extensions)
+- `handoff` now defaults to Chrome instead of Playwright Chromium (bypasses Turnstile/bot detection)
+- `handoff --chromium` for explicit fallback to Playwright Chromium
+- `resume` kills Chrome process if handoff spawned one
+- Chrome discovery: `findChromeExecutable()`, `isChromeRunning()`, `getChromeUserDataDir()`
+- `launchChrome()` shared utility — find, check, spawn, poll CDP, connect Playwright
+- Replay export resolves @e refs to real selectors (ARIA, CSS, XPath, text)
+- `--selectors css,aria,xpath,text` flag on `record export replay` to filter selector types
+- Server startup error surfacing: CLI detects early process exit immediately instead of timing out
+- Chrome runtime gets extended startup timeout (20s vs 8s)
+
 ## v1.2.1
 
 - `--runtime <name>` CLI flag — select browser engine (playwright, rebrowser, lightpanda)
