@@ -287,14 +287,33 @@ export class BrowserManager {
    * Creates a new BrowserContext on the shared browser.
    * This instance does NOT own the browser — close() only closes the context.
    */
-  async launchWithBrowser(browser: Browser) {
+  async launchWithBrowser(browser: Browser, reuseContext = false) {
     this.browser = browser;
     this.ownsBrowser = false;
 
-    this.context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
-    });
+    if (reuseContext) {
+      // CDP-connected Chrome: use the existing default context (has user's cookies, extensions)
+      const contexts = browser.contexts();
+      this.context = contexts[0] || await browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+      });
+      // Register existing pages
+      const pages = this.context.pages();
+      if (pages.length > 0) {
+        for (const page of pages) {
+          const tabId = this.nextTabId++;
+          this.wirePageEvents(page);
+          this.pages.set(tabId, page);
+          this.activeTabId = tabId;
+        }
+        return; // Already have tabs, don't create a new one
+      }
+    } else {
+      this.context = await browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+        ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+      });
+    }
 
     // Create first tab
     await this.newTab();

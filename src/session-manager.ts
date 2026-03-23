@@ -39,10 +39,12 @@ export class SessionManager {
   private browser: Browser;
   private localDir: string;
   private encryptionKey: Buffer | undefined;
+  private reuseContext: boolean;
 
-  constructor(browser: Browser, localDir: string = '/tmp') {
+  constructor(browser: Browser, localDir: string = '/tmp', reuseContext = false) {
     this.browser = browser;
     this.localDir = localDir;
+    this.reuseContext = reuseContext;
     try {
       this.encryptionKey = resolveEncryptionKey(localDir);
     } catch {
@@ -97,7 +99,7 @@ export class SessionManager {
 
     const buffers = new SessionBuffers();
     const manager = new BrowserManager(buffers);
-    await manager.launchWithBrowser(this.browser);
+    await manager.launchWithBrowser(this.browser, this.reuseContext && this.sessions.size === 0);
 
     // Apply domain filter if allowed domains are specified
     let domainFilter: DomainFilter | null = null;

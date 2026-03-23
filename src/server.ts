@@ -544,7 +544,8 @@ async function start() {
       });
     }
 
-    sessionManager = new SessionManager(browser, LOCAL_DIR);
+    const reuseContext = runtime.name === 'chrome';
+    sessionManager = new SessionManager(browser, LOCAL_DIR, reuseContext);
   }
 
   const startTime = Date.now();

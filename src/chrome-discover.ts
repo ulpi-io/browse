@@ -248,15 +248,28 @@ export async function launchChrome(): Promise<ChromeLaunchResult> {
     }
   }
 
-  // Case 2 & 3: Launch Chrome
+  // Chrome blocks --remote-debugging-port with the default user-data-dir.
+  // Copy the real Chrome profile to a browse-owned dir so we get cookies, extensions, sessions.
   const port = await pickDebugPort();
-  let dataDir: string;
-
-  // Chrome requires a non-default --user-data-dir for --remote-debugging-port.
-  // Use a browse-owned profile directory. Cookies are imported on first launch.
   const localDir = process.env.BROWSE_LOCAL_DIR || '.browse';
-  dataDir = path.join(localDir, 'chrome-data');
-  fs.mkdirSync(dataDir, { recursive: true });
+  const dataDir = path.join(localDir, 'chrome-data');
+  const realDataDir = getChromeUserDataDir();
+
+  if (realDataDir && !fs.existsSync(path.join(dataDir, 'Default', 'Preferences'))) {
+    // First launch: copy real Chrome profile
+    console.log('[browse] Copying Chrome profile (first-time setup)...');
+    fs.mkdirSync(dataDir, { recursive: true });
+    execSync(`cp -a "${realDataDir}/Default" "${dataDir}/Default"`, { stdio: 'pipe', timeout: 30000 });
+    // Copy top-level files Chrome needs (Local State has encryption keys, etc.)
+    for (const f of ['Local State', 'First Run']) {
+      const src = path.join(realDataDir, f);
+      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dataDir, f));
+    }
+    console.log('[browse] Profile copied.');
+  } else {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+
   cleanStaleLock(dataDir);
 
   const chromeArgs = [
