@@ -307,7 +307,7 @@ Legend: **YES** = shipped, **—** = not available
 
 ## Top Remaining Gaps
 
-1. **Cloud providers** — agent-browser has 4, we have 0 (L effort)
-2. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
-3. **Chrome DevTools trace** — agent-browser has `trace` command (S effort)
-4. **Wait for download** — agent-browser has `--download` flag on wait (S effort)
+1. **Streaming / live preview** — agent-browser has WebSocket viewport stream (L effort)
+2. **Chrome DevTools trace** — agent-browser has `trace` command (S effort)
+3. **Browser extensions** — agent-browser supports `--extension` (M effort)
+4. **Homebrew install** — agent-browser has `brew install` (M effort)
