@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1
+
+- `--chrome` copies real Chrome profile on first launch (cookies, extensions, sessions preserved)
+- Reuses Chrome's existing BrowserContext instead of creating a new one
+- Fixed: Chrome opens normally after browse stops (no profile corruption)
+
 ## v1.3.0 — Chrome Runtime & Replay Export
 
 - `--chrome` flag — launch system Chrome with CDP (uses your profile, cookies, extensions)
