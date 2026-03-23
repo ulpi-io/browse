@@ -20,6 +20,7 @@ export interface RecordedStep {
   command: string;
   args: string[];
   timestamp: number;
+  resolvedSelectors?: Record<string, string[]>;
 }
 
 export interface Session {

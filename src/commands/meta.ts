@@ -962,12 +962,29 @@ export async function handleMetaCommand(
       if (subcommand === 'export') {
         if (!currentSession) throw new Error('Recording requires a session context');
         const format = args[1];
-        if (!format) throw new Error('Usage: browse record export browse|replay [path]');
+        if (!format) throw new Error('Usage: browse record export browse|replay [--selectors css,aria,xpath,text] [path]');
 
         // Use active recording or last stopped recording
         const steps = currentSession.recording || (currentSession as any)._lastRecording;
         if (!steps || steps.length === 0) {
           throw new Error('No recording to export. Run "browse record start" first, execute commands, then export.');
+        }
+
+        // Parse remaining args: --selectors flag and optional file path
+        const remaining = args.slice(2);
+        let filePath: string | undefined;
+        let selectorFilter: Set<string> | undefined;
+        for (let i = 0; i < remaining.length; i++) {
+          if (remaining[i] === '--selectors' && remaining[i + 1]) {
+            const valid = new Set(['css', 'aria', 'xpath', 'text']);
+            const types = remaining[i + 1].split(',').map(s => s.trim().toLowerCase());
+            const invalid = types.filter(t => !valid.has(t));
+            if (invalid.length > 0) throw new Error(`Unknown selector type(s): ${invalid.join(', ')}. Valid: css, aria, xpath, text`);
+            selectorFilter = new Set(types) as Set<any>;
+            i++; // skip value
+          } else if (!remaining[i].startsWith('--')) {
+            filePath = remaining[i];
+          }
         }
 
         const { exportBrowse, exportReplay } = await import('../record-export');
@@ -976,12 +993,11 @@ export async function handleMetaCommand(
         if (format === 'browse') {
           output = exportBrowse(steps);
         } else if (format === 'replay') {
-          output = exportReplay(steps);
+          output = exportReplay(steps, selectorFilter as any);
         } else {
           throw new Error(`Unknown format: ${format}. Use "browse" (chain JSON) or "replay" (Playwright/Puppeteer).`);
         }
 
-        const filePath = args[2];
         if (filePath) {
           fs.writeFileSync(filePath, output);
           return `Exported ${steps.length} steps as ${format}: ${filePath}`;

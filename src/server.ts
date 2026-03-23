@@ -332,7 +332,23 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
     // Record step if recording is active
     if (session.recording && !RECORDING_SKIP.has(command)) {
-      session.recording.push({ command, args, timestamp: Date.now() });
+      const step: RecordedStep = { command, args, timestamp: Date.now() };
+      const refArgs = args.filter((a: string) => a.startsWith('@e'));
+      if (refArgs.length > 0) {
+        const { resolveRefSelectors } = await import('./record-export');
+        const resolved: Record<string, string[]> = {};
+        for (const ref of refArgs) {
+          try {
+            const r = session.manager.resolveRef(ref);
+            if ('locator' in r) {
+              const sels = await resolveRefSelectors(r.locator);
+              if (sels.length > 0) resolved[ref] = sels;
+            }
+          } catch { /* ref invalid or stale — skip */ }
+        }
+        if (Object.keys(resolved).length > 0) step.resolvedSelectors = resolved;
+      }
+      session.recording.push(step);
     }
 
     // Apply max-output truncation

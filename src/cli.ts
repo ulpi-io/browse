@@ -821,7 +821,7 @@ Network:        offline [on|off] | route <pattern> block|fulfill
 Recording:      har start | har stop [path]
                 video start [dir] | video stop | video status
                 record start | record stop | record status
-                record export browse|replay [path]
+                record export browse|replay [--selectors css,aria,xpath,text] [path]
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>

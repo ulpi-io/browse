@@ -11,6 +11,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { sharedBm as bm, sharedBaseUrl as baseUrl } from './setup';
 import { BrowserManager, getProfileDir, listProfiles, deleteProfile } from '../src/browser-manager';
+import { resolveRefSelectors, exportReplay, exportBrowse, type RecordedStep } from '../src/record-export';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
@@ -2029,5 +2030,155 @@ describe('Cloud Providers', () => {
     const result = await provider.getCdpUrl('my-token');
     expect(result.cdpUrl).toContain('wss://');
     expect(result.cdpUrl).toContain('token=my-token');
+  });
+});
+
+// ─── Ref → selector resolution for replay export ──────────────
+
+describe('resolveRefSelectors', () => {
+  test('resolves element with id', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const { handleSnapshot } = await import('../src/snapshot');
+    await handleSnapshot(['-i'], bm);
+
+    // Find the ref for #login-btn
+    const refMap = bm.getRefMap();
+    let loginRef: string | null = null;
+    for (const [ref, loc] of refMap) {
+      const id = await loc.evaluate((el: Element) => el.id);
+      if (id === 'login-btn') { loginRef = ref; break; }
+    }
+    expect(loginRef).toBeTruthy();
+
+    const locator = refMap.get(loginRef!)!;
+    const selectors = await resolveRefSelectors(locator);
+    expect(selectors.length).toBeGreaterThan(0);
+    expect(selectors).toContainEqual('#login-btn');
+  });
+
+  test('resolves element with ARIA role', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const { handleSnapshot } = await import('../src/snapshot');
+    await handleSnapshot(['-i'], bm);
+
+    const refMap = bm.getRefMap();
+    let loginRef: string | null = null;
+    for (const [ref, loc] of refMap) {
+      const id = await loc.evaluate((el: Element) => el.id);
+      if (id === 'login-btn') { loginRef = ref; break; }
+    }
+    expect(loginRef).toBeTruthy();
+
+    const locator = refMap.get(loginRef!)!;
+    const selectors = await resolveRefSelectors(locator);
+    const ariaSelector = selectors.find(s => s.startsWith('aria/'));
+    expect(ariaSelector).toBeTruthy();
+    expect(ariaSelector).toContain('[role="button"]');
+  });
+
+  test('resolves element with XPath', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const { handleSnapshot } = await import('../src/snapshot');
+    await handleSnapshot(['-i'], bm);
+
+    const refMap = bm.getRefMap();
+    const firstRef = refMap.keys().next().value!;
+    const locator = refMap.get(firstRef)!;
+    const selectors = await resolveRefSelectors(locator);
+    const xpathSelector = selectors.find(s => s.startsWith('xpath/'));
+    expect(xpathSelector).toBeTruthy();
+    expect(xpathSelector).toMatch(/^xpath\/\/html\//);
+  });
+
+  test('returns empty array for stale locator', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const page = bm.getPage();
+    // Create a locator for an element that will be removed
+    const locator = page.locator('#login-btn');
+    await page.evaluate(() => document.getElementById('login-btn')?.remove());
+    const selectors = await resolveRefSelectors(locator);
+    expect(selectors).toEqual([]);
+  });
+});
+
+describe('replay export with resolved selectors', () => {
+  test('exportReplay uses resolved selectors instead of @e refs', () => {
+    const steps: RecordedStep[] = [
+      { command: 'goto', args: ['https://example.com'], timestamp: 1 },
+      {
+        command: 'click', args: ['@e3'], timestamp: 2,
+        resolvedSelectors: { '@e3': ['aria/Submit[role="button"]', '#submit-btn', 'xpath//html/body/form/button[1]'] },
+      },
+    ];
+    const output = JSON.parse(exportReplay(steps));
+    const clickStep = output.steps.find((s: any) => s.type === 'click');
+    expect(clickStep).toBeTruthy();
+    // Should have resolved selectors, not @e3
+    expect(clickStep.selectors).toEqual([
+      ['aria/Submit[role="button"]'],
+      ['#submit-btn'],
+      ['xpath//html/body/form/button[1]'],
+    ]);
+  });
+
+  test('CSS selector passes through unchanged', () => {
+    const steps: RecordedStep[] = [
+      { command: 'click', args: ['#login-btn'], timestamp: 1 },
+    ];
+    const output = JSON.parse(exportReplay(steps));
+    const clickStep = output.steps.find((s: any) => s.type === 'click');
+    expect(clickStep.selectors).toEqual([['#login-btn']]);
+  });
+
+  test('exportBrowse preserves @e refs in args', () => {
+    const steps: RecordedStep[] = [
+      { command: 'click', args: ['@e3'], timestamp: 1,
+        resolvedSelectors: { '@e3': ['#submit-btn'] } },
+    ];
+    const output = JSON.parse(exportBrowse(steps));
+    expect(output).toEqual([['click', '@e3']]);
+  });
+
+  test('--selectors css filters to CSS-only selectors', () => {
+    const steps: RecordedStep[] = [
+      {
+        command: 'click', args: ['@e3'], timestamp: 1,
+        resolvedSelectors: { '@e3': ['aria/Submit[role="button"]', '#submit-btn', 'text/Submit', 'xpath//html/body/button[1]'] },
+      },
+    ];
+    const filter = new Set(['css'] as const);
+    const output = JSON.parse(exportReplay(steps, filter as any));
+    const clickStep = output.steps.find((s: any) => s.type === 'click');
+    expect(clickStep.selectors).toEqual([['#submit-btn']]);
+  });
+
+  test('--selectors aria,xpath filters to ARIA + XPath', () => {
+    const steps: RecordedStep[] = [
+      {
+        command: 'click', args: ['@e3'], timestamp: 1,
+        resolvedSelectors: { '@e3': ['aria/Submit[role="button"]', '#submit-btn', 'text/Submit', 'xpath//html/body/button[1]'] },
+      },
+    ];
+    const filter = new Set(['aria', 'xpath'] as const);
+    const output = JSON.parse(exportReplay(steps, filter as any));
+    const clickStep = output.steps.find((s: any) => s.type === 'click');
+    expect(clickStep.selectors).toEqual([
+      ['aria/Submit[role="button"]'],
+      ['xpath//html/body/button[1]'],
+    ]);
+  });
+
+  test('filter with no matching selectors falls back to raw arg', () => {
+    const steps: RecordedStep[] = [
+      {
+        command: 'click', args: ['@e3'], timestamp: 1,
+        resolvedSelectors: { '@e3': ['aria/Submit[role="button"]'] },
+      },
+    ];
+    const filter = new Set(['xpath'] as const);
+    const output = JSON.parse(exportReplay(steps, filter as any));
+    const clickStep = output.steps.find((s: any) => s.type === 'click');
+    // No xpath selectors resolved, falls back to raw @e3
+    expect(clickStep.selectors).toEqual([['@e3']]);
   });
 });
