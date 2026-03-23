@@ -47,5 +47,7 @@ Add these rules to `.claude/settings.json` under `permissions.allow` to pre-allo
 "Bash(browse doctor:*)", "Bash(browse upgrade:*)",
 "Bash(browse --max-output:*)",
 "Bash(browse handoff:*)", "Bash(browse resume:*)",
-"Bash(browse react-devtools:*)", "Bash(browse profile:*)"
+"Bash(browse react-devtools:*)", "Bash(browse profile:*)",
+"Bash(browse --chrome:*)", "Bash(browse provider:*)",
+"Bash(browse cookie-import:*)", "Bash(browse cookie-export:*)"
 ```
