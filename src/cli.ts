@@ -420,8 +420,12 @@ export const SAFE_TO_RETRY = new Set([
   // Meta commands that are read-only or idempotent
   'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record', 'cookie-import',
   'box', 'errors', 'doctor', 'upgrade',
-  'react-devtools', 'provider',
+  'react-devtools', 'provider', 'detect', 'coverage',
 ]);
+
+// Commands that are inherently long-running (reload + analysis + detection).
+// These get a 120s HTTP timeout instead of the default 30s.
+const LONG_RUNNING = new Set(['perf-audit']);
 
 // Commands that return static data independent of page state.
 // Safe to retry even after a server restart (no "blank page" issue).
@@ -459,7 +463,7 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
       method: 'POST',
       headers,
       body,
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(LONG_RUNNING.has(command) ? 120000 : 30000),
     });
 
     if (resp.status === 401) {
@@ -863,10 +867,12 @@ Cookies:        cookie <n>=<v> | cookie set <n> <v> [--domain --secure]
                 cookie clear | cookie export <file> | cookie import <file>
 Network:        offline [on|off] | route <pattern> block|fulfill
                 header <n>:<v> | useragent <str>
+                initscript set <code> | clear | show
 Recording:      har start | har stop [path]
                 video start [dir] | video stop | video status
                 record start | record stop | record status
                 record export browse|replay [--selectors css,aria,xpath,text] [path]
+Coverage:       coverage start | coverage stop                    JS/CSS code coverage analysis
 Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Frames:         frame <sel> | frame main
 Sessions:       sessions | session-close <id>
@@ -879,6 +885,8 @@ Handoff:        handoff [reason] | resume
 React:          react-devtools enable|disable|tree|props|suspense|errors
                 react-devtools profiler|hydration|renders|owners|context
 Providers:      provider save|list|delete <name> [api-key]
+Detect:         detect (frameworks, CDN, third-party, SaaS, infra)
+Performance:    perf-audit [url] [--no-coverage] [--no-detect] [--json]
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | stop | restart | doctor | upgrade
 Setup:          install-skill [path]

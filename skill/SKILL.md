@@ -393,6 +393,20 @@ browse react-devtools owners <sel>     Parent component chain
 browse react-devtools context <sel>    Context values consumed by component
 ```
 
+### Performance audit
+```
+browse perf-audit [url]                  Full performance audit (Web Vitals, resources, images, fonts, DOM, render-blocking, third-party, stack detection, correlations, recommendations)
+browse perf-audit [url] --no-coverage    Skip JS/CSS coverage collection (faster)
+browse perf-audit [url] --no-detect      Skip framework/SaaS/infrastructure detection
+browse perf-audit [url] --json           Output as structured JSON (for programmatic use)
+browse detect                            Detect tech stack: frameworks, SaaS platforms, CDN, protocol, compression, caching, DOM complexity, third-party inventory
+browse coverage start                    Start JS/CSS code coverage collection
+browse coverage stop                     Stop collection and report per-file used/unused bytes
+browse initscript set <code>             Inject JS that runs before every page load (pre-navigation observers, mocks, polyfills)
+browse initscript show                   Show current init script
+browse initscript clear                  Remove init script
+```
+
 ### Cloud Providers
 ```
 browse provider save <name> <key>  Save provider API key (encrypted)

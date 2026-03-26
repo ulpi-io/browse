@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Performance Heavy Page</title>
+  <!-- Sync script in head — render-blocking -->
+  <script>
+    // Simulate a long task (blocking loop)
+    var start = Date.now();
+    while (Date.now() - start < 60) {} // 60ms blocking
+    window.__PERF_HEAVY_LOADED = true;
+  </script>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .hero { width: 100%; height: 300px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .content { margin-top: 20px; }
+    .unused-style { display: none; background: red; border: 5px solid green; }
+    .another-unused { color: purple; font-size: 72px; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>Performance Heavy Test Page</h1>
+  </div>
+  <div class="content">
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" alt="Test image">
+    <p>This page has intentional performance issues for testing.</p>
+  </div>
+  <script>
+    function usedFunction() { return document.title; }
+    function unusedFunction() { return 'never called'; }
+    usedFunction();
+  </script>
+</body>
+</html>

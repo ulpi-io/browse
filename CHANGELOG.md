@@ -1,5 +1,49 @@
 # Changelog
 
+## v1.4.0 — Performance Audit System
+
+**4 new commands** for web performance analysis:
+
+**`perf-audit [url]`** — full performance audit in one command:
+- Core Web Vitals (LCP, CLS, TBT, FCP, TTFB, INP) with Google's good/needs-improvement/poor thresholds
+- LCP critical path reconstruction — traces the blocking chain from TTFB through render-blocking CSS/JS to the LCP element
+- Layout shift attribution — each shift traced to font swap, missing image dimensions, ad injection, or dynamic content
+- Long task script attribution — maps each blocking task to its source script URL and domain, with per-domain TBT
+- Resource breakdown by type (JS, CSS, images, fonts, media, API) with sizes, counts, and largest files
+- Render-blocking detection — sync scripts and blocking stylesheets in `<head>`
+- Image audit — format (JPEG/PNG vs WebP/AVIF), missing width/height, missing lazy-load below fold, missing fetchpriority on LCP candidates, srcset usage, oversized images (natural > 2x display)
+- Font audit — per-font font-display value, preload status, FOIT/FOUT risk assessment
+- DOM complexity — node count, max depth, largest subtree (flags >1,500 and >3,000 thresholds)
+- JS/CSS coverage — per-file used vs unused bytes via Playwright Coverage API
+- Correlation engine — connects LCP to blocking CSS, Long Tasks to scripts, CLS to font swaps, fonts to FCP blocking
+- Prioritized data-driven recommendations — platform-specific when SaaS detected (Shopify app removal, WordPress plugin deactivation, Magento RequireJS bundling)
+- Flags: `--no-coverage` (skip coverage), `--no-detect` (skip detection), `--json` (structured output)
+- Auto-handles analytics-heavy pages that never reach networkidle (10s race with fallback)
+- Per-section status reporting — agents see exactly what succeeded, failed, or was skipped with timing breakdown
+
+**`detect`** — tech stack fingerprint:
+- 108 framework detection signatures across 12 categories: JS frameworks (React, Vue, Angular, Svelte, Solid, Qwik, Preact, Lit, Alpine, HTMX, Stimulus, Turbo, Ember, jQuery...), meta-frameworks (Next.js, Nuxt, SvelteKit, Remix, Astro, Gatsby...), PHP (Laravel/Livewire/Inertia, Symfony, WordPress, Drupal, Magento...), Python (Django, Flask, Streamlit, Dash...), Ruby (Rails, Phoenix LiveView...), Java/.NET (Spring Boot, Blazor, ASP.NET...), CSS (Tailwind, Bootstrap, MUI, Styled Components...), SSGs, mobile/hybrid, state management (Redux, MobX, Zustand...), build tools (Webpack, Vite, Turbopack...)
+- Deep detection: version, build mode (dev/prod), config depth (Next.js `__NEXT_DATA__` payload size, Magento RequireJS module count, Laravel Livewire component count, WordPress plugin list from script URLs, Redux store size)
+- 55 SaaS platform signatures: Shopify (theme, app enumeration with per-app sizing, Liquid render time), WordPress/WooCommerce (plugin list, cart-fragments detection), Magento (RequireJS waterfall, Knockout bindings, FPC status), Wix, Squarespace, Webflow, Bubble, and 48 more
+- Fixable-vs-platform-constraint mapping for every SaaS platform
+- Infrastructure: CDN detection (CloudFront, Cloudflare, Fastly, Akamai, Vercel, Netlify...), protocol breakdown (h2/h1.1 per-resource), compression per-type, cache hit rate, missing preconnect analysis, Service Worker caching strategy detection, DOM complexity
+- Third-party inventory: 88 known domain classifications (analytics, ads, social, chat, monitoring, consent, CDN)
+- All detections run in a single `page.evaluate()` call (<200ms)
+
+**`coverage start|stop`** — JS/CSS code coverage:
+- Wraps Playwright's Coverage API with `resetOnNavigation: false`
+- Per-file used/unused bytes and percentages
+- Sorted by wasted bytes descending
+- Handles inline scripts, data URLs, and context recreation gracefully
+
+**`initscript set|clear|show`** — pre-navigation script injection:
+- Exposes `context.addInitScript()` as a CLI command
+- IIFE-namespaced to coexist with domain filter init scripts
+- Survives context recreation (emulate, useragent changes)
+
+**Bug fixes:**
+- Fixed esbuild `__name` injection crashing `page.evaluate()` calls — added browser-side polyfill for `__name` in all BrowserContext creation paths
+
 ## v1.3.2
 
 - Fixed Chrome crash when using `--chrome` / `--runtime chrome` — Chrome validates profile integrity hashes against the data directory path, causing deliberate crashes when profile files are copied to a different location

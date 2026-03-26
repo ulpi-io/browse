@@ -320,6 +320,87 @@ browse react-devtools context <sel>    # Context values
 browse react-devtools disable          # Disable
 ```
 
+### Performance Audit
+
+```bash
+browse perf-audit [url]                  # Full performance audit with actionable report
+browse perf-audit [url] --no-coverage    # Skip JS/CSS coverage (faster)
+browse perf-audit [url] --no-detect      # Skip stack detection
+browse perf-audit [url] --json           # Structured JSON output
+browse detect                            # Tech stack fingerprint (frameworks, SaaS, CDN, infra)
+browse coverage start                    # Start JS/CSS code coverage collection
+browse coverage stop                     # Stop and report per-file used/unused bytes
+browse initscript set <code>             # Inject JS before every page load
+browse initscript show                   # Show current init script
+browse initscript clear                  # Remove init script
+```
+
+`perf-audit` runs a complete performance analysis in one command:
+
+- **Core Web Vitals** — LCP, CLS, TBT, FCP, TTFB, INP with Google's good/needs-improvement/poor thresholds
+- **LCP Analysis** — identifies the LCP element, its network entry, render-blocking chain, and critical path
+- **Layout Shift Attribution** — each shift traced to font swap, missing image dimensions, or dynamic content
+- **Long Task Attribution** — maps blocking JS to source scripts and domains with per-domain TBT
+- **Resource Breakdown** — JS/CSS/images/fonts/API categorized with sizes and largest files
+- **Render-Blocking Detection** — sync scripts and blocking stylesheets in `<head>`
+- **Image Audit** — format (JPEG vs WebP), missing dimensions, missing lazy-load, missing fetchpriority, oversized images, srcset usage
+- **Font Audit** — per-font font-display value, preload status, FOIT/FOUT risk
+- **DOM Complexity** — node count, max depth, largest subtree (flags >1,500 and >3,000 thresholds)
+- **Stack Detection** — 108 frameworks (React, Vue, Angular, Next.js, Nuxt, Laravel, WordPress, Magento, etc.), 55 SaaS platforms (Shopify, Wix, Squarespace, etc.), CDN, protocol, compression, caching
+- **Third-Party Impact** — per-domain inventory with size, request count, and category (analytics/ads/social/chat/monitoring)
+- **Coverage** — per-file JS/CSS used vs unused bytes
+- **Correlation Engine** — connects LCP to blocking CSS, Long Tasks to scripts, CLS to font swaps, fonts to FCP blocking
+- **Recommendations** — prioritized, data-driven action items (platform-specific when SaaS detected)
+
+```bash
+$ browse perf-audit https://example.com --no-coverage
+
+Core Web Vitals:
+  TTFB         580ms    good
+  FCP          696ms    good
+  LCP          696ms    good
+  CLS          0.015    good
+  TBT          599ms    needs improvement
+
+LCP Analysis:
+  Element:        <img src='hero.webp'>
+  Critical path:  TTFB(580ms) -> CSS(styles.css) -> JS(vendor.js) -> Image(hero.webp) -> LCP(696ms)
+
+DOM Complexity:
+  Total nodes:    4,476
+  WARNING: exceeds 3,000 threshold (poor)
+
+Top Recommendations:
+  1. Add fetchpriority="high" to LCP image
+  2. Add font-display:swap to fallback fonts (FOIT risk)
+  3. Lazy-load YouTube embeds (click-to-play facade)
+
+Audit completed in 13.2s (reload: 10.0s, settle: 3.0s, collect: 41ms, detection: 75ms)
+```
+
+`detect` gives a quick stack fingerprint without the full audit:
+
+```bash
+$ browse detect
+
+Stack:
+  meta-framework     Next.js (production), router: app, rsc: true
+  css-framework      Tailwind CSS
+  build-tool         Turbopack
+
+Infrastructure:
+  CDN:          Amazon CloudFront
+  Protocol:     h2 (64%)
+  Cache rate:   74% (134/180)
+  DNS origins:  24 unique (15 missing preconnect)
+  DOM:          4,476 nodes, depth 23
+
+Third-Party (4.4MB total):
+  www.youtube.com                3.0MB   45 reqs   video
+  www.googletagmanager.com       331KB    3 reqs   analytics
+  connect.facebook.net           214KB    2 reqs   ads
+```
+
 ### Handoff (Human Takeover)
 
 ```bash

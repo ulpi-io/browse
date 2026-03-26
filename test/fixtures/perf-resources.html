@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Perf Resources Test</title>
+  <script src="/fake-vendor.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    @font-face {
+      font-family: 'TestFont';
+      src: url('/test-font.woff2') format('woff2');
+      /* Note: no font-display set — should trigger FOIT warning */
+    }
+    body { font-family: 'TestFont', sans-serif; }
+  </style>
+</head>
+<body>
+  <h1>Performance Resources Test</h1>
+  <img src="/hero.png" alt="Hero">
+  <img src="/below-fold.jpg" alt="Below fold" style="margin-top: 2000px">
+  <div>
+    <div>
+      <div>
+        <div>
+          <div>
+            <p>Deeply nested content (depth 6 from body)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

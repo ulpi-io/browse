@@ -15,6 +15,20 @@ import type { HarRecording } from './har';
 import type { DomainFilter } from './domain-filter';
 import { sanitizeName } from './sanitize';
 
+/**
+ * Polyfill for esbuild/tsx keepNames helper.
+ *
+ * tsx (esbuild under the hood) wraps every named function-like binding with
+ * `__name(fn, "name")`.  When those bindings appear inside page.evaluate()
+ * callbacks the code is serialised and executed in the browser context where
+ * `__name` does not exist, causing a ReferenceError.
+ *
+ * Injecting this no-op via context.addInitScript() before any evaluate() call
+ * makes the helper available globally in the page.
+ */
+const ESBUILD_KEEPNAMES_POLYFILL =
+  'if(typeof globalThis.__name==="undefined"){globalThis.__name=function(fn){return fn};}';
+
 /** Shorthand aliases for common devices → Playwright device names */
 const DEVICE_ALIASES: Record<string, string> = {
   'iphone': 'iPhone 15',
@@ -93,6 +107,14 @@ export interface DeviceDescriptor {
   deviceScaleFactor: number;
   isMobile: boolean;
   hasTouch: boolean;
+}
+
+export interface CoverageEntry {
+  url: string;
+  totalBytes: number;
+  usedBytes: number;
+  unusedBytes: number;
+  unusedPct: number;
 }
 
 /** Resolve a device name (alias or Playwright name or custom) to a descriptor, or null */
@@ -223,6 +245,9 @@ export class BrowserManager {
   // ─── Video Recording ────────────────────────────────────────
   private videoRecording: { dir: string; startedAt: number } | null = null;
 
+  // ─── Coverage ──────────────────────────────────────────────
+  private coverageActive: boolean = false;
+
   // ─── Init Script (domain filter JS injection) ─────────────
   private initScript: string | null = null;
 
@@ -277,6 +302,7 @@ export class BrowserManager {
       viewport: { width: 1920, height: 1080 },
       ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
     });
+    await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
 
     // Create first tab
     await this.newTab();
@@ -297,6 +323,7 @@ export class BrowserManager {
       this.context = contexts[0] || await browser.newContext({
         viewport: { width: 1920, height: 1080 },
       });
+      await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
       // Register existing pages
       const pages = this.context.pages();
       if (pages.length > 0) {
@@ -313,6 +340,7 @@ export class BrowserManager {
         viewport: { width: 1920, height: 1080 },
         ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
       });
+      await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
     }
 
     // Create first tab
@@ -351,6 +379,7 @@ export class BrowserManager {
     this.browser = context.browser();
     this.isPersistent = true;
     this.ownsBrowser = true;
+    await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
 
     // Crash handler
     if (this.browser) {
@@ -474,6 +503,7 @@ export class BrowserManager {
   }
 
   private async applyContextOptions(context: BrowserContext): Promise<void> {
+    await context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
     if (Object.keys(this.extraHeaders).length > 0) {
       await context.setExtraHTTPHeaders(this.extraHeaders);
     }
@@ -1019,6 +1049,9 @@ export class BrowserManager {
     }
     if (!this.browser) return;
 
+    // Coverage cannot survive context recreation — reset the flag
+    this.coverageActive = false;
+
     // Auto-inject recordVideo when video recording is active (so emulateDevice/applyUserAgent pass it through)
     if (this.videoRecording && !contextOptions.recordVideo) {
       contextOptions = {
@@ -1048,6 +1081,7 @@ export class BrowserManager {
 
     // Restore cookies and headers into new context before creating tabs
     try {
+      await newContext.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
       if (savedCookies.length > 0) {
         await newContext.addCookies(savedCookies);
       }
@@ -1302,6 +1336,78 @@ export class BrowserManager {
 
   getVideoRecording(): { dir: string; startedAt: number } | null {
     return this.videoRecording;
+  }
+
+  // ─── Coverage ──────────────────────────────────────────────
+
+  async startCoverage(): Promise<void> {
+    if (this.coverageActive) {
+      throw new Error('Coverage already active. Stop current coverage first.');
+    }
+    const page = this.getPage();
+    await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    await page.coverage.startCSSCoverage({ resetOnNavigation: false });
+    this.coverageActive = true;
+  }
+
+  async stopCoverage(): Promise<{ js: CoverageEntry[]; css: CoverageEntry[] }> {
+    if (!this.coverageActive) {
+      throw new Error("Coverage not started. Run 'browse coverage start' first.");
+    }
+    const page = this.getPage();
+    const [jsCov, cssCov] = await Promise.all([
+      page.coverage.stopJSCoverage(),
+      page.coverage.stopCSSCoverage(),
+    ]);
+    this.coverageActive = false;
+
+    return {
+      js: this.processJSCoverage(jsCov),
+      css: this.processCSSCoverage(cssCov),
+    };
+  }
+
+  isCoverageActive(): boolean {
+    return this.coverageActive;
+  }
+
+  private processJSCoverage(entries: Array<{ url: string; source?: string; functions: Array<{ ranges: Array<{ startOffset: number; endOffset: number; count: number }> }> }>): CoverageEntry[] {
+    return entries
+      .filter(e => e.url && !e.url.startsWith('data:'))
+      .map(entry => {
+        const totalBytes = entry.source?.length ?? 0;
+        // Calculate used bytes by summing ranges with count > 0
+        let usedBytes = 0;
+        for (const fn of entry.functions) {
+          for (const range of fn.ranges) {
+            if (range.count > 0) {
+              usedBytes += range.endOffset - range.startOffset;
+            }
+          }
+        }
+        // Clamp usedBytes to totalBytes (overlapping ranges can exceed total)
+        if (usedBytes > totalBytes) usedBytes = totalBytes;
+        const unusedBytes = totalBytes - usedBytes;
+        const unusedPct = totalBytes > 0 ? Math.round((unusedBytes / totalBytes) * 1000) / 10 : 0;
+        return { url: entry.url, totalBytes, usedBytes, unusedBytes, unusedPct };
+      });
+  }
+
+  private processCSSCoverage(entries: Array<{ url: string; text?: string; ranges: Array<{ start: number; end: number }> }>): CoverageEntry[] {
+    return entries
+      .filter(e => e.url && !e.url.startsWith('data:'))
+      .map(entry => {
+        const totalBytes = entry.text?.length ?? 0;
+        // Calculate used bytes by summing all range lengths
+        let usedBytes = 0;
+        for (const range of entry.ranges) {
+          usedBytes += range.end - range.start;
+        }
+        if (usedBytes > totalBytes) usedBytes = totalBytes;
+        const unusedBytes = totalBytes - usedBytes;
+        const unusedPct = totalBytes > 0 ? Math.round((unusedBytes / totalBytes) * 1000) / 10 : 0;
+        return { url: entry.url, totalBytes, usedBytes, unusedBytes, unusedPct };
+      });
   }
 
   // ─── Init Script ───────────────────────────────────────────

@@ -110,7 +110,7 @@ export async function getTree(bm: BrowserManager, page: Page): Promise<string> {
   const tree = await page.evaluate(() => {
     const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
 
-    function walkFiber(fiber: any, depth: number): string[] {
+    const walkFiber = (fiber: any, depth: number): string[] => {
       const lines: string[] = [];
       if (!fiber) return lines;
 
@@ -136,7 +136,7 @@ export async function getTree(bm: BrowserManager, page: Page): Promise<string> {
       }
 
       return lines;
-    }
+    };
 
     const rendererID = hook.renderers?.keys().next().value ?? 1;
     const roots = hook.getFiberRoots?.(rendererID);
@@ -235,7 +235,7 @@ export async function getSuspense(bm: BrowserManager, page: Page): Promise<strin
     const root = roots.values().next().value;
     const boundaries: string[] = [];
 
-    function walk(fiber: any, path: string[]) {
+    const walk = (fiber: any, path: string[]) => {
       if (!fiber) return;
       if (fiber.tag === 13) { // SuspenseComponent
         const resolved = fiber.memoizedState === null;
@@ -249,7 +249,7 @@ export async function getSuspense(bm: BrowserManager, page: Page): Promise<strin
         walk(child, newPath);
         child = child.sibling;
       }
-    }
+    };
 
     walk(root.current, []);
     return boundaries.length > 0 ? boundaries.join('\n') : 'No Suspense boundaries found';
@@ -274,7 +274,7 @@ export async function getErrors(bm: BrowserManager, page: Page): Promise<string>
     const root = roots.values().next().value;
     const errors: string[] = [];
 
-    function walk(fiber: any) {
+    const walk = (fiber: any) => {
       if (!fiber) return;
       // Error boundaries are class components (tag 1) with componentDidCatch
       if (fiber.tag === 1 && fiber.type?.prototype?.componentDidCatch) {
@@ -284,7 +284,7 @@ export async function getErrors(bm: BrowserManager, page: Page): Promise<string>
       }
       let child = fiber.child;
       while (child) { walk(child); child = child.sibling; }
-    }
+    };
 
     walk(root.current);
     return errors.length > 0 ? errors.join('\n') : 'No error boundaries found';
@@ -310,7 +310,7 @@ export async function getProfiler(bm: BrowserManager, page: Page): Promise<strin
     const root = roots.values().next().value;
     const timings: string[] = [];
 
-    function walk(fiber: any) {
+    const walk = (fiber: any) => {
       if (!fiber) return;
       const name = fiber.type?.displayName || fiber.type?.name;
       if (name && fiber.actualDuration !== undefined) {
@@ -318,7 +318,7 @@ export async function getProfiler(bm: BrowserManager, page: Page): Promise<strin
       }
       let child = fiber.child;
       while (child) { walk(child); child = child.sibling; }
-    }
+    };
 
     walk(root.current);
     return timings.length > 0 ? timings.join('\n') : 'No profiling data (requires React profiling build)';
@@ -374,7 +374,7 @@ export async function getRenders(bm: BrowserManager, page: Page): Promise<string
     const root = roots.values().next().value;
     const rendered: string[] = [];
 
-    function walk(fiber: any) {
+    const walk = (fiber: any) => {
       if (!fiber) return;
       const name = fiber.type?.displayName || fiber.type?.name;
       // A fiber with an alternate and positive actualDuration rendered this commit
@@ -383,7 +383,7 @@ export async function getRenders(bm: BrowserManager, page: Page): Promise<string
       }
       let child = fiber.child;
       while (child) { walk(child); child = child.sibling; }
-    }
+    };
 
     walk(root.current);
     return rendered.length > 0 ? `Re-rendered:\n${rendered.join('\n')}` : 'No components re-rendered since last commit';

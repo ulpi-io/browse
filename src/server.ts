@@ -156,7 +156,7 @@ const WRITE_COMMANDS = new Set([
   'drag', 'keydown', 'keyup',
   'highlight', 'download', 'route', 'offline',
   'rightclick', 'tap', 'swipe', 'mouse', 'keyboard',
-  'scrollinto', 'scrollintoview', 'set',
+  'scrollinto', 'scrollintoview', 'set', 'initscript',
 ]);
 
 const META_COMMANDS = new Set([
@@ -169,7 +169,7 @@ const META_COMMANDS = new Set([
   'frame', 'state', 'find',
   'auth', 'har', 'video', 'inspect', 'record', 'cookie-import',
   'doctor', 'upgrade', 'handoff', 'resume', 'profile',
-  'react-devtools', 'provider',
+  'react-devtools', 'provider', 'coverage', 'detect', 'perf-audit',
 ]);
 
 // Commands excluded from recording — meta/diagnostic commands that don't represent user actions

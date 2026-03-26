@@ -682,6 +682,34 @@ export async function handleWriteCommand(
       }
     }
 
+    case 'initscript': {
+      const sub = args[0];
+      if (!sub || !['set', 'clear', 'show'].includes(sub)) {
+        throw new Error('Usage: browse initscript <set|clear|show> [code]\n  set <code>   Register a script to run before every page load\n  clear        Remove the init script\n  show         Display the current init script');
+      }
+      switch (sub) {
+        case 'set': {
+          const code = args.slice(1).join(' ');
+          if (!code) throw new Error('Usage: browse initscript set <code>');
+          const context = bm.getContext();
+          if (!context) throw new Error('No browser context');
+          await context.addInitScript(code);
+          bm.setInitScript(code);
+          return 'Init script set. Will run before every page load.';
+        }
+        case 'clear': {
+          bm.setInitScript(null as unknown as string);
+          return 'Init script cleared. Note: already-injected scripts remain active until the next context recreation (e.g. emulate or restart).';
+        }
+        case 'show': {
+          const script = bm.getInitScript();
+          return script ? script : 'No init script set.';
+        }
+        default:
+          throw new Error('Usage: browse initscript <set|clear|show> [code]');
+      }
+    }
+
     case 'route': {
       // route <pattern> block — abort matching requests
       // route <pattern> fulfill <status> [body] — respond with custom data

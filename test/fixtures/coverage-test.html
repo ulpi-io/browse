@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .used { color: red; }
+    .unused-class { background: blue; }
+    .also-unused { margin: 10px; }
+  </style>
+</head>
+<body>
+  <p class="used">This paragraph uses the .used class</p>
+  <script>
+    function usedFunction() { return 'hello'; }
+    function unusedFunction() { return 'never called'; }
+    function anotherUnused() { return 'also never called'; }
+    usedFunction();
+  </script>
+</body>
+</html>

@@ -391,7 +391,7 @@ export async function handleMetaCommand(
       const { handleWriteCommand } = await import('./write');
       const { PolicyChecker } = await import('../policy');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline','rightclick','tap','swipe','mouse','keyboard','scrollinto','scrollintoview','set']);
+      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline','rightclick','tap','swipe','mouse','keyboard','scrollinto','scrollintoview','set','initscript']);
       const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count','clipboard','box','errors']);
 
       const sessionBuffers = currentSession?.buffers;
@@ -1145,6 +1145,173 @@ export async function handleMetaCommand(
       throw new Error(
         `Unknown subcommand: ${sub}. Usage: browse provider save|list|delete <name> [api-key]`
       );
+    }
+
+    // ─── Coverage ─────────────────────────────────────────
+    case 'coverage': {
+      const sub = args[0];
+      if (!sub || !['start', 'stop'].includes(sub)) {
+        throw new Error('Usage: browse coverage start | stop');
+      }
+
+      if (sub === 'start') {
+        await bm.startCoverage();
+        return 'Coverage collection started. Navigate to pages, then run "browse coverage stop" to see results.';
+      }
+
+      // sub === 'stop'
+      const result = await bm.stopCoverage();
+
+      const formatBytes = (bytes: number): string => {
+        if (bytes < 1024) return `${bytes}B`;
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+      };
+
+      const formatEntries = (entries: Array<{ url: string; totalBytes: number; usedBytes: number; unusedBytes: number; unusedPct: number }>, label: string): string => {
+        if (!entries.length) return `${label}:\n  No coverage data\n`;
+        const sorted = [...entries].sort((a, b) => b.unusedBytes - a.unusedBytes);
+        const lines = sorted.map(e => {
+          const name = e.url ? new URL(e.url).pathname.split('/').pop() || e.url : '[inline]';
+          const total = formatBytes(e.totalBytes);
+          const used = formatBytes(e.usedBytes);
+          const pct = Math.round(e.unusedPct);
+          const wasted = formatBytes(e.unusedBytes);
+          return `  ${name.padEnd(30)} ${total.padStart(10)}   used: ${used.padStart(10)} (${(100 - pct + '%').padStart(4)})   wasted: ${wasted}`;
+        });
+        const totalBytes = entries.reduce((s, e) => s + e.totalBytes, 0);
+        const usedBytes = entries.reduce((s, e) => s + e.usedBytes, 0);
+        const wastedBytes = totalBytes - usedBytes;
+        const wastedPct = totalBytes > 0 ? Math.round(wastedBytes / totalBytes * 100) : 0;
+        lines.push(`  ${'Total'.padEnd(30)} ${formatBytes(totalBytes).padStart(10)}   used: ${formatBytes(usedBytes).padStart(10)} (${(100 - wastedPct + '%').padStart(4)})   wasted: ${formatBytes(wastedBytes)}`);
+        return `${label}:\n${lines.join('\n')}\n`;
+      };
+
+      const sections: string[] = [];
+      sections.push(formatEntries(result.js, 'JavaScript'));
+      sections.push(formatEntries(result.css, 'CSS'));
+
+      // Grand total
+      const allEntries = [...result.js, ...result.css];
+      if (allEntries.length > 0) {
+        const grandTotal = allEntries.reduce((s, e) => s + e.totalBytes, 0);
+        const grandUsed = allEntries.reduce((s, e) => s + e.usedBytes, 0);
+        const grandWasted = grandTotal - grandUsed;
+        const grandPct = grandTotal > 0 ? Math.round(grandWasted / grandTotal * 100) : 0;
+        sections.push(`Grand Total: ${formatBytes(grandTotal)}   used: ${formatBytes(grandUsed)} (${100 - grandPct}%)   wasted: ${formatBytes(grandWasted)} (${grandPct}%)`);
+      }
+
+      return sections.join('\n');
+    }
+
+    // ─── Detect ──────────────────────────────────────────
+    case 'detect': {
+      const page = bm.getPage();
+      // Lazy import to avoid loading detection modules on server startup
+      const { detectStack } = await import('../detection');
+      const buffers = currentSession?.buffers;
+      const networkEntries = buffers?.networkBuffer || [];
+      const fingerprint = await detectStack(page, networkEntries);
+
+      // Format output
+      const lines: string[] = [];
+
+      // Stack section
+      lines.push('Stack:');
+      if (fingerprint.frameworks.length === 0) {
+        lines.push('  No framework detected');
+      } else {
+        for (const fw of fingerprint.frameworks) {
+          const version = fw.version ? ` ${fw.version}` : '';
+          const mode = fw.buildMode ? ` (${fw.buildMode})` : '';
+          const configParts = Object.entries(fw.config || {})
+            .filter(([_, v]) => v !== null && v !== undefined && v !== false && v !== 0 && v !== '')
+            .slice(0, 3)
+            .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+          const configStr = configParts.length ? `, ${configParts.join(', ')}` : '';
+          lines.push(`  ${fw.category.padEnd(18)} ${fw.name}${version}${mode}${configStr}`);
+
+          // Show critical perf hints inline
+          for (const hint of fw.perfHints.filter(h => h.severity === 'critical')) {
+            lines.push(`    ! ${hint.message}`);
+          }
+        }
+      }
+
+      // Infrastructure section
+      lines.push('');
+      lines.push('Infrastructure:');
+      const infra = fingerprint.infrastructure;
+      lines.push(`  CDN:          ${infra.cdn.provider || 'none detected'}${infra.cdn.cacheStatus ? ` (cache: ${infra.cdn.cacheStatus})` : ''}`);
+      lines.push(`  Protocol:     ${infra.protocol.dominant} (${Object.entries(infra.protocol.breakdown).map(([k, v]) => `${k}: ${v}%`).join(', ')})`);
+      lines.push(`  Compression:  ${Object.entries(infra.compression.byType).map(([type, data]) => `${type}: ${data.brotli + data.gzip}% compressed`).join(', ') || 'no data'}`);
+      lines.push(`  Cache rate:   ${infra.caching.hitRate}% (${infra.caching.cachedCount}/${infra.caching.totalResources} resources)`);
+      lines.push(`  DNS origins:  ${infra.dns.uniqueOrigins} unique${infra.dns.missingPreconnect.length ? ` (${infra.dns.missingPreconnect.length} missing preconnect)` : ''}`);
+      if (infra.serviceWorker.registered) {
+        lines.push(`  SW:           active (${infra.serviceWorker.strategy || 'unknown strategy'})`);
+      }
+      lines.push(`  DOM:          ${infra.domComplexity.totalNodes.toLocaleString()} nodes, depth ${infra.domComplexity.maxDepth}${infra.domComplexity.largestSubtree ? `, largest: ${infra.domComplexity.largestSubtree.tag}${infra.domComplexity.largestSubtree.id ? '#' + infra.domComplexity.largestSubtree.id : ''} (${infra.domComplexity.largestSubtree.descendants} nodes)` : ''}`);
+
+      // SaaS section (if detected)
+      if (fingerprint.saas.length > 0) {
+        lines.push('');
+        lines.push('Platform:');
+        for (const platform of fingerprint.saas) {
+          lines.push(`  ${platform.name} (${platform.category})`);
+          if (platform.apps.length > 0) {
+            lines.push(`  Apps/Plugins: ${platform.apps.length}`);
+            for (const app of platform.apps.slice(0, 5)) {
+              lines.push(`    ${app.name.padEnd(25)} ${app.totalSizeKB}KB  ${app.loadTiming}`);
+            }
+            if (platform.apps.length > 5) lines.push(`    ... and ${platform.apps.length - 5} more`);
+          }
+        }
+      }
+
+      // Third-party section
+      if (fingerprint.thirdParty.length > 0) {
+        lines.push('');
+        const totalTP = fingerprint.thirdParty.reduce((s, t) => s + t.totalSizeKB, 0);
+        lines.push(`Third-Party (${totalTP}KB total):`);
+        for (const tp of fingerprint.thirdParty.slice(0, 10)) {
+          lines.push(`  ${tp.domain.padEnd(30)} ${String(tp.totalSizeKB + 'KB').padStart(8)}   ${String(tp.scriptCount).padStart(2)} scripts   ${tp.category}`);
+        }
+        if (fingerprint.thirdParty.length > 10) lines.push(`  ... and ${fingerprint.thirdParty.length - 10} more`);
+      }
+
+      return lines.join('\n');
+    }
+
+    case 'perf-audit': {
+      // Parse flags
+      const flags = new Set(args.filter(a => a.startsWith('--')));
+      const positionalArgs = args.filter(a => !a.startsWith('--'));
+      const url = positionalArgs[0]; // optional URL to navigate to first
+
+      const options = {
+        includeCoverage: !flags.has('--no-coverage'),
+        includeDetection: !flags.has('--no-detect'),
+      };
+      const jsonOutput = flags.has('--json');
+
+      // Navigate to URL if provided
+      if (url) {
+        const { handleWriteCommand } = await import('./write');
+        await handleWriteCommand('goto', [url], bm, currentSession?.domainFilter);
+      }
+
+      // Lazy import perf-audit modules
+      const { runPerfAudit } = await import('../perf-audit');
+      const { formatPerfAudit } = await import('../perf-audit/formatter');
+
+      // Get network entries from session buffers
+      const networkEntries = currentSession?.buffers?.networkBuffer || [];
+
+      // Run the audit
+      const report = await runPerfAudit(bm, networkEntries, options);
+
+      // Format and return
+      return formatPerfAudit(report, jsonOutput);
     }
 
     default:
