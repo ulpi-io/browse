@@ -1015,6 +1015,50 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: 'browse_perf_audit_save',
+    description: 'Run a performance audit and save the report to .browse/audits/ for later comparison.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the saved report. Auto-generated from URL + timestamp if omitted.' },
+        url: { type: 'string', description: 'URL to audit. If omitted, audits the current page.' },
+        no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection (faster audit).' },
+        no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection.' },
+      },
+    },
+  },
+  {
+    name: 'browse_perf_audit_compare',
+    description: 'Compare a saved audit report against the current page or another saved report. Shows regressions and improvements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        baseline: { type: 'string', description: 'Name of the saved baseline audit report.' },
+        current: { type: 'string', description: 'Name of a second saved report to compare against. If omitted, runs a live audit for comparison.' },
+        no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection when running a live audit.' },
+        no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection when running a live audit.' },
+        json: { type: 'boolean', description: 'Return structured JSON instead of formatted text.' },
+      },
+      required: ['baseline'],
+    },
+  },
+  {
+    name: 'browse_perf_audit_list',
+    description: 'List all saved performance audit reports in .browse/audits/.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browse_perf_audit_delete',
+    description: 'Delete a saved performance audit report from .browse/audits/.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name of the saved audit report to delete.' },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'browse_detect',
     description: 'Detect the technology stack of the current page. Returns frameworks (React, Vue, Angular, Next.js, Laravel, WordPress, Magento, etc. — 108 total with version, build mode, config depth), SaaS platforms (Shopify, Wix, Squarespace, etc. — 55 total with app enumeration and constraints), infrastructure (CDN, protocol, compression, caching, Service Worker), DOM complexity, and third-party inventory (88 known domains classified by category).',
     inputSchema: { type: 'object', properties: {} },
@@ -1513,6 +1557,30 @@ export function mapToolCallToCommand(
       if (params.json) args.push('--json');
       return { command: 'perf-audit', args };
     }
+
+    case 'perf-audit-save': {
+      const args: string[] = ['save'];
+      if (params.name) args.push(String(params.name));
+      if (params.url) args.push(String(params.url));
+      if (params.no_coverage) args.push('--no-coverage');
+      if (params.no_detect) args.push('--no-detect');
+      return { command: 'perf-audit', args };
+    }
+
+    case 'perf-audit-compare': {
+      const args: string[] = ['compare', String(params.baseline)];
+      if (params.current) args.push(String(params.current));
+      if (params.no_coverage) args.push('--no-coverage');
+      if (params.no_detect) args.push('--no-detect');
+      if (params.json) args.push('--json');
+      return { command: 'perf-audit', args };
+    }
+
+    case 'perf-audit-list':
+      return { command: 'perf-audit', args: ['list'] };
+
+    case 'perf-audit-delete':
+      return { command: 'perf-audit', args: ['delete', String(params.name)] };
 
     case 'detect':
       return { command: 'detect', args: [] };

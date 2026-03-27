@@ -887,6 +887,10 @@ React:          react-devtools enable|disable|tree|props|suspense|errors
 Providers:      provider save|list|delete <name> [api-key]
 Detect:         detect (frameworks, CDN, third-party, SaaS, infra)
 Performance:    perf-audit [url] [--no-coverage] [--no-detect] [--json]
+                perf-audit save [name]             Save audit report to .browse/audits/
+                perf-audit compare <base> [curr]   Compare saved audit vs current or another
+                perf-audit list                    List saved audit reports
+                perf-audit delete <name>           Delete a saved audit report
 Debug:          inspect (requires BROWSE_DEBUG_PORT)
 Server:         status | instances | stop | restart | doctor | upgrade
 Setup:          install-skill [path]

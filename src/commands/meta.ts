@@ -12,6 +12,15 @@ import * as fs from 'fs';
 
 const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
 
+/** Pad string right to width */
+function padR(str: string, w: number): string {
+  return str.length >= w ? str : str + ' '.repeat(w - str.length);
+}
+/** Pad string left to width */
+function padL(str: string, w: number): string {
+  return str.length >= w ? str : ' '.repeat(w - str.length) + str;
+}
+
 export async function handleMetaCommand(
   command: string,
   args: string[],
@@ -1283,35 +1292,144 @@ export async function handleMetaCommand(
     }
 
     case 'perf-audit': {
-      // Parse flags
-      const flags = new Set(args.filter(a => a.startsWith('--')));
-      const positionalArgs = args.filter(a => !a.startsWith('--'));
-      const url = positionalArgs[0]; // optional URL to navigate to first
+      // Check for subcommands before falling through to default audit
+      const subcommand = args[0];
 
-      const options = {
-        includeCoverage: !flags.has('--no-coverage'),
-        includeDetection: !flags.has('--no-detect'),
-      };
-      const jsonOutput = flags.has('--json');
+      // ── save [name] ──────────────────────────────────────────────────────
+      if (subcommand === 'save') {
+        const subArgs = args.slice(1);
+        const flags = new Set(subArgs.filter(a => a.startsWith('--')));
+        const positionalArgs = subArgs.filter(a => !a.startsWith('--'));
+        const jsonOutput = flags.has('--json');
+        const options = {
+          includeCoverage: !flags.has('--no-coverage'),
+          includeDetection: !flags.has('--no-detect'),
+        };
 
-      // Navigate to URL if provided
-      if (url) {
-        const { handleWriteCommand } = await import('./write');
-        await handleWriteCommand('goto', [url], bm, currentSession?.domainFilter);
+        // Separate name from URL: last positional that looks like a URL is navigated to
+        let name: string | undefined;
+        let url: string | undefined;
+        for (const arg of positionalArgs) {
+          if (arg.startsWith('http://') || arg.startsWith('https://')) {
+            url = arg;
+          } else {
+            name = arg;
+          }
+        }
+
+        if (url) {
+          const { handleWriteCommand } = await import('./write');
+          await handleWriteCommand('goto', [url], bm, currentSession?.domainFilter);
+        }
+
+        const { runPerfAudit } = await import('../perf-audit');
+        const { formatPerfAudit } = await import('../perf-audit/formatter');
+        const { saveAudit } = await import('../perf-audit/persist');
+
+        const networkEntries = currentSession?.buffers?.networkBuffer || [];
+        const report = await runPerfAudit(bm, networkEntries, options);
+
+        // Auto-generate name from current page URL if not provided
+        if (!name) {
+          try {
+            const pageUrl = new URL(bm.getCurrentUrl());
+            const host = pageUrl.hostname.replace(/\./g, '-');
+            const date = new Date().toISOString().slice(0, 10);
+            name = `${host}-${date}`;
+          } catch {
+            name = `audit-${new Date().toISOString().slice(0, 10)}`;
+          }
+        }
+
+        const filePath = saveAudit(LOCAL_DIR, name, report);
+        const formatted = formatPerfAudit(report, jsonOutput);
+        return `${formatted}\n\nAudit saved: ${filePath}`;
       }
 
-      // Lazy import perf-audit modules
-      const { runPerfAudit } = await import('../perf-audit');
-      const { formatPerfAudit } = await import('../perf-audit/formatter');
+      // ── compare <baseline> [current] ─────────────────────────────────────
+      if (subcommand === 'compare') {
+        if (!args[1]) throw new Error('Usage: browse perf-audit compare <baseline> [current]');
 
-      // Get network entries from session buffers
-      const networkEntries = currentSession?.buffers?.networkBuffer || [];
+        const subArgs = args.slice(1);
+        const flags = new Set(subArgs.filter(a => a.startsWith('--')));
+        const positionalArgs = subArgs.filter(a => !a.startsWith('--'));
+        const jsonOutput = flags.has('--json');
 
-      // Run the audit
-      const report = await runPerfAudit(bm, networkEntries, options);
+        const { loadAudit } = await import('../perf-audit/persist');
+        const { diffAuditReports } = await import('../perf-audit/diff');
+        const { formatAuditDiff } = await import('../perf-audit/formatter');
 
-      // Format and return
-      return formatPerfAudit(report, jsonOutput);
+        const baseline = loadAudit(LOCAL_DIR, positionalArgs[0]);
+
+        let current;
+        if (positionalArgs[1]) {
+          current = loadAudit(LOCAL_DIR, positionalArgs[1]);
+        } else {
+          // Run a live audit as the current snapshot
+          const options = {
+            includeCoverage: !flags.has('--no-coverage'),
+            includeDetection: !flags.has('--no-detect'),
+          };
+          const { runPerfAudit } = await import('../perf-audit');
+          const networkEntries = currentSession?.buffers?.networkBuffer || [];
+          current = await runPerfAudit(bm, networkEntries, options);
+        }
+
+        const diff = diffAuditReports(baseline, current);
+        return formatAuditDiff(diff, jsonOutput);
+      }
+
+      // ── list ─────────────────────────────────────────────────────────────
+      if (subcommand === 'list') {
+        const { listAudits } = await import('../perf-audit/persist');
+        const entries = listAudits(LOCAL_DIR);
+        if (entries.length === 0) return '(no saved audits)';
+
+        const lines: string[] = [];
+        lines.push(`${padR('Name', 40)} ${padL('Size', 10)} ${'Date'}`);
+        for (const e of entries) {
+          const sizeStr = e.sizeBytes < 1024
+            ? `${e.sizeBytes}B`
+            : `${Math.round(e.sizeBytes / 1024)}KB`;
+          const dateStr = e.date.slice(0, 19).replace('T', ' ');
+          lines.push(`${padR(e.name, 40)} ${padL(sizeStr, 10)} ${dateStr}`);
+        }
+        return lines.join('\n');
+      }
+
+      // ── delete <name> ────────────────────────────────────────────────────
+      if (subcommand === 'delete') {
+        if (!args[1]) throw new Error('Usage: browse perf-audit delete <name>');
+        const { deleteAudit } = await import('../perf-audit/persist');
+        deleteAudit(LOCAL_DIR, args[1]);
+        return `Audit deleted: ${args[1]}`;
+      }
+
+      // ── Default: run audit (existing behavior) ───────────────────────────
+      {
+        const flags = new Set(args.filter(a => a.startsWith('--')));
+        const positionalArgs = args.filter(a => !a.startsWith('--'));
+        const url = positionalArgs[0];
+
+        const options = {
+          includeCoverage: !flags.has('--no-coverage'),
+          includeDetection: !flags.has('--no-detect'),
+        };
+        const jsonOutput = flags.has('--json');
+
+        if (url) {
+          const { handleWriteCommand } = await import('./write');
+          await handleWriteCommand('goto', [url], bm, currentSession?.domainFilter);
+        }
+
+        const { runPerfAudit } = await import('../perf-audit');
+        const { formatPerfAudit } = await import('../perf-audit/formatter');
+
+        const networkEntries = currentSession?.buffers?.networkBuffer || [];
+        const report = await runPerfAudit(bm, networkEntries, options);
+
+        return formatPerfAudit(report, jsonOutput);
+      }
     }
 
     default:

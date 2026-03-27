@@ -717,3 +717,121 @@ function formatTopRecommendations(report: PerfAuditReport): string | null {
 
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// Diff formatter
+// ---------------------------------------------------------------------------
+
+import type { AuditDiff, MetricDelta } from './diff';
+
+const VERDICT_SYMBOLS: Record<MetricDelta['verdict'], string> = {
+  regression: '↑',
+  improvement: '↓',
+  unchanged: '=',
+  new: '+',
+  missing: '−',
+};
+
+/**
+ * Format an AuditDiff for output. When `json` is true, returns the diff as
+ * pretty-printed JSON. Otherwise returns a human-readable text report with
+ * Web Vitals, Resources, Coverage, and a summary line.
+ */
+export function formatAuditDiff(
+  diff: AuditDiff,
+  json: boolean = false,
+): string {
+  if (json) return JSON.stringify(diff, null, 2);
+  return formatTextDiff(diff);
+}
+
+function formatTextDiff(diff: AuditDiff): string {
+  const sections: string[] = [];
+
+  // 1. Web Vitals
+  if (diff.webVitals.length > 0) {
+    const lines: string[] = ['Web Vitals:'];
+    lines.push(
+      `  ${padRight('Metric', 10)} ${padLeft('Baseline', 10)} ${padLeft('Current', 10)} ${padLeft('Delta', 10)}  Verdict`,
+    );
+    for (const d of diff.webVitals) {
+      const baseStr = d.baseline != null ? fmtVal(d.metric, d.baseline) : '---';
+      const currStr = d.current != null ? fmtVal(d.metric, d.current) : '---';
+      const deltaStr = d.deltaMs != null ? fmtDelta(d.metric, d.deltaMs) : '---';
+      const symbol = VERDICT_SYMBOLS[d.verdict];
+      lines.push(
+        `  ${padRight(d.metric.toUpperCase(), 10)} ${padLeft(baseStr, 10)} ${padLeft(currStr, 10)} ${padLeft(deltaStr, 10)}  ${symbol} ${d.verdict}`,
+      );
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  // 2. Resources
+  if (diff.resourceSize.length > 0) {
+    const lines: string[] = ['Resources:'];
+    lines.push(
+      `  ${padRight('Type', 10)} ${padLeft('Baseline', 10)} ${padLeft('Current', 10)} ${padLeft('Delta', 10)} ${padLeft('Change', 8)}  Verdict`,
+    );
+    for (const d of diff.resourceSize) {
+      const baseStr = d.baseline != null ? formatBytes(d.baseline) : '---';
+      const currStr = d.current != null ? formatBytes(d.current) : '---';
+      const deltaStr = d.deltaMs != null ? fmtBytesDelta(d.deltaMs) : '---';
+      const pctStr = d.deltaPct != null ? `${d.deltaPct > 0 ? '+' : ''}${d.deltaPct.toFixed(1)}%` : '---';
+      const symbol = VERDICT_SYMBOLS[d.verdict];
+      lines.push(
+        `  ${padRight(d.metric, 10)} ${padLeft(baseStr, 10)} ${padLeft(currStr, 10)} ${padLeft(deltaStr, 10)} ${padLeft(pctStr, 8)}  ${symbol} ${d.verdict}`,
+      );
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  // 3. Coverage
+  const nonTrivialCoverage = diff.coverage.filter(
+    (d) => d.verdict !== 'unchanged' || d.baseline != null || d.current != null,
+  );
+  if (nonTrivialCoverage.length > 0) {
+    const lines: string[] = ['Coverage:'];
+    lines.push(
+      `  ${padRight('Metric', 16)} ${padLeft('Baseline', 10)} ${padLeft('Current', 10)} ${padLeft('Delta', 10)}  Verdict`,
+    );
+    for (const d of nonTrivialCoverage) {
+      const baseStr = d.baseline != null ? `${d.baseline.toFixed(1)}%` : '---';
+      const currStr = d.current != null ? `${d.current.toFixed(1)}%` : '---';
+      const deltaStr = d.deltaMs != null ? `${d.deltaMs > 0 ? '+' : ''}${d.deltaMs.toFixed(1)}pp` : '---';
+      const symbol = VERDICT_SYMBOLS[d.verdict];
+      lines.push(
+        `  ${padRight(d.metric, 16)} ${padLeft(baseStr, 10)} ${padLeft(currStr, 10)} ${padLeft(deltaStr, 10)}  ${symbol} ${d.verdict}`,
+      );
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  // 4. Summary
+  const s = diff.summary;
+  sections.push(
+    `${s.regressions} regression${s.regressions !== 1 ? 's' : ''}, ` +
+    `${s.improvements} improvement${s.improvements !== 1 ? 's' : ''}, ` +
+    `${s.unchanged} unchanged`,
+  );
+
+  return sections.join('\n\n');
+}
+
+/** Format a web vitals value with appropriate units. */
+function fmtVal(metric: string, value: number): string {
+  if (metric === 'cls') return value.toFixed(3);
+  return formatMs(value);
+}
+
+/** Format a web vitals delta with sign. */
+function fmtDelta(metric: string, delta: number): string {
+  const sign = delta > 0 ? '+' : '';
+  if (metric === 'cls') return `${sign}${delta.toFixed(3)}`;
+  return `${sign}${formatMs(delta)}`;
+}
+
+/** Format a byte delta with sign. */
+function fmtBytesDelta(delta: number): string {
+  const sign = delta > 0 ? '+' : '';
+  return `${sign}${formatBytes(Math.abs(delta))}`;
+}

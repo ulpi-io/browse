@@ -327,6 +327,10 @@ browse perf-audit [url]                  # Full performance audit with actionabl
 browse perf-audit [url] --no-coverage    # Skip JS/CSS coverage (faster)
 browse perf-audit [url] --no-detect      # Skip stack detection
 browse perf-audit [url] --json           # Structured JSON output
+browse perf-audit save [name]            # Save audit report for later comparison
+browse perf-audit compare <base> [curr]  # Compare saved baseline vs current or saved audit
+browse perf-audit list                   # List saved audit reports
+browse perf-audit delete <name>          # Delete a saved audit
 browse detect                            # Tech stack fingerprint (frameworks, SaaS, CDN, infra)
 browse coverage start                    # Start JS/CSS code coverage collection
 browse coverage stop                     # Stop and report per-file used/unused bytes

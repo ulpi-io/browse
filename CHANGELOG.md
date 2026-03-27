@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.4.4
+
+**Audit persistence and comparison** — save audit reports for later comparison and regression detection:
+
+- `perf-audit save [name]` — run audit and save report to `.browse/audits/` (auto-generates name from URL hostname + date if omitted)
+- `perf-audit compare <baseline> [current]` — compare saved audit against current page (live) or another saved audit, with regression/improvement detection
+- `perf-audit list` — list saved audit reports with name, size, and date
+- `perf-audit delete <name>` — delete a saved audit report
+- Regression thresholds aligned with Web Vitals "good" boundaries (TTFB +100ms, LCP +200ms, CLS +0.05, TBT +100ms, INP +50ms)
+- Diff output shows per-metric deltas with ↑/↓ arrows and summary verdict
+- MCP tools: `browse_perf_audit_save`, `browse_perf_audit_compare`, `browse_perf_audit_list`, `browse_perf_audit_delete`
+
 ## v1.4.3
 
 - Added `perf-audit`, `detect`, `coverage`, `initscript`, `scrollintoview` to MCP server — 99/99 CLI commands now have MCP tool definitions (zero gap)
