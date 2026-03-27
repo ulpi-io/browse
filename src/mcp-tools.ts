@@ -1000,6 +1000,59 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ['action'],
     },
   },
+  // ─── Performance Audit ────────────────────────────────────────────
+  {
+    name: 'browse_perf_audit',
+    description: 'Run a full performance audit on the current page (or a URL). Returns Core Web Vitals (LCP, CLS, TBT, FCP, TTFB, INP), LCP critical path reconstruction, layout shift attribution, long task script attribution, resource breakdown, render-blocking detection, image audit, font audit, DOM complexity, tech stack detection (108 frameworks, 55 SaaS platforms), third-party impact analysis, JS/CSS coverage, and prioritized recommendations. The page is reloaded as part of the audit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to audit. If provided, navigates there first. If omitted, audits the current page.' },
+        no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection (faster audit).' },
+        no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection.' },
+        json: { type: 'boolean', description: 'Return structured JSON instead of formatted text.' },
+      },
+    },
+  },
+  {
+    name: 'browse_detect',
+    description: 'Detect the technology stack of the current page. Returns frameworks (React, Vue, Angular, Next.js, Laravel, WordPress, Magento, etc. — 108 total with version, build mode, config depth), SaaS platforms (Shopify, Wix, Squarespace, etc. — 55 total with app enumeration and constraints), infrastructure (CDN, protocol, compression, caching, Service Worker), DOM complexity, and third-party inventory (88 known domains classified by category).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browse_coverage',
+    description: 'Collect JS and CSS code coverage. Start collection, navigate/interact with the page, then stop to see per-file used/unused bytes sorted by wasted bytes descending.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'Coverage operation.', enum: ['start', 'stop'] },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'browse_initscript',
+    description: 'Inject JavaScript that runs before every page load (via context.addInitScript). Useful for mocking APIs, injecting polyfills, or setting up performance observers. Scripts persist across navigations and survive device emulation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: 'Operation to perform.', enum: ['set', 'show', 'clear'] },
+        code: { type: 'string', description: 'JavaScript code to inject (required for "set").' },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'browse_scrollintoview',
+    description: 'Scroll an element into view. Alias for scrollinto.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector or @ref of the element to scroll into view.' },
+      },
+      required: ['selector'],
+    },
+  },
 ];
 
 // ─── Public API ────────────────────────────────────────────────────
@@ -1449,6 +1502,28 @@ export function mapToolCallToCommand(
       if (params.name) args.push(String(params.name));
       if (params.api_key) args.push(String(params.api_key));
       return { command: 'provider', args };
+    }
+
+    // ─── PERFORMANCE AUDIT ──────────────────────────────
+    case 'perf-audit': {
+      const args: string[] = [];
+      if (params.url) args.push(String(params.url));
+      if (params.no_coverage) args.push('--no-coverage');
+      if (params.no_detect) args.push('--no-detect');
+      if (params.json) args.push('--json');
+      return { command: 'perf-audit', args };
+    }
+
+    case 'detect':
+      return { command: 'detect', args: [] };
+
+    case 'coverage':
+      return { command: 'coverage', args: [String(params.action)] };
+
+    case 'initscript': {
+      const args = [String(params.action)];
+      if (params.action === 'set' && params.code) args.push(String(params.code));
+      return { command: 'initscript', args };
     }
 
     default:
