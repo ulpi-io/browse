@@ -399,6 +399,10 @@ browse perf-audit [url]                  Full performance audit (Web Vitals, res
 browse perf-audit [url] --no-coverage    Skip JS/CSS coverage collection (faster)
 browse perf-audit [url] --no-detect      Skip framework/SaaS/infrastructure detection
 browse perf-audit [url] --json           Output as structured JSON (for programmatic use)
+browse perf-audit save [name]            Save audit report to .browse/audits/ (auto-names from URL + date if omitted)
+browse perf-audit compare <base> [curr]  Compare saved baseline vs current page or another saved audit (regression detection)
+browse perf-audit list                   List saved audit reports (name, size, date)
+browse perf-audit delete <name>          Delete a saved audit report
 browse detect                            Detect tech stack: frameworks, SaaS platforms, CDN, protocol, compression, caching, DOM complexity, third-party inventory
 browse coverage start                    Start JS/CSS code coverage collection
 browse coverage stop                     Stop collection and report per-file used/unused bytes

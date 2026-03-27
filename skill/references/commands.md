@@ -461,6 +461,24 @@ browse react-devtools owners <sel>     Parent component chain
 browse react-devtools context <sel>    Context values consumed by component
 ```
 
+## Performance audit
+```
+browse perf-audit [url]                  Full performance audit (Web Vitals, resources, images, fonts, DOM, coverage, stack detection, recommendations)
+browse perf-audit [url] --no-coverage    Skip JS/CSS coverage (faster)
+browse perf-audit [url] --no-detect      Skip framework/SaaS detection
+browse perf-audit [url] --json           Structured JSON output
+browse perf-audit save [name]            Save audit report to .browse/audits/ (auto-names from URL + date)
+browse perf-audit compare <base> [curr]  Compare saved baseline vs current page or another saved audit
+browse perf-audit list                   List saved audit reports
+browse perf-audit delete <name>          Delete a saved audit
+browse detect                            Tech stack fingerprint (frameworks, SaaS, CDN, infra)
+browse coverage start                    Start JS/CSS code coverage collection
+browse coverage stop                     Stop and report per-file used/unused bytes
+browse initscript set <code>             Inject JS before every page load
+browse initscript show                   Show current init script
+browse initscript clear                  Remove init script
+```
+
 ## Server management
 ```
 browse status                  Server health, uptime, session count
