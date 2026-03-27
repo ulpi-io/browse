@@ -631,7 +631,7 @@ Use browse to test the login flow. Run browse --help to see available commands.
 
 ## MCP Server Mode
 
-Run browse as an [MCP](https://modelcontextprotocol.io/) server for editors that support the Model Context Protocol.
+Run browse as an [MCP](https://modelcontextprotocol.io/) server for editors that support the Model Context Protocol. All 99 CLI commands are available as MCP tools, including `perf-audit`, `detect`, `coverage`, and `initscript`.
 
 ```bash
 browse --mcp

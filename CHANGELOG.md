@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.3
+
+- Added `perf-audit`, `detect`, `coverage`, `initscript`, `scrollintoview` to MCP server — 99/99 CLI commands now have MCP tool definitions (zero gap)
+- Added `docs/supported-technologies.md` — reference list of all 162 detected technologies (107 frameworks, 55 SaaS platforms, 88 third-party domains)
+- Added `homepage` field to package.json for npmjs.com
+
 ## v1.4.0 — Performance Audit System
 
 **4 new commands** for web performance analysis:
