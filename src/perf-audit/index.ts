@@ -14,8 +14,9 @@
  *   8. Separate findings into fixable items vs platform limitations
  */
 
-import type { BrowserManager, CoverageEntry } from '../browser-manager';
-import type { NetworkEntry } from '../buffers';
+import type { BrowserTarget } from '../browser/target';
+import type { CoverageEntry } from '../browser/manager';
+import type { NetworkEntry } from '../network/buffers';
 import type { WebVitalsReport } from './web-vitals';
 import type { ResourceReport } from './resource-analyzer';
 import type { DOMComplexityReport, CorrelationReport } from './dom-analysis';
@@ -357,7 +358,7 @@ function urlFilename(url: string): string {
  * @param options - Optional flags to skip coverage or detection
  */
 export async function runPerfAudit(
-  bm: BrowserManager,
+  bm: BrowserTarget,
   networkEntries: NetworkEntry[],
   options: PerfAuditOptions = {},
 ): Promise<PerfAuditReport> {

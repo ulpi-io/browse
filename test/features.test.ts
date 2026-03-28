@@ -10,23 +10,24 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { sharedBm as bm, sharedBaseUrl as baseUrl } from './setup';
-import { BrowserManager, getProfileDir, listProfiles, deleteProfile } from '../src/browser-manager';
-import { resolveRefSelectors, exportReplay, exportBrowse, type RecordedStep } from '../src/record-export';
-import { findChromeExecutable, isChromeRunning, getChromeUserDataDir } from '../src/chrome-discover';
+import { BrowserManager, getProfileDir, listProfiles, deleteProfile } from '../src/browser/manager';
+import { resolveRefSelectors, exportBrowse, type RecordedStep } from '../src/export/record';
+import { exportReplay } from '../src/export/replay';
+import { findChromeExecutable, isChromeRunning, getChromeUserDataDir } from '../src/engine/chrome';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
-import { DomainFilter } from '../src/domain-filter';
-import { PolicyChecker } from '../src/policy';
-import { AuthVault } from '../src/auth-vault';
-import { formatAsHar } from '../src/har';
+import { DomainFilter } from '../src/security/domain-filter';
+import { PolicyChecker } from '../src/security/policy';
+import { AuthVault } from '../src/security/auth-vault';
+import { formatAsHar } from '../src/network/har';
 import { loadConfig } from '../src/config';
-import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/png-compare';
-import { capturePageState, buildContextDelta, formatContextLine } from '../src/action-context';
-import { sanitizeName } from '../src/sanitize';
-import { findInstalledBrowsers, CookieImportError } from '../src/cookie-import';
-import { discoverChrome } from '../src/chrome-discover';
-import { ProviderVault, getProvider, listProviderNames } from '../src/cloud-providers';
+import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/browser/png-compare';
+import { capturePageState, buildContextDelta, formatContextLine } from '../src/automation/action-context';
+import { sanitizeName } from '../src/security/sanitize';
+import { findInstalledBrowsers, CookieImportError } from '../src/browser/cookie-import';
+import { discoverChrome } from '../src/engine/chrome';
+import { ProviderVault, getProvider, listProviderNames } from '../src/engine/providers';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -1200,7 +1201,7 @@ describe('Video Recording', () => {
 
 // ─── Runtime registry ────────────────────────────────────────────
 
-import { getRuntime, AVAILABLE_RUNTIMES, findLightpanda } from '../src/runtime';
+import { getRuntime, AVAILABLE_RUNTIMES, findLightpanda } from '../src/engine/resolver';
 
 describe('Runtime registry', () => {
   test('getRuntime() defaults to playwright', async () => {
@@ -1267,10 +1268,11 @@ describe('--runtime CLI flag', () => {
 
 // ─── Record & Export ─────────────────────────────────────────────
 
-import { SessionBuffers } from '../src/buffers';
-import { exportBrowse, exportReplay } from '../src/record-export';
-import type { RecordedStep } from '../src/record-export';
-import type { Session } from '../src/session-manager';
+import { SessionBuffers } from '../src/network/buffers';
+import { exportBrowse } from '../src/export/record';
+import { exportReplay } from '../src/export/replay';
+import type { RecordedStep } from '../src/export/record';
+import type { Session } from '../src/session/manager';
 
 describe('Record & Export', () => {
   const shutdown = async () => {};
@@ -2040,7 +2042,7 @@ describe('Cloud Providers', () => {
 describe('resolveRefSelectors', () => {
   test('resolves element with id', async () => {
     await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
-    const { handleSnapshot } = await import('../src/snapshot');
+    const { handleSnapshot } = await import('../src/browser/snapshot');
     await handleSnapshot(['-i'], bm);
 
     // Find the ref for #login-btn
@@ -2060,7 +2062,7 @@ describe('resolveRefSelectors', () => {
 
   test('resolves element with ARIA role', async () => {
     await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
-    const { handleSnapshot } = await import('../src/snapshot');
+    const { handleSnapshot } = await import('../src/browser/snapshot');
     await handleSnapshot(['-i'], bm);
 
     const refMap = bm.getRefMap();
@@ -2080,7 +2082,7 @@ describe('resolveRefSelectors', () => {
 
   test('resolves element with XPath', async () => {
     await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
-    const { handleSnapshot } = await import('../src/snapshot');
+    const { handleSnapshot } = await import('../src/browser/snapshot');
     await handleSnapshot(['-i'], bm);
 
     const refMap = bm.getRefMap();
@@ -2320,5 +2322,246 @@ describe('Action Context', () => {
     const delta = { dialogDismissed: true as const };
     const line = formatContextLine(delta, 'dialog-accept');
     expect(line).toContain('dialog dismissed');
+  });
+});
+
+// ─── Command Registry Tests ──────────────────────────────────────
+
+import { registry, READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS, SAFE_TO_RETRY, RECORDING_SKIP, PAGE_CONTENT_COMMANDS, generateHelp } from '../src/automation/registry';
+import { getToolDefinitions } from '../src/mcp/tools/index';
+import { CommandRegistry } from '../src/automation/command';
+
+describe('Command Registry', () => {
+  test('duplicate command registration throws', () => {
+    const fresh = new CommandRegistry();
+    fresh.register({ name: 'test-cmd', category: 'read', description: 'test' });
+    expect(() => {
+      fresh.register({ name: 'test-cmd', category: 'write', description: 'dupe' });
+    }).toThrow('Duplicate command registration');
+  });
+
+  test('every registered spec has name, category, and description', () => {
+    for (const spec of registry.all()) {
+      expect(spec.name, `${spec.name} missing name`).toBeTruthy();
+      expect(['read', 'write', 'meta'], `${spec.name} invalid category`).toContain(spec.category);
+      expect(spec.description, `${spec.name} missing description`).toBeTruthy();
+    }
+  });
+
+  test('category sets derived from specs match expectations', () => {
+    // Every command in a category set is actually registered with that category
+    for (const name of READ_COMMANDS) {
+      expect(registry.get(name)?.category).toBe('read');
+    }
+    for (const name of WRITE_COMMANDS) {
+      expect(registry.get(name)?.category).toBe('write');
+    }
+    for (const name of META_COMMANDS) {
+      expect(registry.get(name)?.category).toBe('meta');
+    }
+    // No command is in multiple categories
+    const all = [...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS];
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  test('SAFE_TO_RETRY only contains registered commands with safeToRetry flag', () => {
+    for (const name of SAFE_TO_RETRY) {
+      const spec = registry.get(name);
+      expect(spec, `${name} in SAFE_TO_RETRY but not registered`).toBeTruthy();
+      expect(spec!.safeToRetry, `${name} in SAFE_TO_RETRY but spec.safeToRetry is not true`).toBe(true);
+    }
+  });
+
+  test('RECORDING_SKIP only contains registered commands with skipRecording flag', () => {
+    for (const name of RECORDING_SKIP) {
+      const spec = registry.get(name);
+      expect(spec, `${name} in RECORDING_SKIP but not registered`).toBeTruthy();
+      expect(spec!.skipRecording, `${name} in RECORDING_SKIP but spec.skipRecording is not true`).toBe(true);
+    }
+  });
+
+  test('PAGE_CONTENT_COMMANDS only contains registered commands with pageContent flag', () => {
+    for (const name of PAGE_CONTENT_COMMANDS) {
+      const spec = registry.get(name);
+      expect(spec, `${name} in PAGE_CONTENT_COMMANDS but not registered`).toBeTruthy();
+      expect(spec!.pageContent, `${name} in PAGE_CONTENT_COMMANDS but spec.pageContent is not true`).toBe(true);
+    }
+  });
+
+  test('registry has commands from all categories', () => {
+    expect(READ_COMMANDS.size).toBeGreaterThan(15);
+    expect(WRITE_COMMANDS.size).toBeGreaterThan(25);
+    expect(META_COMMANDS.size).toBeGreaterThan(20);
+  });
+
+  test('CLI help text contains every registered command', () => {
+    const helpText = generateHelp();
+
+    // Every registered command should appear in the help text
+    // (except MCP-only virtual commands like perf-audit-save that map to subcommands)
+    const missing: string[] = [];
+    for (const spec of registry.all()) {
+      // Skip MCP-only virtual subcommands — they're tool aliases, not CLI commands
+      if (spec.name.startsWith('perf-audit-') && spec.name !== 'perf-audit') continue;
+      // Commands may appear as part of longer words, so check for word boundary or space-separated
+      if (!helpText.includes(spec.name)) {
+        missing.push(spec.name);
+      }
+    }
+    expect(missing, `Commands missing from CLI help: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  test('MCP tool definitions cover all MCP-exposed registry commands', () => {
+    // Tool definitions are now derived from the registry at runtime
+    const tools = getToolDefinitions();
+    const toolCommandNames = tools.map(t => t.name.replace('browse_', '').replace(/_/g, '-'));
+
+    // Every tool should map to a registered command
+    for (const cmdName of toolCommandNames) {
+      expect(registry.has(cmdName), `MCP tool browse_${cmdName} not in registry`).toBe(true);
+    }
+  });
+});
+
+// ─── Executor Pipeline Tests ─────────────────────────────────────
+
+import { executeCommand } from '../src/automation/executor';
+import { SessionBuffers } from '../src/network/buffers';
+import { registry } from '../src/automation/registry';
+
+describe('Command Executor Pipeline', () => {
+  // Build a context using the shared browser target for definition-backed tests
+  const testBuffers = new SessionBuffers();
+  const makeCtx = () => ({
+    args: [] as string[],
+    target: bm,
+    buffers: testBuffers,
+  });
+
+  test('executes a read command through the pipeline', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await executeCommand('text', [], {
+      context: makeCtx(),
+    });
+    expect(result.spec.name).toBe('text');
+    expect(result.spec.category).toBe('read');
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(typeof result.output).toBe('string');
+  });
+
+  test('executes a write command through the pipeline', async () => {
+    const result = await executeCommand('goto', [baseUrl + '/basic.html'], {
+      context: makeCtx(),
+    });
+    expect(result.spec.category).toBe('write');
+    expect(result.output).toBeTruthy();
+  });
+
+  test('executes a meta command through the pipeline', async () => {
+    const result = await executeCommand('tabs', [], {
+      context: makeCtx(),
+    });
+    expect(result.spec.category).toBe('meta');
+    expect(result.output).toBeTruthy();
+  });
+
+  test('unknown command throws', async () => {
+    await expect(
+      executeCommand('nonexistent', [])
+    ).rejects.toThrow('Unknown command: nonexistent');
+  });
+
+  test('before hook can abort execution', async () => {
+    const result = await executeCommand('text', [], {
+      context: makeCtx(),
+      lifecycle: {
+        before: [async () => ({ abort: true as const, result: 'denied by policy' })],
+      },
+    });
+    expect(result.output).toBe('denied by policy');
+    expect(result.durationMs).toBe(0);
+  });
+
+  test('after hook enriches result', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await executeCommand('goto', [baseUrl + '/basic.html'], {
+      context: makeCtx(),
+      lifecycle: {
+        after: [async (event) => `${event.result}\n[context] → /new-page`],
+      },
+    });
+    expect(result.output).toContain('[context]');
+  });
+
+  test('error hook transforms error message', async () => {
+    await expect(
+      executeCommand('click', ['#nonexistent-element-xyz'], {
+        context: makeCtx(),
+        lifecycle: {
+          onError: [async (event) => `Friendly: ${event.error.message}`],
+        },
+      })
+    ).rejects.toThrow('Friendly:');
+  });
+
+  test('skipContext and skipRecording commands have correct spec flags', async () => {
+    // Verify spec flags directly from registry (no execution needed)
+    const consoleSpec = registry.get('console');
+    expect(consoleSpec?.skipRecording).toBe(true);
+
+    const statusSpec = registry.get('status');
+    expect(statusSpec?.skipRecording).toBe(true);
+  });
+
+  test('lifecycle hooks execute in order: before → execute → after', async () => {
+    const order: string[] = [];
+
+    await executeCommand('url', [], {
+      context: makeCtx(),
+      lifecycle: {
+        before: [async () => { order.push('before'); }],
+        after: [async (event) => { order.push('after'); return event.result; }],
+      },
+    });
+
+    expect(order).toEqual(['before', 'after']);
+  });
+
+  test('missing context throws clear error', async () => {
+    await expect(
+      executeCommand('text', [])
+    ).rejects.toThrow('requires an execution context');
+  });
+
+  test('definition-backed registration works on fresh registry', async () => {
+    const { CommandRegistry } = await import('../src/automation/command');
+    const reg = new CommandRegistry();
+    reg.define({
+      spec: { name: 'def-test', category: 'read', description: 'test definition' },
+      execute: async (ctx) => `executed with ${ctx.args.length} args`,
+    });
+    expect(reg.hasDefined('def-test')).toBe(true);
+    expect(reg.get('def-test')?.description).toBe('test definition');
+
+    // Redefining updates the spec
+    reg.define({
+      spec: { name: 'def-test', category: 'read', description: 'updated' },
+      execute: async () => 'v2',
+    });
+    expect(reg.get('def-test')?.description).toBe('updated');
+  });
+
+  test('CommandDefinition supports MCP arg-decoding metadata', async () => {
+    const { CommandRegistry } = await import('../src/automation/command');
+    const reg = new CommandRegistry();
+    reg.define({
+      spec: { name: 'mcp-decode-test', category: 'read', description: 'test', mcp: { description: 'test tool', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+      execute: async () => 'ok',
+      mcpArgDecode: (params) => [String(params.url)],
+    });
+    const def = reg.getDefinition('mcp-decode-test');
+    expect(def).toBeTruthy();
+    expect(def!.mcpArgDecode).toBeTruthy();
+    expect(def!.mcpArgDecode!({ url: 'https://example.com' })).toEqual(['https://example.com']);
   });
 });

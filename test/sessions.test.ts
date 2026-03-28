@@ -7,15 +7,16 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { chromium, type Browser } from 'playwright';
-import { SessionManager } from '../src/session-manager';
-import { BrowserManager } from '../src/browser-manager';
+import { SessionManager } from '../src/session/manager';
+import { createBrowserTargetFactory } from '../src/session/target-factory';
+import { BrowserManager } from '../src/browser/manager';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
-import { handleSnapshot } from '../src/snapshot';
+import { handleSnapshot } from '../src/browser/snapshot';
 import { startTestServer } from './test-server';
-import { encrypt, decrypt, resolveEncryptionKey } from '../src/encryption';
-import { saveSessionState, loadSessionState, hasPersistedState, cleanOldStates } from '../src/session-persist';
+import { encrypt, decrypt, resolveEncryptionKey } from '../src/session/encryption';
+import { saveSessionState, loadSessionState, hasPersistedState, cleanOldStates } from '../src/session/persist';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -31,7 +32,7 @@ beforeAll(async () => {
   baseUrl = testServer.url;
 
   browser = await chromium.launch({ headless: true });
-  sm = new SessionManager(browser);
+  sm = new SessionManager(createBrowserTargetFactory(browser));
 });
 
 afterAll(async () => {

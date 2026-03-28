@@ -12,7 +12,7 @@
 import type { Page } from 'playwright';
 import type { WebVitalsReport } from './web-vitals';
 import type { ResourceReport } from './resource-analyzer';
-import type { NetworkEntry } from '../buffers';
+import type { NetworkEntry } from '../network/buffers';
 
 // ---------------------------------------------------------------------------
 // DOM Complexity Types

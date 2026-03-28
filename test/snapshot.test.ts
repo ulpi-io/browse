@@ -10,7 +10,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
-import { parseSnapshotArgs } from '../src/snapshot';
+import { parseSnapshotArgs } from '../src/browser/snapshot';
 import { sharedBm as bm, sharedBaseUrl as baseUrl, sharedServer as testServer } from './setup';
 
 const shutdown = async () => {};

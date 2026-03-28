@@ -1,7 +1,7 @@
-import type { BrowserManager } from './browser-manager';
+import type { AutomationTarget } from './automation/target';
 
 export interface CommandContext {
-  manager: BrowserManager;
+  manager: AutomationTarget;
   command: string;
   args: string[];
 }

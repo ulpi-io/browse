@@ -5,16 +5,16 @@
  * console, network, cookies, storage, perf
  */
 
-import type { BrowserManager } from '../browser-manager';
-import { listDevices } from '../browser-manager';
-import type { SessionBuffers } from '../buffers';
+import type { BrowserTarget } from '../browser/target';
+import { listDevices } from '../browser/emulation';
+import type { SessionBuffers } from '../network/buffers';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
 
 export async function handleReadCommand(
   command: string,
   args: string[],
-  bm: BrowserManager,
+  bm: BrowserTarget,
   buffers?: SessionBuffers
 ): Promise<string> {
   const page = bm.getPage();
@@ -371,5 +371,28 @@ export async function handleReadCommand(
 
     default:
       throw new Error(`Unknown read command: ${command}`);
+  }
+}
+
+// ─── Definition Registration ──────────────────────────────────────
+// Each read command owns its definition — the registry is the single
+// source of truth for both metadata and dispatch.
+
+import type { CommandRegistry, CommandContext } from '../automation/command';
+
+/**
+ * Register all read command definitions in the registry.
+ * Called once during lazy initialization from ensureDefinitionsRegistered().
+ */
+export function registerReadDefinitions(registry: CommandRegistry): void {
+  for (const spec of registry.byCategory('read')) {
+    registry.define({
+      spec,
+      mcpArgDecode: spec.mcp?.argDecode,
+      execute: async (ctx: CommandContext) => {
+        const bt = ctx.target as BrowserTarget;
+        return handleReadCommand(spec.name, ctx.args, bt, ctx.buffers);
+      },
+    });
   }
 }

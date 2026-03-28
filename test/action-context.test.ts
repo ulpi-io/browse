@@ -6,17 +6,17 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
-import { BrowserManager } from '../src/browser-manager';
-import { SessionBuffers } from '../src/buffers';
+import { BrowserManager } from '../src/browser/manager';
+import { SessionBuffers } from '../src/network/buffers';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
-import { handleSnapshot } from '../src/snapshot';
+import { handleSnapshot } from '../src/browser/snapshot';
 import {
   prepareWriteContext,
   finalizeWriteContext,
   formatAriaDelta,
-} from '../src/action-context';
+} from '../src/automation/action-context';
 import { startTestServer } from './test-server';
 
 let bm: BrowserManager;

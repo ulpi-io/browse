@@ -1,11 +1,11 @@
 {
   "title": "browse domain architecture refactor",
   "branch": "refactor/domain-architecture",
-  "mode": "HOLD",
+  "mode": "COMPLETE",
   "reviewTool": "claude",
   "generated": "2026-03-28",
   "overview": "Restructure browse around execution contracts and domain directories before roadmap v1.5-v2.2 lands. The plan keeps user-visible behavior stable while replacing browser-centric wiring with reusable abstractions for future browser, app, workflow, and plugin work.",
-  "scopeChallenge": "This is a structural refactor, not a product expansion. HOLD mode is appropriate because most product behavior already exists; the new work is primarily architecture, command plumbing, and file layout. The plan deliberately creates a safe cut line after shared contracts and executor wiring so the repo can stop before large file moves if needed.",
+  "scopeChallenge": "Complete. All tasks done — domain directories, typed capability interfaces, shared executor pipeline, and registry-derived command routing are in place.",
   "architectureDecision": [
     "Add src/automation/ for execution contracts instead of placing durable architecture in src/shared/.",
     "Use src/engine/ instead of src/runtime/ to avoid naming collision with future browser-vs-app runtime concepts.",
@@ -86,7 +86,8 @@
       ],
       "validateCommand": "npm run build",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-002",
@@ -122,7 +123,8 @@
       ],
       "validateCommand": "npm run build",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-003",
@@ -159,7 +161,8 @@
       ],
       "validateCommand": "npm test -- test/features.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-004",
@@ -183,8 +186,8 @@
         "rg -n \"manager: BrowserManager|: BrowserManager\" src/session-manager.ts src/types.ts shows the generic session contract is no longer browser-concrete."
       ],
       "filesToModify": [
-        "src/session-manager.ts",
-        "src/browser-manager.ts",
+        "src/session/manager.ts",
+        "src/browser/manager.ts",
         "src/types.ts"
       ],
       "filesToCreate": [],
@@ -195,7 +198,8 @@
       ],
       "validateCommand": "npm test -- test/sessions.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-021",
@@ -231,7 +235,8 @@
       ],
       "validateCommand": "npm test -- test/commands.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-005",
@@ -269,7 +274,8 @@
       ],
       "validateCommand": "npm test -- test/session-e2e.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-006",
@@ -297,7 +303,7 @@
       ],
       "filesToModify": [
         "src/mcp.ts",
-        "src/mcp-tools.ts",
+        "src/mcp/tools/index.ts",
         "src/command-registry.ts"
       ],
       "filesToCreate": [],
@@ -308,7 +314,8 @@
       ],
       "validateCommand": "npm test -- test/mcp.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-007",
@@ -330,7 +337,7 @@
         "npm run build passes with both root-shim and new domain entrypoint imports."
       ],
       "filesToModify": [
-        "src/browser-manager.ts"
+        "src/browser/manager.ts"
       ],
       "filesToCreate": [
         "src/browser/manager.ts",
@@ -342,7 +349,8 @@
       ],
       "validateCommand": "npm run build",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-008",
@@ -375,7 +383,8 @@
       ],
       "validateCommand": "npm test -- test/snapshot.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-009",
@@ -409,7 +418,8 @@
       ],
       "validateCommand": "npm test -- test/interactions.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-010",
@@ -432,7 +442,7 @@
         "test/snapshot.test.ts contains a shim-purity assertion proving src/snapshot.ts is export-only."
       ],
       "filesToModify": [
-        "src/snapshot.ts",
+        "src/browser/snapshot.ts",
         "src/browser/index.ts"
       ],
       "filesToCreate": [
@@ -444,7 +454,8 @@
       ],
       "validateCommand": "npm test -- test/snapshot.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-011",
@@ -478,7 +489,8 @@
       ],
       "validateCommand": "npm test -- test/features.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-012",
@@ -498,8 +510,8 @@
         "test/features.test.ts contains shim-purity assertions proving src/buffers.ts and src/har.ts are export-only shims during migration."
       ],
       "filesToModify": [
-        "src/buffers.ts",
-        "src/har.ts"
+        "src/network/buffers.ts",
+        "src/network/har.ts"
       ],
       "filesToCreate": [
         "src/network/index.ts",
@@ -513,7 +525,8 @@
       ],
       "validateCommand": "npm test -- test/features.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-013",
@@ -535,7 +548,7 @@
         "test/sessions.test.ts contains shim-purity assertions proving src/session-manager.ts, src/session-persist.ts, and src/encryption.ts are export-only shims during migration."
       ],
       "filesToModify": [
-        "src/session-manager.ts",
+        "src/session/manager.ts",
         "src/session-persist.ts",
         "src/encryption.ts"
       ],
@@ -553,7 +566,8 @@
       ],
       "validateCommand": "npm test -- test/sessions.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-014",
@@ -573,10 +587,10 @@
         "test/features.test.ts contains shim-purity assertions proving the four root security files are export-only shims during migration."
       ],
       "filesToModify": [
-        "src/domain-filter.ts",
-        "src/policy.ts",
-        "src/auth-vault.ts",
-        "src/sanitize.ts"
+        "src/security/domain-filter.ts",
+        "src/security/policy.ts",
+        "src/security/auth-vault.ts",
+        "src/security/sanitize.ts"
       ],
       "filesToCreate": [
         "src/security/index.ts",
@@ -594,7 +608,8 @@
       ],
       "validateCommand": "npm test -- test/features.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-015",
@@ -614,10 +629,10 @@
         "test/features.test.ts covers record-export behavior after the move and contains a shim-purity assertion proving src/record-export.ts is export-only during migration."
       ],
       "filesToModify": [
-        "src/runtime.ts",
+        "src/engine/runtime.ts",
         "src/chrome-discover.ts",
         "src/cloud-providers.ts",
-        "src/record-export.ts"
+        "src/export/record.ts"
       ],
       "filesToCreate": [
         "src/engine/index.ts",
@@ -638,7 +653,8 @@
       ],
       "validateCommand": "npm run build",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-016",
@@ -685,7 +701,8 @@
       ],
       "validateCommand": "npm test -- test/commands.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-017",
@@ -708,7 +725,7 @@
       ],
       "filesToModify": [
         "src/mcp.ts",
-        "src/mcp-tools.ts"
+        "src/mcp/tools/index.ts"
       ],
       "filesToCreate": [
         "src/mcp/index.ts",
@@ -723,7 +740,8 @@
       ],
       "validateCommand": "npm test -- test/mcp.test.ts",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-018",
@@ -769,7 +787,8 @@
       ],
       "validateCommand": "npm test",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-019",
@@ -801,7 +820,8 @@
       ],
       "validateCommand": "npm run build",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-020",
@@ -831,7 +851,8 @@
       ],
       "validateCommand": "npm test",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-022",
@@ -866,7 +887,8 @@
       ],
       "validateCommand": "npm test",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-023",
@@ -896,7 +918,8 @@
       ],
       "validateCommand": "npm test",
       "agent": "nodejs-cli-senior-engineer",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-024",
@@ -930,7 +953,8 @@
       ],
       "validateCommand": "npm run build",
       "agent": "general-purpose",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     },
     {
       "id": "TASK-025",
@@ -962,7 +986,8 @@
       ],
       "validateCommand": "node -e \"JSON.parse(require('fs').readFileSync('plans/roadmap-v1.5-v2.2.json','utf8')); console.log('json-ok')\"",
       "agent": "general-purpose",
-      "review": "claude"
+      "review": "claude",
+      "status": "done"
     }
   ],
   "dependencies": {
