@@ -73,9 +73,9 @@ export async function resolveRefSelectors(locator: Locator): Promise<string[]> {
       const xpathParts: string[] = [];
       let current: Element | null = el;
       while (current && current !== document.documentElement) {
-        const parent = current.parentElement;
+        const parent: Element | null = current.parentElement;
         if (parent) {
-          const siblings = Array.from(parent.children).filter(c => c.tagName === current!.tagName);
+          const siblings = Array.from(parent.children).filter((c: Element) => c.tagName === current!.tagName);
           const idx = siblings.indexOf(current) + 1;
           const part = current.tagName.toLowerCase() + (siblings.length > 1 ? `[${idx}]` : '');
           // Include id as predicate if present (for readability)
