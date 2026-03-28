@@ -679,13 +679,23 @@ export async function handleWriteCommand(
         }
         case 'context': {
           const val = args[1]?.toLowerCase();
-          if (val !== 'on' && val !== 'off') {
-            throw new Error('Usage: browse set context <on|off>');
+          if (!val) {
+            // No value — return current level hint (server.ts resolves actual level)
+            return 'Context query — check session level';
           }
-          // Return signal string — server.ts will update session.contextEnabled
-          return val === 'on'
-            ? 'Context enabled — write commands will include page state changes'
-            : 'Context disabled';
+          const validLevels = ['off', 'on', 'state', 'delta', 'full'];
+          if (!validLevels.includes(val)) {
+            throw new Error('Usage: browse set context <off|on|state|delta|full>');
+          }
+          // Map 'on' to 'state' for backward compat
+          const level = val === 'on' ? 'state' : val;
+          if (level === 'off') return 'Context disabled';
+          const descriptions: Record<string, string> = {
+            state: 'state — write commands will include page state changes',
+            delta: 'delta — write commands will include ARIA snapshot diff with refs',
+            full: 'full — write commands will include complete ARIA snapshot with refs',
+          };
+          return `Context level set to ${descriptions[level]}`;
         }
         default:
           throw new Error(`Unknown set subcommand: ${sub}. Use geo|media|context`);

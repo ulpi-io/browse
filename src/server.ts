@@ -326,11 +326,18 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
       // Detect set context command and update session level
       if (command === 'set' && args[0] === 'context') {
-        const val = args[1]?.toLowerCase();
-        session.contextLevel = val === 'on' || val === 'state' ? 'state'
-          : val === 'delta' ? 'delta'
-          : val === 'full' ? 'full'
-          : 'off';
+        if (!args[1]) {
+          // Query — replace result with current level
+          result = `Context level: ${session.contextLevel}`;
+        } else {
+          const val = args[1].toLowerCase();
+          session.contextLevel = val === 'on' || val === 'state' ? 'state'
+            : val === 'delta' ? 'delta'
+            : val === 'full' ? 'full'
+            : 'off';
+          // Keep contextEnabled in sync for backward compat
+          session.contextEnabled = session.contextLevel !== 'off';
+        }
       }
     } else if (META_COMMANDS.has(command)) {
       result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager ?? undefined, session);
