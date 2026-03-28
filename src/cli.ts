@@ -39,6 +39,8 @@ const cliFlags = {
   context: '' as string,
   networkBodies: false,
   app: '' as string,
+  platform: '' as string,
+  device: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -468,6 +470,8 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   }
   if (cliFlags.app) {
     headers['X-Browse-App'] = cliFlags.app;
+    if (cliFlags.platform) headers['X-Browse-Platform'] = cliFlags.platform;
+    if (cliFlags.device) headers['X-Browse-Device'] = cliFlags.device;
   }
 
   try {
@@ -578,7 +582,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime' || a[i] === '--app') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime' || a[i] === '--app' || a[i] === '--platform' || a[i] === '--device') i++;
     }
     return a.length;
   }
@@ -622,6 +626,32 @@ export async function main() {
     args.splice(appIdx, 2);
   }
   appName = appName || process.env.BROWSE_APP || undefined;
+
+  // Extract --platform flag (only before command) — macos|android|ios
+  let platform: string | undefined;
+  const platIdx = args.indexOf('--platform');
+  if (platIdx !== -1 && platIdx < findCommandIndex(args)) {
+    platform = args[platIdx + 1];
+    if (!platform || !['macos', 'android', 'ios'].includes(platform)) {
+      console.error('Usage: browse --platform macos|android|ios --app <name> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(platIdx, 2);
+  }
+  platform = platform || process.env.BROWSE_PLATFORM || undefined;
+
+  // Extract --device flag (only before command) — device serial/UDID/name
+  let device: string | undefined;
+  const devIdx = args.indexOf('--device');
+  if (devIdx !== -1 && devIdx < findCommandIndex(args)) {
+    device = args[devIdx + 1];
+    if (!device) {
+      console.error('Usage: browse --device <serial|udid|name> --app <name> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(devIdx, 2);
+  }
+  device = device || process.env.BROWSE_DEVICE || undefined;
 
   // Extract --provider flag (only before command)
   let providerName: string | undefined;
@@ -855,6 +885,8 @@ export async function main() {
   cliFlags.context = contextMode;
   cliFlags.networkBodies = networkBodies;
   cliFlags.app = appName || '';
+  cliFlags.platform = platform || '';
+  cliFlags.device = device || '';
 
   // Resolve cloud provider CDP URL
   if (providerName) {

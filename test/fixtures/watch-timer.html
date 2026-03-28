@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Watch Timer Test</title>
+</head>
+<body>
+  <div id="container">Initial content</div>
+  <script>
+    // After 300ms, mutate the DOM — used by watch integration tests
+    setTimeout(() => {
+      const el = document.createElement('p');
+      el.textContent = 'Timer fired';
+      document.getElementById('container').appendChild(el);
+    }, 300);
+  </script>
+</body>
+</html>

@@ -89,6 +89,69 @@ export function createBrowserTargetFactory(browser: Browser): SessionTargetFacto
 }
 
 /**
+ * Create an Android-backed target factory for Android app automation.
+ * The factory ensures adb is available, locates a device, installs the driver APK,
+ * starts the on-device instrumentation service, and creates AndroidAppManager instances.
+ *
+ * @param packageName - Android package name of the target app (e.g. "com.example.myapp")
+ * @param serial - Optional device serial; resolved automatically when only one device is connected
+ */
+export function createAndroidTargetFactory(
+  packageName: string,
+  serial?: string,
+): SessionTargetFactory {
+  return {
+    async create(_buffers: SessionBuffers): Promise<CreatedTarget> {
+      const { ensureAndroidBridge, createAndroidBridge } = await import('../app/android/bridge');
+      const { AndroidAppManager } = await import('../app/android/manager');
+
+      const resolvedSerial = await ensureAndroidBridge(serial);
+      const bridge = await createAndroidBridge(resolvedSerial, packageName);
+      const manager = new AndroidAppManager(bridge, packageName);
+
+      return {
+        target: manager,
+        getContext: () => null,
+        setDomainFilter: () => {},
+        setInitScript: () => {},
+        getTabList: () => [],
+        getPageById: () => undefined,
+        getTabCount: () => 0,
+      };
+    },
+  };
+}
+
+/**
+ * Create an iOS-backed target factory for iOS Simulator app automation.
+ * The factory boots the simulator, launches the runner app, and creates IOSAppManager instances.
+ *
+ * @param bundleId - iOS app bundle identifier (e.g. "com.example.myapp")
+ * @param udid - Optional simulator UDID; resolved automatically if omitted
+ */
+export function createIOSTargetFactory(
+  bundleId: string,
+  udid?: string,
+): SessionTargetFactory {
+  return {
+    async create(_buffers: SessionBuffers): Promise<CreatedTarget> {
+      const { createIOSAppManager } = await import('../app/ios/manager');
+      const manager = await createIOSAppManager(bundleId, udid);
+
+      return {
+        target: manager,
+        getContext: () => null,
+        setDomainFilter: () => {},
+        setInitScript: () => {},
+        getTabList: () => [],
+        getPageById: () => undefined,
+        getTabCount: () => 0,
+      };
+    },
+  };
+}
+
+/**
  * Create an app-backed target factory for native app automation (macOS first).
  * The factory resolves the app by name, spawns the bridge, and creates AppManager instances.
  */
