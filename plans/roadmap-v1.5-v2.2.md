@@ -16,7 +16,7 @@ Ruled out: Lighthouse integration (perf-audit already better), AI-powered select
 
 ## Roadmap Shape
 
-- **v1.5-v1.7 Core Browser Intelligence** — deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, and accessibility checks.
+- **v1.5-v1.7 Core Browser Intelligence** — deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, accessibility checks, and lower-round-trip agent ergonomics.
 - **v2.0 Runtime Expansion** — add macOS app automation as a second runtime behind the same session/dispatch surface; browser behavior must remain unchanged.
 - **v2.1 Thin Agent Workflows** — add orchestration helpers (`flow`, `retry`, `watch`) as a thin layer over existing commands, not as a competing full test framework.
 - **v2.2 Agent Toolkit** — add SDK mode plus checked-in project files for detections, audit rules, saved flows, and config. Everything is local, version-controlled, and agent-editable; npm plugins are explicitly out of scope.
@@ -49,6 +49,10 @@ v1.5 Network Intelligence                v1.6 Verify                    v1.7 Vis
 │ commands/meta/index.ts  │     │                           │     │ commands/meta/index.ts   │
 │   api cmd         [006] │     │ commands/meta/index.ts    │     │   visual cmd       [023] │
 │                         │     │   expect cmd        [012] │     │   a11y-audit cmd   [022] │
+│ automation/action-      │     │ commands/write.ts         │     │                          │
+│   context.ts      [046] │     │   request wait     [050] │     │                          │
+│ commands/write.ts [047] │     │                           │     │                          │
+│ settle mode       [048] │     │                           │     │                          │
 │ cli.ts                  │     │                           │     │                          │
 │   --network-bodies[004] │     │                           │     │                          │
 └─────────────────────────┘     └───────────────────────────┘     └──────────────────────────┘
@@ -291,9 +295,9 @@ When body capture is enabled, include request/response bodies in HAR export. Bod
 
 ### TASK-009: Test fixtures and integration tests for v1.5
 
-Add JSON API fixture routes to test-server.ts. Write integration tests covering network body capture, the `request` command, the `api` command, and HAR export with bodies.
+Add JSON API fixture routes plus a small SPA-style mutation fixture. Write integration tests covering network body capture, the `request` command, the `api` command, HAR export with bodies, action-context readiness, guarded writes, selector suggestions, and settle mode.
 
-**Files:** `test/test-server.ts`, `test/features.test.ts`
+**Files:** `test/test-server.ts`, `test/features.test.ts`, `test/action-context.test.ts`
 
 **Type:** test
 **Effort:** M
@@ -310,11 +314,84 @@ Add JSON API fixture routes to test-server.ts. Write integration tests covering 
 - [ ] Test: `api GET` with a session cookie set earlier sends the cookie through page-context fetch
 - [ ] Edge case test: binary response body stored as `[binary N bytes]`
 - [ ] Test: `api GET` with session cookie set via `cookie` command → verify cookie appears in request sent by fetch
+- [ ] Test: action-context marks `settled:false` while a delayed mutation or matching request is still pending, then `settled:true` once the page quiets
+- [ ] Test: `click --if-exists` skips cleanly when a dismissible element is absent
+- [ ] Test: `fill --if-empty` skips when the target already has a value
+- [ ] Test: selector-not-found error includes up to 3 concrete suggestions when close matches exist
+- [ ] Test: `set settle on` causes a write command to wait for the quiet window before returning
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Depends on:** TASK-004, TASK-005, TASK-006
+**Depends on:** TASK-004, TASK-005, TASK-006, TASK-046, TASK-047, TASK-048
 **Priority:** P2
+
+---
+
+### TASK-046: Add page readiness signal to action-context
+
+Extend action-context so write-command responses report whether the page is settled after the action. Readiness is based on both pending network requests and recent DOM mutation activity, giving agents a cheap signal for “act now” vs “wait”.
+
+**Files:** `src/automation/action-context.ts`, `src/browser/manager.ts`, `src/browser/target.ts`, `src/types.ts`
+
+**Type:** feature
+**Effort:** M
+
+**Acceptance Criteria:**
+- [ ] Context-enabled write responses include `settled:true|false`
+- [ ] Readiness combines `networkPendingCount === 0` with a 300ms DOM-mutation quiet window
+- [ ] When unsettled, context output includes the blocking reason(s): pending request count and/or recent mutation age
+- [ ] DOM-mutation tracking resets correctly on navigation and tab switch
+- [ ] Edge case: long-lived sockets / streaming requests do not keep the page permanently unsettled
+
+**Agent:** nodejs-cli-senior-engineer
+**Review:** claude
+**Priority:** P1
+
+---
+
+### TASK-047: Add guarded write flags and selector suggestions
+
+Reduce guard snapshots by adding conditional flags to common write commands. When an action is skipped, return a deterministic skip result instead of throwing. When an unguarded selector fails, surface close-match suggestions so the agent can recover without a full snapshot round-trip.
+
+**Files:** `src/commands/write.ts`, `src/automation/registry.ts`
+
+**Type:** feature
+**Effort:** M
+
+**Acceptance Criteria:**
+- [ ] `click`, `hover`, `focus`, and `tap` support `--if-exists` and `--if-visible`
+- [ ] `fill` supports `--if-empty`
+- [ ] `check` supports `--if-unchecked`
+- [ ] Skipped guarded actions return a deterministic `SKIP:` result instead of throwing
+- [ ] Unguarded selector-not-found errors include up to 3 concrete suggestions when close matches exist
+- [ ] Edge case: invalid selector syntax or malformed usage still throws immediately (guard flags do not swallow usage bugs)
+
+**Agent:** nodejs-cli-senior-engineer
+**Review:** claude
+**Priority:** P1
+
+---
+
+### TASK-048: Add session-scoped settle mode
+
+Add an opt-in settle mode for sessions: `browse set settle on|off`. When enabled, write commands automatically wait for the page readiness signal to report settled before returning, eliminating many manual `wait --network-idle` calls.
+
+**Files:** `src/commands/write.ts`, `src/session/manager.ts`, `src/types.ts`, `src/automation/action-context.ts`, `src/automation/registry.ts`
+
+**Type:** feature
+**Effort:** M
+
+**Acceptance Criteria:**
+- [ ] `browse set settle on` enables post-write settling for the active session and `browse set settle off` disables it
+- [ ] When enabled, navigation and interaction write commands wait for the readiness signal before returning
+- [ ] Default settle quiet window is 300ms with a documented timeout guard
+- [ ] `wait` and `set settle` do not recursively trigger settle mode
+- [ ] On settle timeout, the command returns its normal result plus an explicit `settled:false (timeout)` context note instead of hanging indefinitely
+
+**Agent:** nodejs-cli-senior-engineer
+**Review:** claude
+**Depends on:** TASK-046
+**Priority:** P1
 
 ---
 
@@ -364,6 +441,30 @@ Add `case 'expect':` to `src/commands/meta/index.ts`. Polls conditions in a loop
 - [ ] Multiple conditions: all must pass (AND logic)
 - [ ] Condition check interval: 100ms (not burning CPU)
 - [ ] Edge case: timeout 0 → check once and return immediately (no polling)
+
+**Agent:** nodejs-cli-senior-engineer
+**Review:** claude
+**Depends on:** TASK-010
+**Priority:** P1
+
+---
+
+### TASK-050: Add request-matching mode to `wait`
+
+Extend `wait` with `--request <pattern> [--status N]` so agents can wait for a specific API request to complete before proceeding. This should reuse the same request/status matcher semantics as `expect --request`.
+
+**Files:** `src/commands/write.ts`, `src/expect.ts`, `src/automation/registry.ts`
+
+**Type:** feature
+**Effort:** M
+
+**Acceptance Criteria:**
+- [ ] `browse wait --request "POST /api/order" --status 200 --timeout 10000` returns when a matching completed request exists in the buffer or arrives before timeout
+- [ ] If `--status` is omitted, the first completed matching request satisfies the wait
+- [ ] Request matcher semantics are shared with `expect --request` so method/path/status parsing does not diverge
+- [ ] Timeout error includes the most recent matching request(s) or last seen matching status for debugging
+- [ ] Edge case: `--status` without `--request` throws a clear usage error
+- [ ] Edge case: a matching request that started but did not finish before timeout does not satisfy the wait
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
@@ -469,9 +570,9 @@ Register `expect` command: MCP tool definition, CLI help text, chain set, SAFE_T
 
 ---
 
-### TASK-016: Integration tests for expect + budget
+### TASK-016: Integration tests for expect + wait-request + budget
 
-Test expect command with all condition types (url, text, visible, count, request/status, timeout). Test perf-audit budget mode with deterministic metric fixtures.
+Test expect command with all condition types (url, text, visible, count, request/status, timeout), the new request-matching wait mode, and perf-audit budget mode with deterministic metric fixtures.
 
 **Files:** `test/features.test.ts`, `test/expect.test.ts` (new), `test/perf-audit-budget.test.ts` (new)
 
@@ -488,6 +589,9 @@ Test expect command with all condition types (url, text, visible, count, request
 - [ ] Test: `expect --request "POST /api" --status 200` succeeds when matching request is present
 - [ ] Test: `expect --request "POST /api" --status 500` fails with clear actual-status output
 - [ ] Test: multiple conditions (--url + --text) require all to pass
+- [ ] Test: `wait --request "POST /api" --status 200` succeeds when the matching request completes
+- [ ] Test: `wait --request "POST /api" --status 500` times out with clear last-seen-status output
+- [ ] Test: `wait --request "POST /api"` succeeds without a status filter
 - [ ] Unit test: budget evaluator supports `lcp`, `cls`, `tbt`, `fcp`, `ttfb`, `inp` and skips unmeasured metrics deterministically
 - [ ] Test: budget pass — deterministic metric fixture stays under budget
 - [ ] Test: budget fail — LCP over budget → error thrown with pass/fail breakdown
@@ -495,7 +599,7 @@ Test expect command with all condition types (url, text, visible, count, request
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Depends on:** TASK-011, TASK-012
+**Depends on:** TASK-011, TASK-012, TASK-050
 **Priority:** P2
 
 ---
@@ -1248,7 +1352,11 @@ Expand `browse.json` into the project-local control plane for the agent toolkit.
 |------|---------------|------------|
 | Response body capture slows down page loads | TASK-003 | Only capture when opt-in (`--network-bodies`). Skip binary bodies. Cap per-entry body size and total session body bytes. |
 | Memory pressure from captured bodies still grows too high | TASK-003, TASK-009 | Enforce a separate captured-body byte budget; evict oldest body payloads first while preserving request metadata. Cover with explicit eviction tests. |
+| Readiness signal reports `settled:true` too early on SPA transitions | TASK-046, TASK-048, TASK-009 | Combine pending-network and DOM-mutation quiet-window signals, and cover delayed-mutation plus delayed-fetch fixtures before enabling settle mode. |
+| Conditional flags hide real regressions by skipping too much | TASK-047, TASK-009 | Guard flags must return explicit `SKIP:` output and only suppress not-found / empty / unchecked states, never malformed selectors or usage errors. |
+| Settle mode hangs on long-polling pages | TASK-048, TASK-009 | Add a timeout guard, exclude long-lived streaming/socket requests from readiness, and return an explicit timeout note instead of blocking indefinitely. |
 | expect polling burns CPU | TASK-011, TASK-016 | 100ms interval. Use Playwright-native waits where possible and unit-test timeout / zero-timeout semantics. |
+| `wait --request` and `expect --request` drift into different matcher semantics | TASK-050, TASK-016 | Reuse the same parser/helper for method/path/status matching and cover success, timeout, and status-mismatch cases in one shared test suite. |
 | Budget tests flap because live browser metrics vary | TASK-012, TASK-016 | Extract deterministic budget evaluation logic and test it with fixed report fixtures instead of relying only on live perf runs. |
 | Generated Playwright export is structurally present but syntactically broken | TASK-014, TASK-017 | Require parse / compile validation of generated source in tests. |
 | WCAG contrast calculation wrong on gradients/images | TASK-019, TASK-024 | Skip contrast check when background is gradient or image. Document limitation and test the skip path explicitly. |
@@ -1273,12 +1381,17 @@ Expand `browse.json` into the project-local control plane for the agent toolkit.
 | HAR export with bodies | TASK-009 | integration |
 | Body truncation at limit | TASK-009 | integration |
 | Captured-body byte-budget eviction | TASK-009 | integration |
+| action-context readiness signal | TASK-009 | integration |
+| guarded write skip paths | TASK-009 | integration |
+| selector suggestions on not-found | TASK-009 | integration |
+| settle mode post-write waiting | TASK-009 | integration |
 | expect parser flag validation | TASK-016 | unit |
 | expect --url condition | TASK-016 | integration |
 | expect --text condition | TASK-016 | integration |
 | expect --visible/--hidden | TASK-016 | integration |
 | expect --count | TASK-016 | integration |
 | expect --request + --status | TASK-016 | integration |
+| wait --request + --status | TASK-016 | integration |
 | expect timeout failure | TASK-016 | integration |
 | perf-audit budget evaluator | TASK-016 | unit |
 | perf-audit --budget pass | TASK-016 | integration |
