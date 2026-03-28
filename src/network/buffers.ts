@@ -3,7 +3,7 @@
  * between server.ts and browser-manager.ts
  */
 
-import { DEFAULTS } from './constants';
+import { DEFAULTS } from '../constants';
 
 export interface LogEntry {
   timestamp: number;

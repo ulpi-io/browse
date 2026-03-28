@@ -7,8 +7,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveEncryptionKey, encrypt, decrypt } from './encryption';
-import { sanitizeName } from './sanitize';
+import { resolveEncryptionKey, encrypt, decrypt } from '../session/encryption';
+import { sanitizeName } from '../security/sanitize';
 
 // ─── Provider Interface ──────────────────────────────
 

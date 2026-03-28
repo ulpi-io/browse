@@ -9,10 +9,10 @@
 
 import * as Diff from 'diff';
 import type { Page } from 'playwright';
-import type { PageState, ContextDelta, ContextLevel, WriteContextCapture } from './types';
-import type { BrowserManager } from './browser-manager';
-import type { SessionBuffers } from './buffers';
-import { handleSnapshot } from './snapshot';
+import type { PageState, ContextDelta, ContextLevel, WriteContextCapture } from '../types';
+import type { BrowserTarget } from '../browser/target';
+import type { SessionBuffers } from '../network/buffers';
+import { handleSnapshot } from '../browser/snapshot';
 
 /**
  * Capture a snapshot of the current page state.
@@ -20,7 +20,7 @@ import { handleSnapshot } from './snapshot';
  */
 export async function capturePageState(
   page: Page,
-  bm: BrowserManager,
+  bm: BrowserTarget,
   buffers: SessionBuffers,
 ): Promise<PageState> {
   let url = '';
@@ -265,7 +265,7 @@ export function formatAriaDelta(baseline: string | null | undefined, current: st
  */
 export async function prepareWriteContext(
   level: ContextLevel,
-  bm: BrowserManager,
+  bm: BrowserTarget,
   buffers: SessionBuffers,
 ): Promise<WriteContextCapture> {
   if (level === 'off') {
@@ -308,7 +308,7 @@ export async function prepareWriteContext(
  */
 export async function finalizeWriteContext(
   capture: WriteContextCapture,
-  bm: BrowserManager,
+  bm: BrowserTarget,
   buffers: SessionBuffers,
   result: string,
   command: string,

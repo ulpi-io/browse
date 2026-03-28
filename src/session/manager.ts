@@ -1,19 +1,20 @@
 /**
- * Session manager — multiplexes multiple agents on a single Chromium instance
+ * Session manager — multiplexes multiple agents on a single automation target
  *
- * Each session gets its own BrowserManager (tabs, refs, cookies, storage)
- * backed by an isolated BrowserContext on the shared Browser.
+ * Each session gets its own automation target (tabs, refs, cookies, storage)
+ * created through a SessionTargetFactory. The factory determines the concrete
+ * target type (browser today, app/plugin targets in the future).
  * Sessions are identified by string IDs (from X-Browse-Session header).
  */
 
-import type { Browser } from 'playwright';
-import { BrowserManager } from './browser-manager';
-import { SessionBuffers } from './buffers';
-import { DomainFilter } from './domain-filter';
-import { sanitizeName } from './sanitize';
-import { saveSessionState, loadSessionState, hasPersistedState } from './session-persist';
+import { SessionBuffers } from '../network/buffers';
+import { DomainFilter } from '../security/domain-filter';
+import { sanitizeName } from '../security/sanitize';
+import { saveSessionState, loadSessionState, hasPersistedState } from './persist';
 import { resolveEncryptionKey } from './encryption';
-import type { ContextLevel } from './types';
+import type { ContextLevel } from '../types';
+import type { AutomationTarget } from '../automation/target';
+import type { SessionTargetFactory, CreatedTarget } from './target-factory';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,7 +27,7 @@ export interface RecordedStep {
 
 export interface Session {
   id: string;
-  manager: BrowserManager;
+  manager: AutomationTarget;
   buffers: SessionBuffers;
   domainFilter: DomainFilter | null;
   recording: RecordedStep[] | null;
@@ -39,13 +40,15 @@ export interface Session {
 
 export class SessionManager {
   private sessions = new Map<string, Session>();
-  private browser: Browser;
+  /** Factory-created target accessors for setup operations that need target-specific methods */
+  private targets = new Map<string, CreatedTarget>();
+  private factory: SessionTargetFactory;
   private localDir: string;
   private encryptionKey: Buffer | undefined;
   private reuseContext: boolean;
 
-  constructor(browser: Browser, localDir: string = '/tmp', reuseContext = false) {
-    this.browser = browser;
+  constructor(factory: SessionTargetFactory, localDir: string = '/tmp', reuseContext = false) {
+    this.factory = factory;
     this.localDir = localDir;
     this.reuseContext = reuseContext;
     try {
@@ -57,7 +60,7 @@ export class SessionManager {
 
   /**
    * Get an existing session or create a new one.
-   * Creating a session launches a new BrowserContext on the shared Chromium.
+   * Creating a session uses the target factory to provision a new automation target.
    */
   async getOrCreate(sessionId: string, allowedDomains?: string): Promise<Session> {
     let session = this.sessions.get(sessionId);
@@ -67,11 +70,12 @@ export class SessionManager {
       if (allowedDomains && !session.domainFilter) {
         const domains = allowedDomains.split(',').map(d => d.trim()).filter(Boolean);
         if (domains.length > 0) {
+          const ct = this.targets.get(sessionId)!;
           const domainFilter = new DomainFilter(domains);
-          session.manager.setDomainFilter(domainFilter);
-          const context = session.manager.getContext();
+          ct.setDomainFilter(domainFilter);
+          const context = ct.getContext();
           if (context) {
-            await context.route('**/*', (route) => {
+            await context.route('**/*', (route: any) => {
               const url = route.request().url();
               if (domainFilter.isAllowed(url)) {
                 route.fallback();
@@ -81,11 +85,11 @@ export class SessionManager {
             });
             const initScript = domainFilter.generateInitScript();
             await context.addInitScript(initScript);
-            session.manager.setInitScript(initScript);
+            ct.setInitScript(initScript);
             // Inject filter script into ALL open tabs immediately
-            for (const tab of session.manager.getTabList()) {
+            for (const tab of ct.getTabList()) {
               try {
-                const page = session.manager.getPageById(tab.id);
+                const page = ct.getPageById(tab.id) as any;
                 if (page) await page.evaluate(initScript);
               } catch {}
             }
@@ -101,8 +105,7 @@ export class SessionManager {
     fs.mkdirSync(outputDir, { recursive: true });
 
     const buffers = new SessionBuffers();
-    const manager = new BrowserManager(buffers);
-    await manager.launchWithBrowser(this.browser, this.reuseContext && this.sessions.size === 0);
+    const ct = await this.factory.create(buffers, this.reuseContext && this.sessions.size === 0);
 
     // Apply domain filter if allowed domains are specified
     let domainFilter: DomainFilter | null = null;
@@ -110,10 +113,9 @@ export class SessionManager {
       const domains = allowedDomains.split(',').map(d => d.trim()).filter(Boolean);
       if (domains.length > 0) {
         domainFilter = new DomainFilter(domains);
-        manager.setDomainFilter(domainFilter);
-        const context = manager.getContext();
+        ct.setDomainFilter(domainFilter);
+        const context = ct.getContext();
         if (context) {
-          // Block disallowed domains at the network level via Playwright route()
           await context.route('**/*', (route) => {
             const url = route.request().url();
             if (domainFilter!.isAllowed(url)) {
@@ -122,17 +124,16 @@ export class SessionManager {
               route.abort('blockedbyclient');
             }
           });
-          // Block WebSocket, EventSource, sendBeacon via JS injection
           const initScript = domainFilter.generateInitScript();
           await context.addInitScript(initScript);
-          manager.setInitScript(initScript);
+          ct.setInitScript(initScript);
         }
       }
     }
 
     session = {
       id: sessionId,
-      manager,
+      manager: ct.target,
       buffers,
       domainFilter,
       recording: null,
@@ -143,11 +144,12 @@ export class SessionManager {
       contextLevel: 'off',
     };
     this.sessions.set(sessionId, session);
+    this.targets.set(sessionId, ct);
     console.log(`[browse] Session "${sessionId}" created`);
 
     // Auto-restore persisted state for named sessions (not "default")
     if (sessionId !== 'default' && hasPersistedState(outputDir)) {
-      const context = manager.getContext();
+      const context = ct.getContext();
       if (context) {
         await loadSessionState(outputDir, context, this.encryptionKey);
         console.log(`[browse] Session "${sessionId}" state restored`);
@@ -166,7 +168,8 @@ export class SessionManager {
 
     // Auto-save state for named sessions (not "default")
     if (sessionId !== 'default') {
-      const context = session.manager.getContext();
+      const ct = this.targets.get(sessionId);
+      const context = ct?.getContext();
       if (context) {
         await saveSessionState(session.outputDir, context, this.encryptionKey);
       }
@@ -174,6 +177,7 @@ export class SessionManager {
 
     await session.manager.close();
     this.sessions.delete(sessionId);
+    this.targets.delete(sessionId);
     console.log(`[browse] Session "${sessionId}" closed`);
   }
 
@@ -190,13 +194,15 @@ export class SessionManager {
         if (flushFn) flushFn(session);
         // Auto-save state for named sessions (not "default")
         if (id !== 'default') {
-          const context = session.manager.getContext();
+          const ct = this.targets.get(id);
+          const context = ct?.getContext();
           if (context) {
             await saveSessionState(session.outputDir, context, this.encryptionKey).catch(() => {});
           }
         }
         await session.manager.close().catch(() => {});
         this.sessions.delete(id);
+        this.targets.delete(id);
         closed.push(id);
       }
     }
@@ -209,13 +215,16 @@ export class SessionManager {
    */
   listSessions(): Array<{ id: string; tabs: number; url: string; idleSeconds: number; active: boolean }> {
     const now = Date.now();
-    return [...this.sessions.entries()].map(([id, session]) => ({
-      id,
-      tabs: session.manager.getTabCount(),
-      url: session.manager.getCurrentUrl(),
-      idleSeconds: Math.floor((now - session.lastActivity) / 1000),
-      active: true,
-    }));
+    return [...this.sessions.entries()].map(([id, session]) => {
+      const ct = this.targets.get(id);
+      return {
+        id,
+        tabs: ct?.getTabCount() ?? 0,
+        url: session.manager.getCurrentLocation(),
+        idleSeconds: Math.floor((now - session.lastActivity) / 1000),
+        active: true,
+      };
+    });
   }
 
   /**
@@ -236,7 +245,8 @@ export class SessionManager {
     for (const [id, session] of this.sessions) {
       // Auto-save state for named sessions (not "default")
       if (id !== 'default') {
-        const context = session.manager.getContext();
+        const ct = this.targets.get(id);
+        const context = ct?.getContext();
         if (context) {
           await saveSessionState(session.outputDir, context, this.encryptionKey).catch(() => {});
         }
@@ -244,5 +254,6 @@ export class SessionManager {
       await session.manager.close().catch(() => {});
     }
     this.sessions.clear();
+    this.targets.clear();
   }
 }

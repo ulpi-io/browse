@@ -5,16 +5,16 @@
  * console, network, cookies, storage, perf
  */
 
-import type { BrowserManager } from '../browser-manager';
-import { listDevices } from '../browser-manager';
-import type { SessionBuffers } from '../buffers';
+import type { BrowserTarget } from '../browser/target';
+import { listDevices } from '../browser/emulation';
+import type { SessionBuffers } from '../network/buffers';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
 
 export async function handleReadCommand(
   command: string,
   args: string[],
-  bm: BrowserManager,
+  bm: BrowserTarget,
   buffers?: SessionBuffers
 ): Promise<string> {
   const page = bm.getPage();

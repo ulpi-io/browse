@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import type { BrowserManager } from './browser-manager';
+import type { BrowserManager } from './manager';
 import type { Page } from 'playwright';
 
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'browse', 'react-devtools');

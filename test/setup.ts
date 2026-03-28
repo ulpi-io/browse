@@ -5,7 +5,7 @@
  */
 
 import { beforeAll, afterAll } from 'vitest';
-import { BrowserManager } from '../src/browser-manager';
+import { BrowserManager } from '../src/browser/manager';
 import { startTestServer } from './test-server';
 
 export let sharedBm: BrowserManager;

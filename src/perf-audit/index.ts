@@ -14,8 +14,8 @@
  *   8. Separate findings into fixable items vs platform limitations
  */
 
-import type { BrowserManager, CoverageEntry } from '../browser-manager';
-import type { NetworkEntry } from '../buffers';
+import type { BrowserManager, CoverageEntry } from '../browser/manager';
+import type { NetworkEntry } from '../network/buffers';
 import type { WebVitalsReport } from './web-vitals';
 import type { ResourceReport } from './resource-analyzer';
 import type { DOMComplexityReport, CorrelationReport } from './dom-analysis';

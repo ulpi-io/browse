@@ -28,7 +28,7 @@ import { analyzeResources } from '../src/perf-audit/resource-analyzer';
 import { analyzeDOMComplexity, buildCorrelationReport } from '../src/perf-audit/dom-analysis';
 import { runPerfAudit } from '../src/perf-audit';
 import { formatPerfAudit } from '../src/perf-audit/formatter';
-import type { NetworkEntry } from '../src/buffers';
+import type { NetworkEntry } from '../src/network/buffers';
 import type { WebVitalsReport } from '../src/perf-audit/web-vitals';
 import type { ResourceReport } from '../src/perf-audit/resource-analyzer';
 

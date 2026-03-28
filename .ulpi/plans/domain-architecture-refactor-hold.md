@@ -2,7 +2,7 @@
 
 > Generated: 2026-03-28
 > Branch: refactor/domain-architecture
-> Mode: HOLD
+> Mode: COMPLETE
 > Review tool: claude
 
 ## Overview
@@ -11,7 +11,7 @@ Restructure `browse` around execution contracts and domain directories before ro
 
 ## Scope Challenge
 
-This is a structural refactor, not product expansion. `HOLD` mode is the correct shape because most product behavior already exists; the work is mainly architecture, command plumbing, and file layout. The plan establishes a safe cut line after shared contracts and executor wiring so the branch can stop before large file moves if needed.
+This is a structural refactor, not product expansion. All tasks are complete — the repo now uses domain directories, typed capability interfaces, a shared executor pipeline, and registry-derived command routing.
 
 ## Architecture Decision
 

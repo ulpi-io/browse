@@ -7,13 +7,20 @@
  *   We do NOT try to self-heal — don't hide failure.
  */
 
-import * as path from 'path';
-import * as fs from 'fs';
-import { chromium, devices as playwrightDevices, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
-import { SessionBuffers, type LogEntry, type NetworkEntry } from './buffers';
-import type { HarRecording } from './har';
-import type { DomainFilter } from './domain-filter';
-import { sanitizeName } from './sanitize';
+import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
+import { SessionBuffers, type NetworkEntry } from '../network/buffers';
+import type { HarRecording } from '../network/har';
+import type { DomainFilter } from '../security/domain-filter';
+import type { TargetCapabilities } from '../automation/target';
+import type { BrowserTarget } from './target';
+import { TabManager } from './tabs';
+import { RefManager } from './refs';
+import {
+  resolveDevice,
+  listDevices,
+  type DeviceDescriptor,
+} from './emulation';
+import { getProfileDir, listProfiles, deleteProfile } from './profiles';
 
 /**
  * Polyfill for esbuild/tsx keepNames helper.
@@ -29,85 +36,11 @@ import { sanitizeName } from './sanitize';
 const ESBUILD_KEEPNAMES_POLYFILL =
   'if(typeof globalThis.__name==="undefined"){globalThis.__name=function(fn){return fn};}';
 
-/** Shorthand aliases for common devices → Playwright device names */
-const DEVICE_ALIASES: Record<string, string> = {
-  'iphone': 'iPhone 15',
-  'iphone-12': 'iPhone 12',
-  'iphone-13': 'iPhone 13',
-  'iphone-14': 'iPhone 14',
-  'iphone-15': 'iPhone 15',
-  'iphone-14-pro': 'iPhone 14 Pro Max',
-  'iphone-15-pro': 'iPhone 15 Pro Max',
-  'iphone-16': 'iPhone 16',
-  'iphone-16-pro': 'iPhone 16 Pro',
-  'iphone-16-pro-max': 'iPhone 16 Pro Max',
-  'iphone-17': 'iPhone 17',
-  'iphone-17-pro': 'iPhone 17 Pro',
-  'iphone-17-pro-max': 'iPhone 17 Pro Max',
-  'iphone-se': 'iPhone SE',
-  'pixel': 'Pixel 7',
-  'pixel-7': 'Pixel 7',
-  'pixel-5': 'Pixel 5',
-  'samsung': 'Galaxy S9+',
-  'galaxy': 'Galaxy S9+',
-  'ipad': 'iPad (gen 7)',
-  'ipad-pro': 'iPad Pro 11',
-  'ipad-mini': 'iPad Mini',
-};
+// DeviceDescriptor, DEVICE_ALIASES, CUSTOM_DEVICES, resolveDevice, listDevices
+// are defined in ./emulation and re-exported from there + from this file below.
 
-/** Custom device descriptors for devices not yet in Playwright's built-in list */
-const CUSTOM_DEVICES: Record<string, DeviceDescriptor> = {
-  'iPhone 16': {
-    viewport: { width: 393, height: 852 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
-  'iPhone 16 Pro': {
-    viewport: { width: 402, height: 874 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
-  'iPhone 16 Pro Max': {
-    viewport: { width: 440, height: 956 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
-  'iPhone 17': {
-    viewport: { width: 393, height: 852 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1',
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
-  'iPhone 17 Pro': {
-    viewport: { width: 402, height: 874 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1',
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
-  'iPhone 17 Pro Max': {
-    viewport: { width: 440, height: 956 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1',
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  },
-};
-
-export interface DeviceDescriptor {
-  viewport: { width: number; height: number };
-  userAgent: string;
-  deviceScaleFactor: number;
-  isMobile: boolean;
-  hasTouch: boolean;
-}
+export type { DeviceDescriptor };
+export { resolveDevice, listDevices, getProfileDir, listProfiles, deleteProfile };
 
 export interface CoverageEntry {
   url: string;
@@ -117,116 +50,25 @@ export interface CoverageEntry {
   unusedPct: number;
 }
 
-/** Resolve a device name (alias or Playwright name or custom) to a descriptor, or null */
-export function resolveDevice(name: string): DeviceDescriptor | null {
-  // Check aliases first (case-insensitive)
-  const alias = DEVICE_ALIASES[name.toLowerCase()];
-  const aliasTarget = alias || name;
-
-  // Check custom devices
-  if (CUSTOM_DEVICES[aliasTarget]) {
-    return CUSTOM_DEVICES[aliasTarget];
-  }
-  // Direct Playwright device name lookup
-  if (playwrightDevices[aliasTarget]) {
-    return playwrightDevices[aliasTarget] as DeviceDescriptor;
-  }
-  // Fuzzy: try case-insensitive match across both lists
-  const lower = name.toLowerCase();
-  for (const [key, desc] of Object.entries(CUSTOM_DEVICES)) {
-    if (key.toLowerCase() === lower) return desc;
-  }
-  for (const [key, desc] of Object.entries(playwrightDevices)) {
-    if (key.toLowerCase() === lower) {
-      return desc as DeviceDescriptor;
-    }
-  }
-  return null;
-}
-
-/** List all available device names */
-export function listDevices(): string[] {
-  const all = new Set([
-    ...Object.keys(CUSTOM_DEVICES),
-    ...Object.keys(playwrightDevices),
-  ]);
-  return [...all].sort();
-}
-
-/**
- * Get the profile directory path for a named profile.
- * Profiles live in .browse/profiles/<name>/
- */
-export function getProfileDir(localDir: string, name: string): string {
-  const sanitized = sanitizeName(name);
-  if (!sanitized) throw new Error('Invalid profile name');
-  return path.join(localDir, 'profiles', sanitized);
-}
-
-/**
- * List all profiles with metadata.
- */
-export function listProfiles(localDir: string): Array<{ name: string; size: string; lastUsed: string }> {
-  const profilesDir = path.join(localDir, 'profiles');
-  if (!fs.existsSync(profilesDir)) return [];
-
-  return fs.readdirSync(profilesDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = path.join(profilesDir, d.name);
-      const stat = fs.statSync(dir);
-      // Approximate size by counting files
-      let totalSize = 0;
-      try {
-        const files = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
-        for (const f of files) {
-          if (f.isFile()) {
-            try { totalSize += fs.statSync(path.join((f as any).parentPath || (f as any).path || dir, f.name)).size; } catch {}
-          }
-        }
-      } catch {}
-      const sizeMB = (totalSize / 1024 / 1024).toFixed(1);
-      return {
-        name: d.name,
-        size: `${sizeMB}MB`,
-        lastUsed: stat.mtime.toISOString().split('T')[0],
-      };
-    });
-}
-
-/**
- * Delete a profile directory.
- */
-export function deleteProfile(localDir: string, name: string): void {
-  const dir = getProfileDir(localDir, name);
-  if (!fs.existsSync(dir)) throw new Error(`Profile "${name}" not found`);
-  fs.rmSync(dir, { recursive: true, force: true });
-}
-
-export class BrowserManager {
+export class BrowserManager implements BrowserTarget {
+  readonly targetType = 'browser';
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
-  private pages: Map<number, Page> = new Map();
-  private activeTabId: number = 0;
-  private nextTabId: number = 1;
   private extraHeaders: Record<string, string> = {};
   private customUserAgent: string | null = null;
   private currentDevice: DeviceDescriptor | null = null;
+
+  // ─── Tab management collaborator ──────────────────────────
+  private tabs: TabManager = new TabManager();
+
+  // ─── Ref / snapshot collaborator ──────────────────────────
+  private refs: RefManager = new RefManager();
 
   // ─── iframe targeting ─────────────────────────────────────
   private activeFramePerTab: Map<number, string> = new Map();
 
   // ─── Per-session buffers ──────────────────────────────────
   private buffers: SessionBuffers;
-
-  // ─── Ref Map (snapshot → @e1, @e2, ...) ────────────────────
-  // Refs are scoped per tab — switching tabs invalidates refs from the previous tab.
-  private refMap: Map<string, Locator> = new Map();
-  private refTabId: number = 0; // Which tab the current refs belong to
-
-  // ─── Last Snapshot (for snapshot-diff) ─────────────────────
-  // Per-tab so snapshot-diff compares the correct baseline after tab switches
-  private tabSnapshots: Map<number, { text: string; opts: string[] }> = new Map();
 
   // ─── Dialog Handling ──────────────────────────────────────
   private lastDialog: { type: string; message: string; defaultValue?: string } | null = null;
@@ -328,10 +170,7 @@ export class BrowserManager {
       const pages = this.context.pages();
       if (pages.length > 0) {
         for (const page of pages) {
-          const tabId = this.nextTabId++;
-          this.wirePageEvents(page);
-          this.pages.set(tabId, page);
-          this.activeTabId = tabId;
+          this.tabs.registerPage(page, (p) => this.wirePageEvents(p));
         }
         return; // Already have tabs, don't create a new one
       }
@@ -392,10 +231,7 @@ export class BrowserManager {
     const pages = context.pages();
     if (pages.length > 0) {
       for (const page of pages) {
-        const tabId = this.nextTabId++;
-        this.wirePageEvents(page);
-        this.pages.set(tabId, page);
-        this.activeTabId = tabId;
+        this.tabs.registerPage(page, (p) => this.wirePageEvents(p));
       }
     } else {
       await this.newTab();
@@ -405,9 +241,9 @@ export class BrowserManager {
   async close() {
     // Persistent contexts: closing the context closes browser + all pages
     if (this.isPersistent) {
-      this.pages.clear();
-      this.tabSnapshots.clear();
-      this.refMap.clear();
+      this.tabs.clearPages();
+      this.refs.clearSnapshots();
+      this.refs.clearRefs();
       if (this.context) {
         await this.context.close().catch(() => {});
         this.context = null;
@@ -417,12 +253,12 @@ export class BrowserManager {
     }
 
     // Close all pages first
-    for (const [, page] of this.pages) {
+    for (const [, page] of this.tabs.getPages()) {
       await page.close().catch(() => {});
     }
-    this.pages.clear();
-    this.tabSnapshots.clear();
-    this.refMap.clear();
+    this.tabs.clearPages();
+    this.refs.clearSnapshots();
+    this.refs.clearRefs();
 
     if (this.context) {
       await this.context.close().catch(() => {});
@@ -439,6 +275,28 @@ export class BrowserManager {
 
   isHealthy(): boolean {
     return this.browser !== null && this.browser.isConnected();
+  }
+
+  // ─── AutomationTarget implementation ─────────────────────
+
+  getCapabilities(): TargetCapabilities {
+    return {
+      navigation: true,
+      tabs: true,
+      refs: true,
+      screenshots: true,
+      javascript: true,
+      deviceEmulation: true,
+      frames: true,
+    };
+  }
+
+  getCurrentLocation(): string {
+    return this.getCurrentUrl();
+  }
+
+  isReady(): boolean {
+    return this.isHealthy() && this.context !== null;
   }
 
   getIsPersistent(): boolean {
@@ -483,7 +341,7 @@ export class BrowserManager {
     const cookies = await this.context.cookies();
     const pages: Array<{ url: string; isActive: boolean; storage: any }> = [];
 
-    for (const [id, page] of this.pages) {
+    for (const [id, page] of this.tabs.getPages()) {
       const url = page.url();
       let storage = null;
       try {
@@ -494,7 +352,7 @@ export class BrowserManager {
       } catch {}
       pages.push({
         url: url === 'about:blank' ? '' : url,
-        isActive: id === this.activeTabId,
+        isActive: id === this.tabs.activeTabId,
         storage,
       });
     }
@@ -540,11 +398,9 @@ export class BrowserManager {
 
     let activeId: number | null = null;
     for (const saved of state.pages) {
-      const page = await this.context.newPage();
-      const id = this.nextTabId++;
-      this.pages.set(id, page);
-      this.wirePageEvents(page);
+      const id = await this.tabs.newTab(this.context, (p) => this.wirePageEvents(p));
 
+      const page = this.tabs.getPageById(id)!;
       if (saved.url) {
         await page.goto(saved.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
       }
@@ -565,10 +421,10 @@ export class BrowserManager {
       if (saved.isActive) activeId = id;
     }
 
-    if (this.pages.size === 0) {
+    if (this.tabs.getTabCount() === 0) {
       await this.newTab();
     } else if (activeId !== null) {
-      this.activeTabId = activeId;
+      this.tabs.activeTabId = activeId;
     }
 
     this.clearRefs();
@@ -598,7 +454,7 @@ export class BrowserManager {
 
     if (!useChromium) {
       try {
-        const { launchChrome } = await import('./chrome-discover');
+        const { launchChrome } = await import('../engine/chrome');
         const result = await launchChrome();
         newBrowser = result.browser;
         cleanup = result.close;
@@ -634,9 +490,8 @@ export class BrowserManager {
       const oldContext = this.context;
       this.browser = newBrowser;
       this.context = newContext;
-      this.pages.clear();
-      this.nextTabId = 1;
-      this.tabSnapshots.clear();
+      this.tabs.reset();
+      this.refs.clearSnapshots();
       this.activeFramePerTab.clear();
       this.handoffCleanup = cleanup;
 
@@ -705,9 +560,8 @@ export class BrowserManager {
       const oldBrowser = this.browser;
       this.browser = newBrowser;
       this.context = newContext;
-      this.pages.clear();
-      this.nextTabId = 1;
-      this.tabSnapshots.clear();
+      this.tabs.reset();
+      this.refs.clearSnapshots();
       this.activeFramePerTab.clear();
 
       const onCrash = this.onCrashCallback;
@@ -738,103 +592,46 @@ export class BrowserManager {
   // ─── Tab Management ────────────────────────────────────────
   async newTab(url?: string): Promise<number> {
     if (!this.context) throw new Error('Browser not launched');
-
-    const page = await this.context.newPage();
-
-    // Wire up console/network capture before navigation so we capture everything
-    this.wirePageEvents(page);
-
-    // Navigate before committing the tab — if goto fails, close page and rethrow
-    if (url) {
-      try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-      } catch (err) {
-        await page.close().catch(() => {});
-        throw err;
-      }
-    }
-
-    // Only commit tab state after successful creation + navigation
-    const id = this.nextTabId++;
-    this.pages.set(id, page);
-    this.activeTabId = id;
-
-    return id;
+    return this.tabs.newTab(this.context, (p) => this.wirePageEvents(p), url);
   }
 
   async closeTab(id?: number): Promise<void> {
-    const tabId = id ?? this.activeTabId;
-    const page = this.pages.get(tabId);
-    if (!page) throw new Error(`Tab ${tabId} not found`);
-
-    await page.close();
-    this.pages.delete(tabId);
-    this.tabSnapshots.delete(tabId);
-
-    // Switch to another tab if we closed the active one
-    if (tabId === this.activeTabId) {
-      const remaining = [...this.pages.keys()];
-      if (remaining.length > 0) {
-        this.activeTabId = remaining[remaining.length - 1];
-      } else {
-        // No tabs left — create a new blank one
-        await this.newTab();
-      }
-    }
+    if (!this.context) throw new Error('Browser not launched');
+    const tabId = await this.tabs.closeTab(this.context, (p) => this.wirePageEvents(p), id);
+    this.refs.deleteSnapshot(tabId);
   }
 
   switchTab(id: number): void {
-    if (!this.pages.has(id)) throw new Error(`Tab ${id} not found`);
-    this.activeTabId = id;
+    this.tabs.switchTab(id);
   }
 
   getActiveTabId(): number {
-    return this.activeTabId;
+    return this.tabs.getActiveTabId();
   }
 
   hasTab(id: number): boolean {
-    return this.pages.has(id);
+    return this.tabs.hasTab(id);
   }
 
   getTabCount(): number {
-    return this.pages.size;
+    return this.tabs.getTabCount();
   }
 
   getTabList(): Array<{ id: number; url: string; title: string; active: boolean }> {
-    const tabs: Array<{ id: number; url: string; title: string; active: boolean }> = [];
-    for (const [id, page] of this.pages) {
-      tabs.push({
-        id,
-        url: page.url(),
-        title: '', // title requires await, populated by caller
-        active: id === this.activeTabId,
-      });
-    }
-    return tabs;
+    return this.tabs.getTabList();
   }
 
   async getTabListWithTitles(): Promise<Array<{ id: number; url: string; title: string; active: boolean }>> {
-    const tabs: Array<{ id: number; url: string; title: string; active: boolean }> = [];
-    for (const [id, page] of this.pages) {
-      tabs.push({
-        id,
-        url: page.url(),
-        title: await page.title().catch(() => ''),
-        active: id === this.activeTabId,
-      });
-    }
-    return tabs;
+    return this.tabs.getTabListWithTitles();
   }
 
   // ─── Page Access ───────────────────────────────────────────
   getPage(): Page {
-    const page = this.pages.get(this.activeTabId);
-    if (!page) throw new Error('No active page. Use "browse goto <url>" first.');
-    return page;
+    return this.tabs.getPage();
   }
 
   getPageById(id: number): Page | undefined {
-    return this.pages.get(id);
+    return this.tabs.getPageById(id);
   }
 
   getCurrentUrl(): string {
@@ -852,21 +649,21 @@ export class BrowserManager {
    * will target this frame's content instead of the main page.
    */
   setFrame(selector: string) {
-    this.activeFramePerTab.set(this.activeTabId, selector);
+    this.activeFramePerTab.set(this.tabs.activeTabId, selector);
   }
 
   /**
    * Reset to main frame — clears the active frame selector for the current tab.
    */
   resetFrame() {
-    this.activeFramePerTab.delete(this.activeTabId);
+    this.activeFramePerTab.delete(this.tabs.activeTabId);
   }
 
   /**
    * Get the current active frame selector, or null if targeting main page.
    */
   getActiveFrameSelector(): string | null {
-    return this.activeFramePerTab.get(this.activeTabId) ?? null;
+    return this.activeFramePerTab.get(this.tabs.activeTabId) ?? null;
   }
 
   /**
@@ -911,12 +708,11 @@ export class BrowserManager {
 
   // ─── Ref Map ──────────────────────────────────────────────
   setRefMap(refs: Map<string, Locator>) {
-    this.refMap = refs;
-    this.refTabId = this.activeTabId;
+    this.refs.setRefMap(refs, this.tabs.activeTabId);
   }
 
   clearRefs() {
-    this.refMap.clear();
+    this.refs.clearRefs();
   }
 
   /**
@@ -928,30 +724,16 @@ export class BrowserManager {
    * interact with elements inside the iframe.
    */
   resolveRef(selector: string): { locator: Locator } | { selector: string } {
-    if (selector.startsWith('@e')) {
-      // Refs are scoped to the tab that created them — reject cross-tab usage
-      if (this.refTabId !== this.activeTabId) {
-        throw new Error(
-          `Refs were created on tab ${this.refTabId}, but active tab is ${this.activeTabId}. ` +
-          `Run 'snapshot' on the current tab to get fresh refs.`
-        );
+    // When a frame is active, pass a frame-scoped locator for CSS selectors
+    let frameScopedLocator: Locator | null = null;
+    if (!selector.startsWith('@e')) {
+      const frameSel = this.getActiveFrameSelector();
+      if (frameSel) {
+        const frame = this.getPage().frameLocator(frameSel);
+        frameScopedLocator = frame.locator(selector);
       }
-      const ref = selector.slice(1); // "e3"
-      const locator = this.refMap.get(ref);
-      if (!locator) {
-        throw new Error(
-          `Ref ${selector} not found. Page may have changed — run 'snapshot' to get fresh refs.`
-        );
-      }
-      return { locator };
     }
-    // When a frame is active, scope CSS selectors through the frame
-    const frameSel = this.getActiveFrameSelector();
-    if (frameSel) {
-      const frame = this.getPage().frameLocator(frameSel);
-      return { locator: frame.locator(selector) };
-    }
-    return { selector };
+    return this.refs.resolveRef(selector, this.tabs.activeTabId, frameScopedLocator);
   }
 
   /**
@@ -972,11 +754,11 @@ export class BrowserManager {
   }
 
   getRefCount(): number {
-    return this.refMap.size;
+    return this.refs.getRefCount();
   }
 
   getRefMap(): Map<string, Locator> {
-    return this.refMap;
+    return this.refs.getRefMap();
   }
 
   /**
@@ -984,19 +766,19 @@ export class BrowserManager {
    * Used by screenshot --annotate to avoid cross-tab ref leaks.
    */
   areRefsValidForActiveTab(): boolean {
-    return this.refMap.size > 0 && this.refTabId === this.activeTabId;
+    return this.refs.areRefsValidForActiveTab(this.tabs.activeTabId);
   }
 
   setLastSnapshot(text: string, opts?: string[]) {
-    this.tabSnapshots.set(this.activeTabId, { text, opts: opts || [] });
+    this.refs.setLastSnapshot(text, this.tabs.activeTabId, opts);
   }
 
   getLastSnapshot(): string | null {
-    return this.tabSnapshots.get(this.activeTabId)?.text ?? null;
+    return this.refs.getLastSnapshot(this.tabs.activeTabId);
   }
 
   getLastSnapshotOpts(): string[] {
-    return this.tabSnapshots.get(this.activeTabId)?.opts ?? [];
+    return this.refs.getLastSnapshotOpts(this.tabs.activeTabId);
   }
 
   getLastDialog(): { type: string; message: string; defaultValue?: string } | null {
@@ -1064,14 +846,7 @@ export class BrowserManager {
     }
 
     // Save all tab URLs and which tab was active
-    const tabUrls: Array<{ id: number; url: string; active: boolean }> = [];
-    for (const [id, page] of this.pages) {
-      tabUrls.push({
-        id,
-        url: page.url(),
-        active: id === this.activeTabId,
-      });
-    }
+    const tabUrls = this.tabs.snapshotTabUrls();
 
     // Save cookies from old context
     const savedCookies = this.context ? await this.context.cookies() : [];
@@ -1117,18 +892,16 @@ export class BrowserManager {
 
     // Save all mutable state before swapping — needed for rollback
     const oldContext = this.context;
-    const oldPages = new Map(this.pages);
-    const oldActiveTabId = this.activeTabId;
-    const oldNextTabId = this.nextTabId;
-    const oldTabSnapshots = new Map(this.tabSnapshots);
-    const oldRefMap = new Map(this.refMap);
+    const oldPages = new Map(this.tabs.getPages());
+    const oldActiveTabId = this.tabs.activeTabId;
+    const oldTabSnapshots = this.refs.snapshotState();
+    const oldRefMap = this.refs.snapshotRefMap();
     const oldFramePerTab = new Map(this.activeFramePerTab);
 
-    // Swap to new context
+    // Swap to new context; reset tabs (nextTabId=1) and clear refs
     this.context = newContext;
-    this.pages.clear();
-    this.nextTabId = 1;
-    this.refMap.clear();
+    this.tabs.reset();
+    this.refs.clearRefs();
 
     // Recreate all tabs in new context, building old→new ID map for snapshot migration
     const idMap = new Map<number, number>(); // oldTabId → newTabId
@@ -1146,32 +919,28 @@ export class BrowserManager {
       if (tabUrls.length === 0) {
         await this.newTab();
       } else if (activeRestoredId !== null) {
-        this.activeTabId = activeRestoredId;
+        this.tabs.activeTabId = activeRestoredId;
       }
     } catch (err) {
       // Full rollback — restore all mutable state including snapshots
-      for (const [, page] of this.pages) {
+      for (const [, page] of this.tabs.getPages()) {
         await page.close().catch(() => {});
       }
       await newContext.close().catch(() => {});
       this.context = oldContext;
-      this.pages = oldPages;
-      this.activeTabId = oldActiveTabId;
-      this.nextTabId = oldNextTabId;
-      this.tabSnapshots = oldTabSnapshots;
-      this.refMap = oldRefMap;
+      this.tabs.reset();
+      for (const [id, page] of oldPages) {
+        this.tabs.getPages().set(id, page);
+      }
+      this.tabs.activeTabId = oldActiveTabId;
+      this.refs.restoreState(oldTabSnapshots);
+      this.refs.restoreRefMap(oldRefMap);
       this.activeFramePerTab = oldFramePerTab;
       throw err;
     }
 
     // Migrate tabSnapshots: remap old tab IDs to new tab IDs
-    this.tabSnapshots.clear();
-    for (const [oldId, snapshot] of oldTabSnapshots) {
-      const newId = idMap.get(oldId);
-      if (newId !== undefined) {
-        this.tabSnapshots.set(newId, snapshot);
-      }
-    }
+    this.refs.migrateSnapshots(idMap);
 
     // Migrate activeFramePerTab: remap old tab IDs to new tab IDs
     const oldFrames = new Map(this.activeFramePerTab);
@@ -1304,7 +1073,7 @@ export class BrowserManager {
     const recording = this.videoRecording;
     // Collect video objects before pages are closed by recreateContext
     const videos: Array<{ video: any; tabId: number }> = [];
-    for (const [id, page] of this.pages) {
+    for (const [id, page] of this.tabs.getPages()) {
       const video = page.video();
       if (video) videos.push({ video, tabId: id });
     }
@@ -1446,10 +1215,7 @@ export class BrowserManager {
    * Returns undefined if the page isn't committed to any tab yet (during newTab).
    */
   private getTabIdForPage(page: Page): number | undefined {
-    for (const [id, p] of this.pages) {
-      if (p === page) return id;
-    }
-    return undefined;
+    return this.tabs.getTabIdForPage(page);
   }
 
   // ─── Console/Network/Ref Wiring ────────────────────────────
@@ -1459,7 +1225,7 @@ export class BrowserManager {
     page.on('framenavigated', (frame) => {
       if (frame === page.mainFrame()) {
         const tabId = this.getTabIdForPage(page);
-        if (tabId !== undefined && tabId === this.refTabId) {
+        if (tabId !== undefined && this.refs.isRefTab(tabId)) {
           this.clearRefs();
         }
       }

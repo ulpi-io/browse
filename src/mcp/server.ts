@@ -9,15 +9,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { BrowserManager } from './browser-manager';
-import { SessionBuffers } from './buffers';
-import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS, rewriteError } from './command-registry';
-import { handleReadCommand } from './commands/read';
-import { handleWriteCommand } from './commands/write';
-import { handleMetaCommand } from './commands/meta';
-import { getToolDefinitions, mapToolCallToCommand } from './mcp-tools';
-import { prepareWriteContext, finalizeWriteContext } from './action-context';
-import type { ContextLevel } from './types';
+import { BrowserManager } from '../browser/manager';
+import { SessionBuffers } from '../network/buffers';
+import { rewriteError } from '../automation/registry';
+import { getToolDefinitions, mapToolCallToCommand } from './tools/index';
+import { prepareWriteContext, finalizeWriteContext } from '../automation/action-context';
+import { executeCommand } from '../automation/executor';
+import type { ContextLevel } from '../types';
 
 /**
  * Start the MCP server.
@@ -32,7 +30,7 @@ let mcpContextLevel: ContextLevel = 'state';
 
 export async function startMcpServer(jsonMode: boolean): Promise<void> {
   // ─── Browser Setup ──────────────────────────────────────────────
-  const { getRuntime } = await import('./runtime');
+  const { getRuntime } = await import('../engine/resolver');
   const runtime = await getRuntime(process.env.BROWSE_RUNTIME);
   const buffers = new SessionBuffers();
   const bm = new BrowserManager(buffers);
@@ -75,35 +73,44 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
     }
 
     try {
-      let result: string;
-
-      if (READ_COMMANDS.has(command)) {
-        result = await handleReadCommand(command, args, bm, buffers);
-      } else if (WRITE_COMMANDS.has(command)) {
-        const capture = await prepareWriteContext(mcpContextLevel, bm, buffers);
-        result = await handleWriteCommand(command, args, bm);
-        result = await finalizeWriteContext(capture, bm, buffers, result, command);
-
-        // Detect `set context` command to update MCP context level
-        if (command === 'set' && args[0] === 'context') {
-          const val = args[1]?.toLowerCase();
-          mcpContextLevel = val === 'on' || val === 'state' ? 'state'
-            : val === 'delta' ? 'delta'
-            : val === 'full' ? 'full'
-            : val === 'off' ? 'off'
-            : mcpContextLevel;
-        }
-      } else if (META_COMMANDS.has(command)) {
-        result = await handleMetaCommand(
-          command, args, bm,
-          async () => { await cleanup(); }
-        );
-      } else {
-        return {
-          content: [{ type: 'text' as const, text: `Unknown command: ${command}` }],
-          isError: true,
-        };
-      }
+      const { output: result, spec } = await executeCommand(command, args, null, {
+        context: {
+          args,
+          target: bm,
+          buffers,
+          shutdown: async () => { await cleanup(); },
+        },
+        lifecycle: {
+          before: [async (event) => {
+            // Write context capture
+            if (event.category === 'write') {
+              (bm as any).__mcpWriteCapture = await prepareWriteContext(mcpContextLevel, bm, buffers);
+            }
+          }],
+          after: [async (event) => {
+            let res = event.result;
+            // Write context finalization
+            if (event.category === 'write') {
+              const capture = (bm as any).__mcpWriteCapture;
+              if (capture) {
+                res = await finalizeWriteContext(capture, bm, buffers, res, event.command);
+                delete (bm as any).__mcpWriteCapture;
+              }
+              // Detect `set context` command
+              if (event.command === 'set' && event.args[0] === 'context') {
+                const val = (event.args[1] as string)?.toLowerCase();
+                mcpContextLevel = val === 'on' || val === 'state' ? 'state'
+                  : val === 'delta' ? 'delta'
+                  : val === 'full' ? 'full'
+                  : val === 'off' ? 'off'
+                  : mcpContextLevel;
+              }
+            }
+            return res;
+          }],
+          onError: [async (event) => rewriteError(event.error.message)],
+        },
+      });
 
       // Snapshot commands: return structured refs alongside text content
       if (command === 'snapshot') {
@@ -141,7 +148,8 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
         content: [{ type: 'text' as const, text: result }],
       };
     } catch (err: any) {
-      const friendlyError = rewriteError(err.message);
+      // Error already rewritten by onError hook
+      const friendlyError = err.message;
 
       if (jsonMode) {
         const wrapped = JSON.stringify({ success: false, error: friendlyError, command });

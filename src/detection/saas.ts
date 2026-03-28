@@ -8,7 +8,7 @@
  */
 
 import type { Page } from 'playwright';
-import type { NetworkEntry } from '../buffers';
+import type { NetworkEntry } from '../network/buffers';
 
 // ---------------------------------------------------------------------------
 // Public types

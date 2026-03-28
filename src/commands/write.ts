@@ -7,9 +7,9 @@
  */
 
 import type { BrowserContext } from 'playwright';
-import type { BrowserManager } from '../browser-manager';
-import { resolveDevice, listDevices } from '../browser-manager';
-import type { DomainFilter } from '../domain-filter';
+import type { BrowserTarget } from '../browser/target';
+import { resolveDevice, listDevices } from '../browser/emulation';
+import type { DomainFilter } from '../security/domain-filter';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
 
@@ -17,7 +17,7 @@ import * as fs from 'fs';
  * Clear all routes and re-register them in correct order:
  * user routes first, domain filter last (Playwright checks last-registered first).
  */
-async function rebuildRoutes(context: BrowserContext, bm: BrowserManager, domainFilter?: DomainFilter | null): Promise<void> {
+async function rebuildRoutes(context: BrowserContext, bm: BrowserTarget, domainFilter?: DomainFilter | null): Promise<void> {
   await context.unrouteAll();
   // User routes first (checked last by Playwright)
   for (const r of bm.getUserRoutes()) {
@@ -39,7 +39,7 @@ async function rebuildRoutes(context: BrowserContext, bm: BrowserManager, domain
 export async function handleWriteCommand(
   command: string,
   args: string[],
-  bm: BrowserManager,
+  bm: BrowserTarget,
   domainFilter?: DomainFilter | null
 ): Promise<string> {
   const page = bm.getPage();

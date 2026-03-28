@@ -6,11 +6,11 @@
 
 ## Overview
 
-Full product roadmap from v1.5 through v2.2 — 6 versions spanning network intelligence, verification/CI, visual intelligence, native app automation, agent workflows, and ecosystem/SDK. Each version builds on the previous, compounding agent capability: network bodies enable assertions, assertions enable CI, CI proves enterprise value, proven patterns transfer to app automation, workflows compose everything, ecosystem multiplies everything.
+Full product roadmap from v1.5 through v2.2 — 6 versions spanning network intelligence, verification/CI, visual intelligence, native app automation, agent workflows, and an agent toolkit/SDK. Each version builds on the previous, compounding agent capability: network bodies enable assertions, assertions enable CI, CI proves enterprise value, proven patterns transfer to app automation, workflows compose everything, and project-local toolkit files make behavior reusable and version-controlled.
 
 ## Scope Challenge
 
-All 8 previous plans shipped (cloud-providers, handoff, mcp-server, perf-audit, persistent-profiles, port-to-node, react-devtools, record-export). Current state: 31K lines, 99 commands, v1.4.5. This plan covers the next ~18 months of development.
+All 8 previous plans shipped (cloud-providers, handoff, mcp-server, perf-audit, persistent-profiles, port-to-node, react-devtools, record-export). Current state: ~23.5K `src/` lines, 103 commands, v1.5.0. This plan covers the next ~18 months of development.
 
 Ruled out: Lighthouse integration (perf-audit already better), AI-powered selectors (non-deterministic), visual regression service (screenshot-diff exists), browser cloud (partnered with Browserbase/Browserless), full test framework (browse is a tool, generates Playwright tests instead).
 
@@ -19,13 +19,13 @@ Ruled out: Lighthouse integration (perf-audit already better), AI-powered select
 - **v1.5-v1.7 Core Browser Intelligence** — deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, and accessibility checks.
 - **v2.0 Runtime Expansion** — add macOS app automation as a second runtime behind the same session/dispatch surface; browser behavior must remain unchanged.
 - **v2.1 Thin Agent Workflows** — add orchestration helpers (`flow`, `retry`, `watch`) as a thin layer over existing commands, not as a competing full test framework.
-- **v2.2 Ecosystem Surface** — add two opt-in extension models: per-project plugins and a direct SDK entry point. Global CLI usage remains the default product entry.
+- **v2.2 Agent Toolkit** — add SDK mode plus checked-in project files for detections, audit rules, saved flows, and config. Everything is local, version-controlled, and agent-editable; npm plugins are explicitly out of scope.
 
 ## Anti-Drift Rules
 
 - Markdown and JSON are a paired artifact. Task IDs, file paths, dependencies, priorities, acceptance criteria, and coverage entries must stay isomorphic.
 - Every acceptance criterion must be backed by at least one explicit test bullet in the owning test task or coverage map. No untested promises.
-- Any task that changes shared runtime behavior must own the shared wiring files (`session-manager.ts`, `server.ts`, `command-registry.ts`, `mcp-tools.ts`, CLI help) instead of assuming they will be updated implicitly later.
+- Any task that changes shared runtime behavior must own the shared wiring files (`session/manager.ts`, `server.ts`, `automation/registry.ts`, `mcp/tools/index.ts`) instead of assuming they will be updated implicitly later.
 - Parser, formatter, generator, and diff logic require unit/contract tests in addition to integration tests.
 - Platform-specific features require mocked contract tests plus gated real-environment integration tests. Smoke coverage alone is insufficient.
 - Packaging and distribution tasks require `npm pack`-level verification so shipped artifacts, `files`, `exports`, and bundled binaries are proven from the actual package output.
@@ -35,19 +35,19 @@ Ruled out: Lighthouse integration (perf-audit already better), AI-powered select
 ```
 v1.5 Network Intelligence                v1.6 Verify                    v1.7 Visual Intelligence
 ┌─────────────────────────┐     ┌───────────────────────────┐     ┌──────────────────────────┐
-│ buffers.ts              │     │ src/expect.ts       [011] │     │ src/visual.ts      [020] │
+│ network/buffers.ts      │     │ src/expect.ts       [011] │     │ src/visual.ts      [020] │
 │   NetworkEntry + bodies │     │   condition parser        │     │   landmark scan          │
 │                   [001] │     │   check loop              │     │   contrast check         │
 │                         │     │                     [012] │     │   overlap detection      │
-│ browser-manager.ts      │     │                           │     │   overflow detection     │
+│ browser/manager.ts      │     │                           │     │   overflow detection     │
 │   body capture    [002] │     │ perf-audit/index.ts       │     │   viewport bleed         │
 │   header capture  [003] │     │   --budget logic    [013] │     │                    [021] │
 │                         │     │                           │     │                          │
-│ commands/read.ts        │     │ record-export.ts          │     │ commands/read.ts         │
+│ commands/read.ts        │     │ export/record.ts          │     │ commands/read.ts         │
 │   request cmd     [005] │     │   replay + expects  [014] │     │   layout cmd       [024] │
 │                         │     │   playwright export [015] │     │                          │
-│ commands/meta.ts        │     │                           │     │ commands/meta.ts         │
-│   api cmd         [006] │     │ commands/meta.ts          │     │   visual cmd       [023] │
+│ commands/meta/index.ts  │     │                           │     │ commands/meta/index.ts   │
+│   api cmd         [006] │     │ commands/meta/index.ts    │     │   visual cmd       [023] │
 │                         │     │   expect cmd        [012] │     │   a11y-audit cmd   [022] │
 │ cli.ts                  │     │                           │     │                          │
 │   --network-bodies[004] │     │                           │     │                          │
@@ -55,45 +55,45 @@ v1.5 Network Intelligence                v1.6 Verify                    v1.7 Vis
          │                                │                                │
          └────────────────────────────────┼────────────────────────────────┘
                                           │
-v2.0 App Automation                       │              v2.1 Workflows         v2.2 Ecosystem
+v2.0 App Automation                       │              v2.1 Workflows         v2.2 Agent Toolkit
 ┌─────────────────────────┐               │     ┌─────────────────────┐  ┌──────────────────┐
-│ browse-ax/ (Swift)      │               │     │ src/flow-parser.ts  │  │ src/plugin.ts    │
-│   tree retrieval  [025] │               │     │              [035]  │  │            [040] │
+│ browse-ax/ (Swift)      │               │     │ src/flow-parser.ts  │  │ automation/      │
+│   tree retrieval  [025] │               │     │              [035]  │  │   rules     [040]│
 │   actions         [026] │               │     │                     │  │                  │
-│   properties      [027] │               │     │ commands/meta.ts    │  │ src/sdk.ts       │
-│                         │               │     │   flow        [036] │  │            [042] │
+│   properties      [027] │               │     │ commands/meta/      │  │ commands/meta/   │
+│                         │               │     │   flow        [036] │  │   flows     [041]│
 │ src/app-manager.ts      │               │     │   retry       [037] │  │                  │
-│   connect/snapshot[029] │               │     │   watch       [038] │  │ detection/       │
-│   tap/fill/type   [030] │               │     │                     │  │  custom     [043]│
-│   text/screenshot [027] │               │     └─────────────────────┘  └──────────────────┘
-│                         │               │
-│ commands/app.ts   [031] │               │
-│ --app flag        [031] │               │
-└─────────────────────────┘               │
+│   connect/snapshot[029] │               │     │   watch       [038] │  │ src/sdk.ts [042] │
+│   tap/fill/type   [030] │               │     │                     │  │ detection/       │
+│   text/screenshot [027] │               │     └─────────────────────┘  │  custom     [043]│
+│                         │               │                               │                  │
+│ commands/app.ts   [031] │               │                               │ -- browse.json   │
+│ --app flag        [031] │               │                               │    .browse/*[045]│
+└─────────────────────────┘               │                               └──────────────────┘
 ```
 
 ## Existing Code Leverage
 
 | Sub-problem | Existing Code | Action |
 |------------|---------------|--------|
-| Network event capture | `browser-manager.ts:1495-1527` — page.on('request/response/requestfinished') | Extend with body capture |
-| Network buffer storage | `buffers.ts:14-21` — NetworkEntry interface | Extend with body/header fields |
+| Network event capture | `browser/manager.ts:1495-1527` — page.on('request/response/requestfinished') | Extend with body capture |
+| Network buffer storage | `network/buffers.ts:14-21` — NetworkEntry interface | Extend with body/header fields |
 | Network output format | `commands/read.ts:247-257` — network command | Reuse pattern for request command |
-| HAR export with bodies | `har.ts:21-66` — formatAsHar() | Extend with optional bodies |
-| Command registration | `command-registry.ts:7-38` — READ/WRITE/META sets | Extend for all new commands |
-| MCP tool definitions | `mcp-tools.ts:30+` — ToolDefinition pattern | Extend for all new commands |
-| Chain sets | `commands/meta.ts:385-425` — WRITE_SET/READ_SET | Extend for new commands |
+| HAR export with bodies | `network/har.ts:21-66` — formatAsHar() | Extend with optional bodies |
+| Command registration | `automation/registry.ts` — registry-derived category sets | Extend for all new commands |
+| MCP tool definitions | `mcp/tools/index.ts` — registry-derived tool definitions | Extend for all new commands |
+| Chain sets | `commands/meta/system.ts` — chain command dispatch | Extend for new commands |
 | perf-audit orchestrator | `perf-audit/index.ts:1-86` — PerfAuditReport | Extend with budget check |
 | perf-audit formatter | `perf-audit/formatter.ts:96-102` — formatPerfAudit | Extend with budget output |
-| Recording system | `record-export.ts:220-242` — exportReplay | Extend with expect steps |
-| Ref selector resolution | `record-export.ts:43-145` — resolveRefSelectors | Reuse for Playwright test export |
+| Recording system | `export/record.ts:220-242` — exportReplay | Extend with expect steps |
+| Ref selector resolution | `export/record.ts:43-145` — resolveRefSelectors | Reuse for Playwright test export |
 | page.evaluate pattern | `perf-audit/index.ts` — large evaluate for metrics | Reuse for visual/a11y evaluate |
 | Detection evaluate | `detection/frameworks.ts` — single evaluate, structured return | Reuse pattern for visual scan |
-| ARIA snapshot | `snapshot.ts:330-400` — tree + ref assignment | Reuse pattern for app snapshot |
-| Init script injection | `react-devtools.ts:46` — context.addInitScript | Reuse pattern for watch MutationObserver |
-| Session multiplexing | `session-manager.ts:62-157` — getOrCreate | Extend for app sessions |
-| Domain filter pattern | `domain-filter.ts` — class with init script generation | Model for AppManager |
-| Action context | `action-context.ts:266-349` — prepare/finalize pattern | Reuse for app action context |
+| ARIA snapshot | `browser/snapshot.ts:330-400` — tree + ref assignment | Reuse pattern for app snapshot |
+| Init script injection | `browser/react-devtools.ts:46` — context.addInitScript | Reuse pattern for watch MutationObserver |
+| Session multiplexing | `session/manager.ts:62-157` — getOrCreate | Extend for app sessions |
+| Domain filter pattern | `security/domain-filter.ts` — class with init script generation | Model for AppManager |
+| Action context | `automation/action-context.ts:266-349` — prepare/finalize pattern | Reuse for app action context |
 | Test infrastructure | `test/setup.ts` + `test/test-server.ts` + `test/fixtures/` | Extend with API + visual fixtures |
 | CLI flag pattern | `cli.ts:631-669` — flag extraction + env var + config | Reuse for --network-bodies, --app |
 | RequestOptions | `server.ts:221-226` — interface for per-request config | Extend with networkBodies |
@@ -108,9 +108,9 @@ v2.0 App Automation                       │              v2.1 Workflows       
 
 ### TASK-001: Extend NetworkEntry with body and header fields
 
-Add optional body and header fields to the `NetworkEntry` interface in `src/buffers.ts`. This is the foundation type change that all v1.5 features build on.
+Add optional body and header fields to the `NetworkEntry` interface in `network/buffers.ts`. This is the foundation type change that all v1.5 features build on.
 
-**Files:** `src/buffers.ts`, `src/types.ts`
+**Files:** `network/buffers.ts`, `src/types.ts`
 
 **Type:** feature
 **Effort:** S
@@ -126,11 +126,11 @@ Add optional body and header fields to the `NetworkEntry` interface in `src/buff
 
 ---
 
-### TASK-002: Capture request bodies in browser-manager.ts
+### TASK-002: Capture request bodies in browser/manager.ts
 
 Extend the `page.on('request', ...)` handler (line ~1495) to capture request bodies via `req.postData()` for POST/PUT/PATCH methods. Only when body capture is enabled (new `captureNetworkBodies` flag on BrowserManager).
 
-**Files:** `src/browser-manager.ts`, `src/buffers.ts`
+**Files:** `browser/manager.ts`, `network/buffers.ts`
 
 **Type:** feature
 **Effort:** S
@@ -148,11 +148,11 @@ Extend the `page.on('request', ...)` handler (line ~1495) to capture request bod
 
 ---
 
-### TASK-003: Capture response bodies in browser-manager.ts
+### TASK-003: Capture response bodies in browser/manager.ts
 
 Extend the `page.on('response', ...)` handler (line ~1506) to capture response bodies. Only for text-like content types (json, text, xml, html, javascript, css). Binary responses stored as `[binary N bytes]`. Body size capped at 256KB per entry (configurable via `BROWSE_NETWORK_BODY_LIMIT`).
 
-**Files:** `src/browser-manager.ts`
+**Files:** `browser/manager.ts`
 
 **Type:** feature
 **Effort:** M
@@ -200,7 +200,7 @@ Add `--network-bodies` flag to CLI (follows same pattern as `--json`, `--content
 
 New read command: `browse request <index|url-pattern>` inspects a single network entry in full detail (headers, bodies, timing). Searches by buffer index (numeric) or URL pattern match (most recent match). Formats output as structured text.
 
-**Files:** `src/commands/read.ts`, `src/command-registry.ts`
+**Files:** `src/commands/read.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** M
@@ -224,7 +224,7 @@ New read command: `browse request <index|url-pattern>` inspects a single network
 
 New meta command: `browse api <method> <url> [--body <json>] [--header <k:v>]` runs `fetch()` inside the page context, inheriting cookies and auth. Returns status, headers, and parsed body.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** M
@@ -246,9 +246,9 @@ New meta command: `browse api <method> <url> [--body <json>] [--header <k:v>]` r
 
 ### TASK-007: MCP tools + CLI help + chain for v1.5 commands
 
-Register `request` and `api` commands: MCP tool definitions in `mcp-tools.ts`, CLI help text in `cli.ts`, chain command sets in `meta.ts`, SAFE_TO_RETRY for `request` (read-only).
+Register `request` and `api` commands: MCP tool definitions in `mcp/tools/index.ts`, CLI help generated from `automation/registry.ts`, chain command sets in `commands/meta/system.ts`, SAFE_TO_RETRY for `request` (read-only).
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `src/commands/meta.ts`
+**Files:** `mcp/tools/index.ts`, `src/cli.ts`, `src/commands/meta/index.ts`
 
 **Type:** chore
 **Effort:** S
@@ -271,7 +271,7 @@ Register `request` and `api` commands: MCP tool definitions in `mcp-tools.ts`, C
 
 When body capture is enabled, include request/response bodies in HAR export. Bodies go into `request.postData.text` and `response.content.text` per HAR 1.2 spec.
 
-**Files:** `src/har.ts`
+**Files:** `src/network/har.ts`
 
 **Type:** feature
 **Effort:** S
@@ -350,9 +350,9 @@ Create `src/expect.ts` with `parseExpectArgs(args: string[]): ExpectConditions` 
 
 ### TASK-011: Implement `expect` meta command
 
-Add `case 'expect':` to `src/commands/meta.ts`. Polls conditions in a loop (100ms interval) until all pass or timeout. Exit with clear error on failure, silent OK on success.
+Add `case 'expect':` to `src/commands/meta/index.ts`. Polls conditions in a loop (100ms interval) until all pass or timeout. Exit with clear error on failure, silent OK on success.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** M
@@ -376,7 +376,7 @@ Add `case 'expect':` to `src/commands/meta.ts`. Polls conditions in a loop (100m
 
 Parse `--budget lcp:2500,cls:0.1,tbt:300` flag in perf-audit command. After audit completes, compare each metric against budget. If any budget exceeded, format a pass/fail report and throw an error (server returns 500 → CLI exits with code 1).
 
-**Files:** `src/perf-audit/index.ts`, `src/perf-audit/formatter.ts`, `src/commands/meta.ts`
+**Files:** `src/perf-audit/index.ts`, `src/perf-audit/formatter.ts`, `src/commands/meta/index.ts`
 
 **Type:** feature
 **Effort:** M
@@ -398,9 +398,9 @@ Parse `--budget lcp:2500,cls:0.1,tbt:300` flag in perf-audit command. After audi
 
 ### TASK-013: Extend exportReplay with expect assertion steps
 
-Extend `exportReplay()` in `src/record-export.ts` to serialize recorded `expect` commands as `waitForElement` or `waitForExpression` steps in the Chrome DevTools Recorder format. When an expect command is recorded, it should produce a proper assertion step.
+Extend `exportReplay()` in `src/export/record.ts` to serialize recorded `expect` commands as `waitForElement` or `waitForExpression` steps in the Chrome DevTools Recorder format. When an expect command is recorded, it should produce a proper assertion step.
 
-**Files:** `src/record-export.ts`
+**Files:** `src/export/record.ts`
 
 **Type:** feature
 **Effort:** S
@@ -421,9 +421,9 @@ Extend `exportReplay()` in `src/record-export.ts` to serialize recorded `expect`
 
 ### TASK-014: Add exportPlaywrightTest function
 
-Add `exportPlaywrightTest(steps: RecordedStep[]): string` to `src/record-export.ts`. Maps recorded commands to Playwright Test API calls with proper `expect()` assertions. Uses resolved selectors from recording.
+Add `exportPlaywrightTest(steps: RecordedStep[]): string` to `src/export/record.ts`. Maps recorded commands to Playwright Test API calls with proper `expect()` assertions. Uses resolved selectors from recording.
 
-**Files:** `src/record-export.ts`, `src/commands/meta.ts`
+**Files:** `src/export/record.ts`, `src/commands/meta/index.ts`
 
 **Type:** feature
 **Effort:** M
@@ -450,7 +450,7 @@ Add `exportPlaywrightTest(steps: RecordedStep[]): string` to `src/record-export.
 
 Register `expect` command: MCP tool definition, CLI help text, chain set, SAFE_TO_RETRY. Update perf-audit MCP tool description to mention `--budget`.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `src/commands/meta.ts`
+**Files:** `mcp/tools/index.ts`, `src/cli.ts`, `src/commands/meta/index.ts`
 
 **Type:** chore
 **Effort:** S
@@ -584,7 +584,7 @@ Extend `src/visual.ts` evaluate with 5 anomaly detectors: contrast failures (WCA
 
 Add text formatter for VisualReport: viewport summary line, landmark structure with indentation, issues list with severity markers. Register `visual` as META command.
 
-**Files:** `src/visual.ts`, `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/visual.ts`, `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** M
@@ -608,7 +608,7 @@ Add text formatter for VisualReport: viewport summary line, landmark structure w
 
 New read command: `browse layout <selector>` returns computed layout properties for one element and its positioning ancestors.
 
-**Files:** `src/visual.ts`, `src/commands/read.ts`, `src/command-registry.ts`
+**Files:** `src/visual.ts`, `src/commands/read.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** S
@@ -631,7 +631,7 @@ New read command: `browse layout <selector>` returns computed layout properties 
 
 Add WCAG 2.1 AA audit: contrast ratio check (all text), missing alt on images, inputs without labels, heading hierarchy (no skips), focus order (tabindex vs DOM order), touch targets (<44x44px), links with generic text, missing lang attribute. Returns score (0-100) + critical/warning findings.
 
-**Files:** `src/visual.ts`, `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/visual.ts`, `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** L
@@ -658,7 +658,7 @@ Add WCAG 2.1 AA audit: contrast ratio check (all text), missing alt on images, i
 
 Register `visual`, `layout`, `a11y-audit`: MCP tools, CLI help, chain sets, SAFE_TO_RETRY (all read-only).
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `src/commands/meta.ts`
+**Files:** `mcp/tools/index.ts`, `src/cli.ts`, `src/commands/meta/index.ts`
 
 **Type:** chore
 **Effort:** S
@@ -861,7 +861,7 @@ Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)
 
 Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to AppManager. Add `--app <name>` flag to CLI and server routing, and introduce a shared session-target abstraction so browser and app sessions route through the same top-level dispatch model without web regressions.
 
-**Files:** `src/commands/app.ts` (new), `src/cli.ts`, `src/server.ts`, `src/session-manager.ts`, `src/command-registry.ts`, `src/types.ts`
+**Files:** `src/commands/app.ts` (new), `src/cli.ts`, `src/server.ts`, `src/session/manager.ts`, `automation/registry.ts`, `src/types.ts`
 
 **Type:** feature
 **Effort:** M
@@ -888,7 +888,7 @@ Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to A
 
 Wire action context (before/after state capture + delta) into app commands. State = current screen title, focused element, element count. Delta = screen changed, focus changed, element count changed.
 
-**Files:** `src/app-manager.ts`, `src/action-context.ts`
+**Files:** `src/app-manager.ts`, `src/automation/action-context.ts`
 
 **Type:** feature
 **Effort:** M
@@ -911,7 +911,7 @@ Wire action context (before/after state capture + delta) into app commands. Stat
 
 Register app-specific MCP tools, update CLI help with --app usage, and extend `doctor` to validate bridge availability plus Accessibility permission guidance.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `src/commands/meta.ts`
+**Files:** `mcp/tools/index.ts`, `src/cli.ts`, `src/commands/meta/index.ts`
 
 **Type:** chore
 **Effort:** S
@@ -990,9 +990,9 @@ Create `src/flow-parser.ts` that parses flow YAML files into `FlowStep[]`. Each 
 
 ### TASK-036: Flow meta command
 
-Add `case 'flow':` to `src/commands/meta.ts`. Reads YAML file, parses with flow-parser, executes steps sequentially through existing command handlers. Stops on first failure. Reports progress per step.
+Add `case 'flow':` to `src/commands/meta/index.ts`. Reads YAML file, parses with flow-parser, executes steps sequentially through existing command handlers. Stops on first failure. Reports progress per step.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** M
@@ -1014,9 +1014,9 @@ Add `case 'flow':` to `src/commands/meta.ts`. Reads YAML file, parses with flow-
 
 ### TASK-037: Retry meta command
 
-Add `case 'retry':` to `src/commands/meta.ts`. Wraps any command in a retry loop with configurable max attempts and exponential backoff. Uses expect's condition parser for `--until` conditions.
+Add `case 'retry':` to `src/commands/meta/index.ts`. Wraps any command in a retry loop with configurable max attempts and exponential backoff. Uses expect's condition parser for `--until` conditions.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** S
@@ -1038,9 +1038,9 @@ Add `case 'retry':` to `src/commands/meta.ts`. Wraps any command in a retry loop
 
 ### TASK-038: Watch meta command
 
-Add `case 'watch':` to `src/commands/meta.ts`. Injects MutationObserver via `page.evaluate()`, polls for changes, executes callback command when change detected.
+Add `case 'watch':` to `src/commands/meta/index.ts`. Injects MutationObserver via `page.evaluate()`, polls for changes, executes callback command when change detected.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/commands/meta/index.ts`, `automation/registry.ts`
 
 **Type:** feature
 **Effort:** M
@@ -1065,7 +1065,7 @@ Add `case 'watch':` to `src/commands/meta.ts`. Injects MutationObserver via `pag
 
 Register flow, retry, watch commands. Write unit + integration tests for parser and failure paths.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `test/features.test.ts`, `test/flow-parser.test.ts` (new)
+**Files:** `mcp/tools/index.ts`, `src/cli.ts`, `test/features.test.ts`, `test/flow-parser.test.ts` (new)
 
 **Type:** chore
 **Effort:** M
@@ -1089,62 +1089,61 @@ Register flow, retry, watch commands. Write unit + integration tests for parser 
 
 ---
 
-### v2.2 — Ecosystem
+### v2.2 — Agent Toolkit
 
 ---
 
-### TASK-040: Plugin loader and registry
+### TASK-040: Custom audit rules
 
-Create `src/plugin.ts` with project-local plugin discovery, loading, and registry. Plugins are opt-in trusted code loaded from the current project root, not from global npm locations. The registry must participate in command dispatch and MCP tool exposure.
+Add project-local audit rule loading from `.browse/rules/*.json`. Rules are declarative JSON artifacts checked into the project, not executable plugin code. They extend `perf-audit` and `a11y-audit` with project-specific checks without changing browse source.
 
-**Files:** `src/plugin.ts` (new), `src/command-registry.ts`, `src/server.ts`, `src/mcp-tools.ts`
+**Files:** `src/automation/rules.ts` (new), `src/perf-audit/index.ts`, `src/commands/meta/inspection.ts`, `src/config.ts`
 
 **Type:** feature
-**Effort:** L
+**Effort:** M
 
 **Acceptance Criteria:**
-- [ ] Detects project root from `cwd` / nearest `package.json`; plugin discovery is skipped with a clear message when no project root exists
-- [ ] Scans project-local `node_modules/browse-plugin-*` for installed plugins on server startup; global npm/plugin injection is out of scope
-- [ ] Each plugin's `register(ctx)` called with context providing addCommand, addDetection, addAuditRule and an explicit plugin API version contract
-- [ ] `addCommand(name, category, handler)` registers command in dynamic dispatch and dynamic MCP tool exposure
-- [ ] `addDetection(signature)` adds to detection database
-- [ ] `addAuditRule(rule)` adds to a11y-audit or perf-audit
-- [ ] Plugin errors caught and logged (don't crash server)
-- [ ] Edge case: duplicate command name → warning logged, first registration wins
+- [ ] `perf-audit` and `a11y-audit` load `.browse/rules/*.json` from the detected project root in addition to built-in rules
+- [ ] Rule format is versioned and declarative: arbitrary JS / `eval` / plugin hooks are out of scope
+- [ ] Supports at least two built-in rule kinds: metric-threshold rules for `perf-audit` and selector-count rules for `a11y-audit`
+- [ ] Custom findings are labeled `[custom]` and include the rule name plus source file path
+- [ ] Edge case: malformed JSON or unknown rule kind → warning with file name, file skipped, audit continues
+- [ ] Edge case: invalid target (`perf-audit` vs `a11y-audit`) → warning with file name, file skipped
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Priority:** P0
+**Depends on:** TASK-024
+**Priority:** P1
 
 ---
 
-### TASK-041: Plugin install/remove/list commands
+### TASK-041: Saved flows in `.browse/flows/`
 
-Add `browse plugin install <name>`, `browse plugin remove <name>`, `browse plugin list` subcommands. Install/remove operations run in the detected project root using project-local dependencies.
+Add project-local saved flows on top of the v2.1 workflow engine. `browse flow save <name>` captures the current recording as canonical YAML in `.browse/flows/`. `browse flow run <name>` replays a saved flow. `browse flow list` enumerates available project flows.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`, `src/plugin.ts`
+**Files:** `src/commands/meta/index.ts`, `src/commands/meta/flows.ts` (new), `src/automation/registry.ts`, `src/config.ts`
 
 **Type:** feature
-**Effort:** S
+**Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `browse plugin install shopify-audit` runs `npm install -D browse-plugin-shopify-audit` in the detected project root
-- [ ] `browse plugin remove shopify-audit` runs `npm uninstall browse-plugin-shopify-audit` in the detected project root
-- [ ] `browse plugin list` scans node_modules and lists installed browse-plugin-* packages with version
-- [ ] Server restart required after install/remove (or lazy reload on next command)
-- [ ] Edge case: no project root / no `package.json` → clear error explaining that plugin management is project-local only
-- [ ] Edge case: npm not found → "npm is required for plugin management"
+- [ ] `browse flow save <name>` writes `.browse/flows/<name>.yaml` using a deterministic, canonical YAML format
+- [ ] `browse flow run <name>` resolves the saved file from project-local flow directories and executes it through the same parser/executor path as file-based flows
+- [ ] `browse flow list` prints saved flow names relative to the project flow root
+- [ ] Saved flows are normal project files that can be committed and edited without any install step
+- [ ] Edge case: saving without an active recording → clear error
+- [ ] Edge case: missing named flow or path traversal (`../`) attempt → clear error, no filesystem escape
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** none
-**Depends on:** TASK-040
+**Depends on:** TASK-039
 **Priority:** P1
 
 ---
 
 ### TASK-042: SDK mode — library entry point
 
-Create `src/sdk.ts` that exports a clean, typed API wrapping BrowserManager. Publish alongside CLI via `package.json` `exports` field. Library mode skips HTTP server and is validated from the packed npm artifact, independent of the plugin system.
+Create `src/sdk.ts` that exports a clean, typed API for direct programmatic browser use. Publish alongside the CLI via `package.json` `exports`. SDK mode uses the same underlying browser/runtime primitives as browse commands but skips the HTTP server entirely.
 
 **Files:** `src/sdk.ts` (new), `package.json`, `scripts/build-all.sh`
 
@@ -1168,7 +1167,7 @@ Create `src/sdk.ts` that exports a clean, typed API wrapping BrowserManager. Pub
 
 ### TASK-043: Custom detection signatures
 
-Extend detection loader to scan `.browse/detections/` for JSON signature files. Each file defines name, detect expression, version expression, and optional perfHints.
+Extend the detection loader to scan `.browse/detections/*.json` for project-local signatures. These files let agents teach browse about project-specific frameworks or stacks during normal repo work.
 
 **Files:** `src/detection/index.ts`
 
@@ -1177,10 +1176,10 @@ Extend detection loader to scan `.browse/detections/` for JSON signature files. 
 
 **Acceptance Criteria:**
 - [ ] `browse detect` loads `.browse/detections/*.json` alongside built-in signatures
-- [ ] Custom signature format: `{ name, detect, version, category, perfHints[] }`
+- [ ] Custom signature format is versioned and explicit: `{ version: 1, name, detect, version, category, perfHints[] }`
 - [ ] `detect` and `version` are JS expressions evaluated via page.evaluate
-- [ ] Custom detections appear in output with `[custom]` label
-- [ ] Edge case: malformed JSON → warning logged, file skipped
+- [ ] Custom detections appear in output with `[custom]` label and source file path
+- [ ] Edge case: malformed JSON or invalid schema → warning with file name, file skipped
 - [ ] Edge case: detect expression throws → caught, framework marked as not detected
 
 **Agent:** nodejs-cli-senior-engineer
@@ -1189,57 +1188,57 @@ Extend detection loader to scan `.browse/detections/` for JSON signature files. 
 
 ---
 
-### TASK-044: MCP tools + tests for v2.2
+### TASK-044: Agent Toolkit integration, MCP, and packaging tests
 
-Register plugin commands as MCP tools. Write integration tests for plugin loading, SDK mode, and custom detections plus contract tests for plugin isolation and packed-SDK verification.
+Write integration and contract tests for the full v2.2 toolkit surface: SDK mode, custom detections, custom audit rules, saved flows, config expansion, and the CLI/MCP metadata that exposes them.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `test/features.test.ts`, `test/plugin.test.ts` (new), `test/sdk-pack.test.ts` (new)
+**Files:** `src/mcp/tools/index.ts`, `src/cli.ts`, `test/features.test.ts`, `test/agent-toolkit.test.ts` (new), `test/sdk-pack.test.ts` (new)
 
 **Type:** test
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `browse_plugin_list` MCP tool
-- [ ] CLI help lists plugin commands
-- [ ] Test: plugin list returns empty array when no plugins installed
-- [ ] Test: plugin load failure is logged and isolated without crashing server startup
-- [ ] Test: duplicate plugin command name keeps the first registration and emits warning output
-- [ ] Test: plugin-provided command appears in dynamic dispatch and MCP tool definitions
+- [ ] CLI help lists `flow save`, `flow run`, `flow list` and documents the project-local `.browse/*` / `browse.json` toolkit surfaces
+- [ ] If `flow` is MCP-exposed from v2.1, the MCP tool schema and arg decoding cover the new `save|run|list` actions without adding a second workflow tool
 - [ ] Test: SDK mode createBrowser() returns working API, close() cleans up
 - [ ] Test: SDK goto + text returns page content
 - [ ] Test: packed tarball install exposes the SDK entry point from `exports`
 - [ ] Test: custom detection JSON in temp .browse/detections/ directory detected by browse detect
-- [ ] Edge case test: malformed custom detection JSON → warning, not crash
+- [ ] Test: custom rule JSON in temp .browse/rules/ directory is applied by `perf-audit` and `a11y-audit`
+- [ ] Test: `flow save`, `flow run`, and `flow list` work from a temp project root
+- [ ] Test: `browse.json` precedence is CLI flags > env vars > config defaults
+- [ ] Test: startup flows run once per new session and can be disabled for a single invocation
+- [ ] Edge case test: malformed detection/rule JSON → warning, not crash
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Depends on:** TASK-040, TASK-041, TASK-042, TASK-043
+**Depends on:** TASK-040, TASK-041, TASK-042, TASK-043, TASK-045
 **Priority:** P2
 
 ---
 
-### TASK-045: Plugin API documentation
+### TASK-045: Project config expansion
 
-Document plugin API: how to create a browse plugin, register function interface, addCommand/addDetection/addAuditRule methods, the project-local trust/install model, and publishing to npm.
+Expand `browse.json` into the project-local control plane for the agent toolkit. Project config should define defaults and file roots for detections, rules, and flows, while remaining subordinate to CLI flags and env vars.
 
-**Files:** `docs/plugin-api.md` (new)
+**Files:** `src/config.ts`, `src/cli.ts`, `src/automation/rules.ts`, `src/detection/index.ts`, `src/commands/meta/flows.ts`, `docs/agent-toolkit.md` (new)
 
-**Type:** docs
+**Type:** feature
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] Explains plugin naming convention (browse-plugin-*)
-- [ ] Explains that plugins are project-local trusted code loaded from the current package root, not from global installs
-- [ ] Shows complete register function signature with TypeScript types
-- [ ] Documents plugin API versioning / compatibility expectations
-- [ ] Example: creating a custom perf-audit rule
-- [ ] Example: creating a custom command
-- [ ] Publishing instructions (npm publish)
+- [ ] `browse.json` supports: `defaultSession`, `defaultContext`, `startupFlows`, `detectionPaths`, `rulePaths`, and `flowPaths`
+- [ ] Relative paths resolve from the detected project root
+- [ ] Precedence is explicit and tested: CLI flags > env vars > `browse.json` > built-in defaults
+- [ ] `startupFlows` run only when a session is first created, not on every subsequent command in the same session
+- [ ] `--no-startup-flows` disables startup-flow execution for the current invocation
+- [ ] `docs/agent-toolkit.md` explains the `.browse/` layout, config keys, precedence, and file-format expectations
+- [ ] Edge case: missing configured flow/rule/detection path or unknown startup flow name → clear error naming the offending config field
 
 **Agent:** general-purpose
 **Review:** none
-**Depends on:** TASK-040, TASK-041
-**Priority:** P3
+**Depends on:** TASK-040, TASK-041, TASK-043
+**Priority:** P1
 
 ---
 
@@ -1258,8 +1257,10 @@ Document plugin API: how to create a browse plugin, register function interface,
 | Runtime split breaks existing browser sessions | TASK-031, TASK-034 | Introduce shared session-target abstraction and require browser-regression coverage while app sessions are active. |
 | Swift bridge packaging drifts from shipped npm artifact | TASK-028 | Verify bridge asset presence through `npm pack`, not only local source builds. |
 | Flow YAML syntax errors confuse agents | TASK-035, TASK-039 | Use explicit YAML parser dependency with line/column errors. Cover malformed YAML, duplicate keys, and unknown commands in parser tests. |
-| Plugin discovery loads the wrong install scope or untrusted code | TASK-040, TASK-041, TASK-045 | Restrict discovery to the detected project root, document the trust model, and fail clearly when no project root exists. |
-| Plugin API breaking changes | TASK-040, TASK-045 | Version the plugin API, document compatibility expectations, and test duplicate/failing plugins without crashing server startup. |
+| Custom rules become a second plugin system via arbitrary code execution | TASK-040, TASK-044 | Keep rule files declarative JSON only. Reject JS/eval-based rule shapes in schema validation and cover malformed/unknown rule types in contract tests. |
+| Saved-flow serialization drifts from the v2.1 parser/runtime | TASK-041, TASK-044 | Use one canonical YAML serializer and route `flow run <name>` through the same parser/executor path as file-based flows. Cover save→run round trips. |
+| Startup flows cause hidden side effects or rerun on every command | TASK-041, TASK-044, TASK-045 | Run startup flows only when a session is first created, print which flows ran, and support `--no-startup-flows` for the current invocation. |
+| Project-local toolkit files are silently ignored or resolved from the wrong root | TASK-040, TASK-041, TASK-043, TASK-045 | Resolve all toolkit paths from the detected project root, and warn or fail with file names and config keys when paths or schemas are invalid. |
 | SDK mode ships but `exports` / tarball contents are wrong | TASK-042, TASK-044 | Validate packed tarball import behavior in a temp install using the published `exports` surface. |
 
 ## Test Coverage Map
@@ -1307,10 +1308,14 @@ Document plugin API: how to create a browse plugin, register function interface,
 | Retry max-failure reporting | TASK-039 | integration |
 | Watch DOM change | TASK-039 | integration |
 | Watch selector-missing / navigation termination | TASK-039 | integration |
-| Plugin loading | TASK-044 | integration |
-| Plugin failure isolation | TASK-044 | contract |
-| Duplicate plugin command handling | TASK-044 | contract |
-| Dynamic MCP exposure for plugin commands | TASK-044 | contract |
+| custom audit rule schema validation | TASK-044 | contract |
+| custom audit rule application (perf + a11y) | TASK-044 | integration |
+| flow save canonical YAML output | TASK-044 | contract |
+| flow run by saved name | TASK-044 | integration |
+| flow list from project root | TASK-044 | integration |
+| toolkit path resolution and invalid-path errors | TASK-044 | contract |
+| config precedence (CLI > env > browse.json > defaults) | TASK-044 | contract |
+| startup flows run once + disable flag | TASK-044 | integration |
 | SDK createBrowser + commands | TASK-044 | integration |
 | Packed tarball SDK import via `exports` | TASK-044 | packaging |
 | Custom detection signatures | TASK-044 | integration |
@@ -1358,11 +1363,11 @@ Document plugin API: how to create a browse plugin, register function interface,
   "TASK-037": ["TASK-010"],
   "TASK-038": ["TASK-011"],
   "TASK-039": ["TASK-036", "TASK-037", "TASK-038"],
-  "TASK-040": [],
-  "TASK-041": ["TASK-040"],
+  "TASK-040": ["TASK-024"],
+  "TASK-041": ["TASK-039"],
   "TASK-042": [],
   "TASK-043": [],
-  "TASK-044": ["TASK-040", "TASK-041", "TASK-042", "TASK-043"],
-  "TASK-045": ["TASK-040", "TASK-041"]
+  "TASK-044": ["TASK-040", "TASK-041", "TASK-042", "TASK-043", "TASK-045"],
+  "TASK-045": ["TASK-040", "TASK-041", "TASK-043"]
 }
 ```

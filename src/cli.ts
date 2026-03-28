@@ -763,7 +763,7 @@ export async function main() {
       cdpUrl = `http://127.0.0.1:${cdpPort}`;
     } else {
       // --connect: auto-discover a running Chrome instance
-      const { discoverChrome } = await import('./chrome-discover');
+      const { discoverChrome } = await import('./engine/chrome');
       const discovered = await discoverChrome();
       if (!discovered) {
         console.error(
@@ -821,7 +821,7 @@ export async function main() {
 
   // Resolve cloud provider CDP URL
   if (providerName) {
-    const { resolveProviderCdpUrl } = await import('./cloud-providers');
+    const { resolveProviderCdpUrl } = await import('./engine/providers');
     try {
       const result = await resolveProviderCdpUrl(providerName, LOCAL_DIR);
       cliFlags.cdpUrl = result.cdpUrl;
@@ -856,104 +856,8 @@ export async function main() {
   }
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-    console.log(`browse — Fast headless browser for AI coding agents
-
-Usage: browse [options] <command> [args...]
-
-Navigation:     goto <url> | back | forward | reload | url
-Content:        text | html [sel] | links | forms | accessibility
-Interaction:    click <sel> | rightclick <sel> | dblclick <sel>
-                fill <sel> <val> | select <sel> <val>
-                hover <sel> | focus <sel> | tap <sel>
-                check <sel> | uncheck <sel> | drag <src> <tgt>
-                type <text> | press <key> | keydown <key> | keyup <key>
-                keyboard inserttext <text>
-                scroll [sel|up|down] | scrollinto <sel> | scrollintoview <sel>
-                swipe <up|down|left|right> [px]
-                wait <sel|ms|--url|--text|--fn|--load|--network-idle>
-                viewport <WxH> | highlight <sel> | download <sel> [path]
-                upload <sel> <files...>
-                dialog-accept [text] | dialog-dismiss
-Mouse:          mouse move <x> <y> | mouse down [btn] | mouse up [btn]
-                mouse wheel <dy> [dx]
-Settings:       set geo <lat> <lng> | set media <dark|light|no-preference>
-                set context <on|off>
-Device:         emulate <device> | emulate reset | devices [filter]
-Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
-                element-state <sel> | box <sel> | dialog
-                console [--clear] | errors [--clear] | network [--clear]
-                cookies | storage [set <k> <v>] | perf
-                value <sel> | count <sel> | clipboard [write <text>]
-Visual:         screenshot [sel|@ref] [path] [--full] [--clip x,y,w,h]
-                screenshot --annotate | pdf [path] | responsive [prefix]
-Snapshot:       snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]
-                snapshot-diff
-Find:           find role|text|label|placeholder|testid|alt|title <query>
-                find first|last <sel> | find nth <n> <sel>
-Compare:        diff <url1> <url2> | screenshot-diff <baseline> [current]
-Multi-step:     chain (reads JSON from stdin)
-Cookies:        cookie <n>=<v> | cookie set <n> <v> [--domain --secure]
-                cookie clear | cookie export <file> | cookie import <file>
-Network:        offline [on|off] | route <pattern> block|fulfill
-                header <n>:<v> | useragent <str>
-                initscript set <code> | clear | show
-Recording:      har start | har stop [path]
-                video start [dir] | video stop | video status
-                record start | record stop | record status
-                record export browse|replay [--selectors css,aria,xpath,text] [path]
-Coverage:       coverage start | coverage stop                    JS/CSS code coverage analysis
-Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
-Frames:         frame <sel> | frame main
-Sessions:       sessions | session-close <id>
-Profiles:       --profile <name> | profile list|delete|clean
-Auth:           auth save <name> <url> <user> <pass|--password-stdin>
-                auth login <name> | auth list | auth delete <name>
-                cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]
-State:          state save|load|list|show|clean [name]
-Handoff:        handoff [reason] | resume
-React:          react-devtools enable|disable|tree|props|suspense|errors
-                react-devtools profiler|hydration|renders|owners|context
-Providers:      provider save|list|delete <name> [api-key]
-Detect:         detect (frameworks, CDN, third-party, SaaS, infra)
-Performance:    perf-audit [url] [--no-coverage] [--no-detect] [--json]
-                perf-audit save [name]             Save audit report to .browse/audits/
-                perf-audit compare <base> [curr]   Compare saved audit vs current or another
-                perf-audit list                    List saved audit reports
-                perf-audit delete <name>           Delete a saved audit report
-Debug:          inspect (requires BROWSE_DEBUG_PORT)
-Server:         status | instances | stop | restart | doctor | upgrade
-Setup:          install-skill [path]
-
-Options:
-  --session <id>           Named session (isolates tabs, refs, cookies)
-  --profile <name>         Persistent browser profile (own Chromium, full state persistence)
-  --json                   Wrap output as {success, data, command}
-  --content-boundaries     Wrap page content in nonce-delimited markers
-  --context [state|delta|full]  Action context (state=changes, delta=ARIA diff, full=snapshot)
-  --allowed-domains <d,d>  Block navigation/resources outside allowlist
-  --headed                 Run browser in headed (visible) mode
-  --chrome                 Launch system Chrome (uses your profile, cookies, extensions)
-  --max-output <n>         Truncate output to N characters
-  --state <path>           Load state file (cookies/storage) before first command
-  --connect                Auto-discover and connect to running Chrome
-  --cdp <port>             Connect to Chrome on specific debugging port
-  --provider <name>        Cloud browser provider (browserless, browserbase)
-  --runtime <name>         Browser engine (playwright, rebrowser, lightpanda)
-  --mcp                    Run as MCP server (for Cursor, Windsurf, Cline)
-  --mcp --json             MCP server with JSON-wrapped responses
-
-Snapshot flags:
-  -i            Interactive elements only (terse flat list by default)
-  -f            Full — indented tree with props and children (use with -i)
-  -V            Viewport — only elements visible in current viewport
-  -c            Compact — remove empty structural elements
-  -C            Cursor-interactive — detect divs with cursor:pointer,
-                onclick, tabindex, data-action (missed by ARIA tree)
-  -d N          Limit tree depth to N levels
-  -s <sel>      Scope to CSS selector
-
-Refs:           After 'snapshot', use @e1, @e2... as selectors:
-                click @e3 | fill @e4 "value" | hover @e1`);
+    const { generateHelp } = await import('./automation/registry');
+    console.log(generateHelp());
     process.exit(0);
   }
 

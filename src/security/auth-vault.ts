@@ -10,9 +10,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { BrowserManager } from './browser-manager';
-import { DEFAULTS } from './constants';
-import { resolveEncryptionKey, encrypt, decrypt } from './encryption';
+import type { BrowserManager } from '../browser/manager';
+import { DEFAULTS } from '../constants';
+import { resolveEncryptionKey, encrypt, decrypt } from '../session/encryption';
 import { sanitizeName } from './sanitize';
 
 interface StoredCredential {

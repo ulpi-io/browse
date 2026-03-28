@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as net from 'net';
 import { execSync, spawn, type ChildProcess } from 'child_process';
 import type { Browser } from 'playwright';
-import { DEFAULTS } from './constants';
+import { DEFAULTS } from '../constants';
 
 const PROFILE_PATHS = [
   'Google/Chrome',
@@ -306,7 +306,7 @@ export async function launchChrome(): Promise<ChromeLaunchResult> {
   // Import cookies from real Chrome profile into this clean Chrome instance
   if (realDataDir) {
     try {
-      const { importCookies, listDomains } = await import('./cookie-import');
+      const { importCookies, listDomains } = await import('../browser/cookie-import');
       const { domains } = listDomains('chrome');
       if (domains.length > 0) {
         const allDomains = domains.map(d => d.domain);

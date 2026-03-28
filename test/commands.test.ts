@@ -10,7 +10,7 @@ import { resolveServerScript, SAFE_TO_RETRY } from '../src/cli';
 import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
-import { consoleBuffer, networkBuffer, addConsoleEntry, addNetworkEntry, consoleTotalAdded, networkTotalAdded } from '../src/buffers';
+import { consoleBuffer, networkBuffer, addConsoleEntry, addNetworkEntry, consoleTotalAdded, networkTotalAdded } from '../src/network/buffers';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 import * as path from 'path';

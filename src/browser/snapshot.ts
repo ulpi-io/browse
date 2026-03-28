@@ -19,7 +19,7 @@
  */
 
 import type { Page, Frame, FrameLocator, Locator } from 'playwright';
-import type { BrowserManager } from './browser-manager';
+import type { BrowserManager } from './manager';
 
 // Roles considered "interactive" for the -i flag
 const INTERACTIVE_ROLES = new Set([
