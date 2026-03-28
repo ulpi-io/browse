@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dynamic Page</title>
+</head>
+<body>
+  <h1>Dynamic Page</h1>
+  <button id="add-btn" onclick="addItem()">Add Item</button>
+  <input type="text" placeholder="Search">
+  <a href="#">Home</a>
+  <div id="items"></div>
+  <script>
+    function addItem() {
+      const btn = document.createElement('button');
+      btn.textContent = 'Add to Cart';
+      document.getElementById('items').appendChild(btn);
+    }
+  </script>
+</body>
+</html>
