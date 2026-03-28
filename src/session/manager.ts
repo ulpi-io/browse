@@ -35,6 +35,8 @@ export interface Session {
   lastActivity: number;
   createdAt: number;
   contextLevel: ContextLevel;
+  /** When true, write commands auto-wait for page settled signal before returning */
+  settleMode: boolean;
 }
 
 export class SessionManager {
@@ -140,6 +142,7 @@ export class SessionManager {
       lastActivity: Date.now(),
       createdAt: Date.now(),
       contextLevel: 'off',
+      settleMode: false,
     };
     this.sessions.set(sessionId, session);
     this.targets.set(sessionId, ct);

@@ -15,6 +15,7 @@ export interface BrowseConfig {
   viewport?: string;
   device?: string;
   context?: boolean;
+  networkBodies?: boolean;
 }
 
 /**

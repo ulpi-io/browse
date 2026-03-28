@@ -277,6 +277,15 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
                   : 'off';
               }
             }
+
+            // Detect set settle command
+            if (event.command === 'set' && event.args[0] === 'settle') {
+              if (!event.args[1]) {
+                result = `Settle mode: ${session.settleMode ? 'on' : 'off'}`;
+              } else {
+                session.settleMode = event.args[1] === 'on';
+              }
+            }
           }
 
           // Reset failure counter on success
@@ -467,6 +476,7 @@ async function start() {
       lastActivity: Date.now(),
       createdAt: Date.now(),
       contextLevel: 'off',
+      settleMode: false,
     };
 
     console.log(`[browse] Profile mode: "${profileName}" (${profileDir})`);
@@ -582,6 +592,14 @@ async function start() {
                 status: 400, headers: { 'Content-Type': 'application/json' },
               });
             }
+          }
+        }
+
+        // Enable network body capture if requested (first command only per session)
+        if (req.headers.get('x-browse-network-bodies') === '1') {
+          const bt = sessionBt(session);
+          if (!bt.getCaptureNetworkBodies()) {
+            bt.setCaptureNetworkBodies(true);
           }
         }
 

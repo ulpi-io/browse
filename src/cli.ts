@@ -37,6 +37,7 @@ const cliFlags = {
   provider: '' as string,
   runtime: '' as string,
   context: '' as string,
+  networkBodies: false,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -461,6 +462,9 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   if (cliFlags.context) {
     headers['X-Browse-Context'] = cliFlags.context;
   }
+  if (cliFlags.networkBodies) {
+    headers['X-Browse-Network-Bodies'] = '1';
+  }
 
   try {
     const resp = await fetch(`http://127.0.0.1:${state.port}/command`, {
@@ -673,6 +677,15 @@ export async function main() {
     contextMode = 'state';
   }
 
+  // Extract --network-bodies flag (only before command)
+  let networkBodies = false;
+  const nbIdx = args.indexOf('--network-bodies');
+  if (nbIdx !== -1 && nbIdx < findCommandIndex(args)) {
+    networkBodies = true;
+    args.splice(nbIdx, 1);
+  }
+  networkBodies = networkBodies || process.env.BROWSE_NETWORK_BODIES === '1' || config.networkBodies === true;
+
   // Extract --allowed-domains flag (only before command)
   let allowedDomains: string | undefined;
   const domIdx = args.indexOf('--allowed-domains');
@@ -818,6 +831,7 @@ export async function main() {
   cliFlags.runtime = runtimeName || '';
   cliFlags.provider = providerName || '';
   cliFlags.context = contextMode;
+  cliFlags.networkBodies = networkBodies;
 
   // Resolve cloud provider CDP URL
   if (providerName) {
