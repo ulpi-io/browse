@@ -109,8 +109,9 @@ CLI [--session <id>] → Server (node:http) → SessionManager → BrowserManage
 - `SessionBuffers` class holds per-session buffers; legacy global exports in buffers.ts for backward compat
 - `SessionBuffers` has O(1) running counters (`consoleErrorCount`, `networkPendingCount`) for action context
 - Ring buffers cap at 50K entries (BUFFER_HIGH_WATER_MARK)
-- Action context: opt-in `[context]` line appended to write command responses showing state delta (URL, title, tabs, dialogs, errors)
-- Context activation: `--context` CLI flag, `X-Browse-Context: 1` header, `browse set context on/off`, always-on in MCP mode
+- Action context levels: `state` (page changes), `delta` (ARIA diff with refs), `full` (complete snapshot with refs)
+- Context activation: `--context [state|delta|full]`, `X-Browse-Context: state|delta|full`, `browse set context off|state|delta|full`, MCP default `state`
+- Context orchestration: `prepareWriteContext()` before write, `finalizeWriteContext()` after — wraps all snapshot work in try/catch
 - Device emulation recreates the entire browser context (Playwright limitation)
 - State files live in `.browse/` (auto-gitignored) or `/tmp` as fallback
 - Port range: 9400-10400 (1001 ports for multi-process isolation)

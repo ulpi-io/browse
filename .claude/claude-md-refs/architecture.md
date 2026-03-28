@@ -57,6 +57,7 @@ src/server.ts
   |     +-- src/browser-manager.ts
   |     +-- src/buffers.ts
   |     +-- src/types.ts
+  |     +-- src/snapshot.ts (for delta/full context)
   +-- src/policy.ts
   +-- src/commands/read.ts
   |     +-- src/browser-manager.ts
@@ -193,24 +194,35 @@ Wildcard: *.example.com matches example.com AND any subdomain
 ## Action Context
 
 ```
-Write command execution with context enabled:
+Write command execution with context level:
 
-1. capturePageState(page, bm, buffers) → PageState (before)
+1. prepareWriteContext(level, bm, buffers) → WriteContextCapture
+     state: captures PageState
+     delta: captures PageState + stores baseline from bm.getLastSnapshot()
+     full:  captures PageState
+     off:   no-op
 2. handleWriteCommand(command, args, bm, domainFilter)
-3. capturePageState(page, bm, buffers) → PageState (after)
-4. buildContextDelta(before, after) → ContextDelta | null
-5. formatContextLine(delta, command) → "[context] → /path | title: ..."
-6. Append to result (after truncation, before boundaries/JSON wrapping)
+3. finalizeWriteContext(capture, bm, buffers, result, command) → enriched result
+     state: capturePageState → buildContextDelta → "[context] → /path | title: ..."
+     delta: handleSnapshot(opts) → formatAriaDelta(baseline, new) → "[snapshot-delta] +N -M =K"
+     full:  handleSnapshot(opts) → "[snapshot]\n@e1 [button] ..."
+     off:   return result unchanged
+
+Context Levels:
+  state  — page state changes only (URL, title, tabs, dialogs, errors)
+  delta  — state + ARIA diff with refs for added/removed elements
+  full   — state + complete ARIA snapshot with fresh refs
 
 Activation (any of):
-  - CLI: --context flag or BROWSE_CONTEXT=1 or browse.json { context: true }
-  - HTTP: X-Browse-Context: 1 header
-  - Session: browse set context on/off
-  - MCP: always enabled for write commands
+  - CLI: --context [state|delta|full] or BROWSE_CONTEXT=state|delta|full
+  - HTTP: X-Browse-Context: state|delta|full (1 maps to state for compat)
+  - Session: browse set context off|state|delta|full
+  - MCP: default 'state', changeable via browse_set context
 
-PageState captures: url, title, tabCount, dialog, consoleErrorCount, networkPendingCount
-ContextDelta reports: urlChanged, titleChanged, dialogAppeared/Dismissed, tabsChanged, consoleErrors
-SessionBuffers O(1) counters: consoleErrorCount, networkPendingCount (no buffer scans)
+Delta uses bm.getLastSnapshot() as baseline (from last explicit snapshot command).
+If no baseline exists, delta falls back to full mode.
+handleSnapshot in finalizeWriteContext updates bm.refMap — refs are always post-write.
+All snapshot/delta work wrapped in try/catch — failures never break the write result.
 ```
 
 ## HAR Recording

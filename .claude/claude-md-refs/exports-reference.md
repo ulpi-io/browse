@@ -57,6 +57,9 @@
 | `capturePageState` | action-context.ts | async function | Capture page state (URL, title, tabs, dialog, counters) |
 | `buildContextDelta` | action-context.ts | function | Diff two PageState snapshots, return ContextDelta or null |
 | `formatContextLine` | action-context.ts | function | Format ContextDelta as `[context] -> /path \| title: "..."` |
+| `formatAriaDelta` | action-context.ts | function | Diff two ARIA snapshots, return `[snapshot-delta]` with refs on added lines |
+| `prepareWriteContext` | action-context.ts | async function | Capture before-state for write context orchestration |
+| `finalizeWriteContext` | action-context.ts | async function | Enrich write result with context/delta/full snapshot |
 
 ## Exported Classes
 
@@ -80,11 +83,13 @@
 | `CommandResult` | types.ts | `{ output, hint? }` |
 | `PageState` | types.ts | `{ url, title, tabCount, dialog, consoleErrorCount, networkPendingCount, timestamp }` |
 | `ContextDelta` | types.ts | `{ urlChanged?, titleChanged?, dialogAppeared?, dialogDismissed?, tabsChanged?, consoleErrors?, navigated? }` |
+| `ContextLevel` | types.ts | `'off' \| 'state' \| 'delta' \| 'full'` |
+| `WriteContextCapture` | types.ts | `{ level: ContextLevel, beforeState: PageState \| null, beforeSnapshot: string \| null }` |
 | `HarRecording` | har.ts | `{ startTime, active }` |
 | `DecodedImage` | png-compare.ts | `{ width, height, data: Buffer }` (RGBA pixels) |
 | `CompareResult` | png-compare.ts | `{ totalPixels, diffPixels, mismatchPct, passed }` |
 | `BrowseConfig` | config.ts | `{ session?, json?, contentBoundaries?, allowedDomains?, ... }` |
-| `Session` | session-manager.ts | `{ id, manager, buffers, domainFilter, outputDir, lastActivity, createdAt, contextEnabled }` |
+| `Session` | session-manager.ts | `{ id, manager, buffers, domainFilter, outputDir, lastActivity, createdAt, contextEnabled, contextLevel }` |
 | `CredentialInfo` | auth-vault.ts | `{ name, url, username, hasPassword, createdAt }` |
 | `PolicyResult` | policy.ts | `'allow' \| 'deny' \| 'confirm'` |
 
@@ -218,7 +223,7 @@
 | `BROWSE_POLICY` | browse-policy.json | Path to action policy file |
 | `BROWSE_CONFIRM_ACTIONS` | -- | Comma-separated commands requiring confirmation |
 | `BROWSE_AUTH_PASSWORD` | -- | Password for auth save (alternative to --password-stdin) |
-| `BROWSE_CONTEXT` | 0 | Enable action context (state delta on write commands) |
+| `BROWSE_CONTEXT` | (none) | Context level: `1`/`state`/`delta`/`full` |
 | `__BROWSE_SERVER_MODE` | -- | Internal: compiled binary self-spawns in server mode |
 
 ## Import Patterns
@@ -234,7 +239,7 @@ import { SessionBuffers, consoleBuffer, networkBuffer, addConsoleEntry, addNetwo
 import { DomainFilter } from './domain-filter';
 import { PolicyChecker } from './policy';
 import { AuthVault } from './auth-vault';
-import { capturePageState, buildContextDelta, formatContextLine } from './action-context';
+import { capturePageState, buildContextDelta, formatContextLine, formatAriaDelta, prepareWriteContext, finalizeWriteContext } from './action-context';
 import { decodePNG, compareScreenshots } from './png-compare';
 import { formatAsHar } from './har';
 import { sanitizeName } from './sanitize';
