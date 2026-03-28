@@ -101,7 +101,7 @@ if (scope === 'docs' || scope === 'all') {
   const pattern = DELETED_PATHS.join('\\|');
   check(
     'Docs reference deleted files',
-    `grep -rn "${pattern}" CLAUDE.md .ulpi/plans/domain-architecture-refactor-hold.md 2>/dev/null || true`,
+    `grep -rn "${pattern}" CLAUDE.md 2>/dev/null || true`,
   );
 }
 

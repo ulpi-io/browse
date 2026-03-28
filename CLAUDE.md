@@ -151,7 +151,7 @@ CLI [--session <id>] → Server (node:http) → CommandRegistry → executeComma
 
 ## Command Categories (registry-derived)
 
-Command counts and sets are derived from `src/command-registry.ts` — no hand-maintained sets.
+Command counts and sets are derived from `src/automation/registry.ts` — no hand-maintained sets.
 - **Read** (22): content extraction, evaluation, element inspection
 - **Write** (40): navigation, interaction, configuration
 - **Meta** (37): tabs, screenshots, recording, sessions, inspection, auth, system
@@ -173,7 +173,7 @@ Command counts and sets are derived from `src/command-registry.ts` — no hand-m
 
 - All selectors support both CSS selectors and @refs (`@e1`, `@e2`...)
 - Read commands are safe to retry; write commands are NOT retried after transport failure
-- Command sets are registry-derived — add new commands by registering in `src/command-registry.ts`
+- Command sets are registry-derived — add new commands by registering in `src/automation/registry.ts`
 - `SessionBuffers` class holds per-session buffers in `src/network/buffers.ts`
 - `SessionBuffers` has O(1) running counters (`consoleErrorCount`, `networkPendingCount`) for action context
 - Ring buffers cap at 50K entries (BUFFER_HIGH_WATER_MARK)

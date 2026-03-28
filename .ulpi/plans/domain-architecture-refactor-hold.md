@@ -1,9 +1,15 @@
-# Plan: browse domain architecture refactor
+# Plan: browse domain architecture refactor (CLOSED)
 
 > Generated: 2026-03-28
+> Closed: 2026-03-28
 > Branch: refactor/domain-architecture
 > Mode: COMPLETE
 > Review tool: claude
+>
+> **This plan is closed.** All tasks completed. The canonical architecture
+> is defined in `final-architecture-closeout.md`. File paths in task
+> descriptions below are historical and may reference deleted root files
+> that were moved into domain directories during the refactor.
 
 ## Overview
 
