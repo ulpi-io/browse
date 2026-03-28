@@ -13,6 +13,7 @@ import { handleInspectionCommand } from './inspection';
 import { handleAuthCommand } from './auth';
 import { handleSystemCommand } from './system';
 import { handleProfileCommand } from './profile';
+import { handleFlowsCommand } from './flows';
 
 // ─── Command routing sets ──────────────────────────────────────────────────
 
@@ -33,6 +34,8 @@ const AUTH_COMMANDS = new Set(['auth', 'cookie-import']);
 const SYSTEM_COMMANDS = new Set(['status', 'url', 'stop', 'restart', 'chain', 'doctor', 'upgrade']);
 
 const PROFILE_COMMANDS = new Set(['profile', 'react-devtools', 'provider']);
+
+const WORKFLOW_COMMANDS = new Set(['flow', 'retry', 'watch']);
 
 export async function handleMetaCommand(
   command: string,
@@ -73,6 +76,10 @@ export async function handleMetaCommand(
 
   if (PROFILE_COMMANDS.has(command)) {
     return handleProfileCommand(command, args, bm);
+  }
+
+  if (WORKFLOW_COMMANDS.has(command)) {
+    return handleFlowsCommand(command, args, bm, shutdown, sessionManager, currentSession);
   }
 
   throw new Error(`Unknown meta command: ${command}`);

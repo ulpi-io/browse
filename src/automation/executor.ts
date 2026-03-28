@@ -53,6 +53,24 @@ export async function executeCommand(
     throw new Error(`Unknown command: ${command}`);
   }
 
+  // ─── Target support check ─────────────────────────────
+  const targetSupport = spec.targetSupport ?? 'any';
+  if (targetSupport !== 'any' && opts?.context?.target) {
+    const targetType = opts.context.target.targetType;
+    if (targetSupport === 'browser' && targetType !== 'browser') {
+      throw new Error(
+        `Command '${command}' not available for ${targetType} targets. ` +
+        `Use 'text' or 'snapshot' instead.`,
+      );
+    }
+    if (targetSupport === 'app' && targetType !== 'app') {
+      throw new Error(
+        `Command '${command}' is only available for app targets. ` +
+        `Use --app <name> to target a native application.`,
+      );
+    }
+  }
+
   const event: CommandEvent = {
     command,
     args,

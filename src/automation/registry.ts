@@ -838,6 +838,43 @@ registry.registerAll([
     commandName: 'perf-audit',
     argDecode: (p) => ['delete', String(p.name)],
   } }),
+
+  // ─── Workflow Commands (v2.1) ─────────────────────────────────
+
+  m('flow',              'Execute a YAML flow file step-by-step',           { usage: '<file.yaml>', mcp: {
+    description: 'Execute a YAML flow file containing a sequence of browse commands. Each step is executed in order. On failure, execution stops and reports which step failed. Returns a summary of passed/failed steps.',
+    inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Path to a YAML flow file containing browse commands.' } }, required: ['file'] },
+    argDecode: (p) => [String(p.file)],
+  } }),
+  m('retry',             'Retry command with backoff until condition met',  { usage: '"<cmd>" --until <cond> [--max N] [--backoff]', mcp: {
+    description: 'Retry a browse command until a condition is satisfied. Supports exponential backoff (100ms, 200ms, 400ms...). The condition uses the same syntax as browse_expect (--url, --text, --visible, --hidden, --count). Useful for dismissing transient overlays, waiting for async updates, or polling for state changes.',
+    inputSchema: { type: 'object', properties: {
+      command: { type: 'string', description: 'The browse command to retry (e.g. "click .dismiss").' },
+      until: { type: 'string', description: 'Condition to check after each attempt, using expect syntax (e.g. "--hidden .modal").' },
+      max: { type: 'number', description: 'Maximum number of retry attempts (default: 3).' },
+      backoff: { type: 'boolean', description: 'Enable exponential backoff between attempts (100ms, 200ms, 400ms...).' },
+    }, required: ['command', 'until'] },
+    argDecode: (p) => {
+      const args = [String(p.command), '--until', ...String(p.until).split(/\s+/)];
+      if (p.max != null) args.push('--max', String(p.max));
+      if (p.backoff) args.push('--backoff');
+      return args;
+    },
+  } }),
+  m('watch',             'Watch for DOM changes on an element',             { usage: '"<sel>" [--on-change "<cmd>"] [--timeout ms]', mcp: {
+    description: 'Watch a DOM element for mutations (child changes, text changes, attribute changes) using MutationObserver. Optionally execute a callback command when a change is detected. Times out after 30s by default.',
+    inputSchema: { type: 'object', properties: {
+      selector: { type: 'string', description: 'CSS selector of the element to watch for changes.' },
+      on_change: { type: 'string', description: 'Browse command to execute when a change is detected (e.g. "text" to read page text).' },
+      timeout: { type: 'number', description: 'Timeout in milliseconds (default: 30000).' },
+    }, required: ['selector'] },
+    argDecode: (p) => {
+      const args = [String(p.selector)];
+      if (p.on_change) args.push('--on-change', String(p.on_change));
+      if (p.timeout != null) args.push('--timeout', String(p.timeout));
+      return args;
+    },
+  } }),
 ]);
 
 // ─── Backward-Compatible Exports ─────────────────────────────────

@@ -38,6 +38,7 @@ const cliFlags = {
   runtime: '' as string,
   context: '' as string,
   networkBodies: false,
+  app: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -574,7 +575,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime' || a[i] === '--app') i++;
     }
     return a.length;
   }
@@ -606,6 +607,19 @@ export async function main() {
   // Also check env var
   profileName = profileName || process.env.BROWSE_PROFILE || undefined;
 
+  // Extract --app flag (only before command)
+  let appName: string | undefined;
+  const appIdx = args.indexOf('--app');
+  if (appIdx !== -1 && appIdx < findCommandIndex(args)) {
+    appName = args[appIdx + 1];
+    if (!appName || appName.startsWith('-')) {
+      console.error('Usage: browse --app <name> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(appIdx, 2);
+  }
+  appName = appName || process.env.BROWSE_APP || undefined;
+
   // Extract --provider flag (only before command)
   let providerName: string | undefined;
   const providerIdx = args.indexOf('--provider');
@@ -633,6 +647,11 @@ export async function main() {
 
   if (sessionId && profileName) {
     console.error('Cannot use --profile and --session together. Profiles use their own Chromium; sessions share one.');
+    process.exit(1);
+  }
+
+  if (appName && profileName) {
+    console.error('Cannot use --app and --profile together. App targets use native automation; profiles use browser.');
     process.exit(1);
   }
 
@@ -832,6 +851,7 @@ export async function main() {
   cliFlags.provider = providerName || '';
   cliFlags.context = contextMode;
   cliFlags.networkBodies = networkBodies;
+  cliFlags.app = appName || '';
 
   // Resolve cloud provider CDP URL
   if (providerName) {

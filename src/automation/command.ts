@@ -54,6 +54,13 @@ export interface CommandSpec {
   safeToRetry?: boolean;
   /** Returns page-derived content (for --content-boundaries wrapping) */
   pageContent?: boolean;
+  /**
+   * Which automation target types this command supports.
+   * - 'browser': only available for browser sessions
+   * - 'app': only available for app (native) sessions
+   * - 'any': available for all target types (default)
+   */
+  targetSupport?: 'browser' | 'app' | 'any';
 
   // ─── MCP ────────────────────────────────────────────────
   /** MCP tool metadata. Omit for commands not exposed via MCP. */
