@@ -44,6 +44,28 @@ export interface SessionTargetFactory {
 }
 
 /**
+ * Create a persistent browser target for profile mode.
+ * Profile mode launches its own Chromium with persistent storage — no session multiplexing.
+ */
+export async function createPersistentBrowserTarget(
+  profileDir: string,
+  onCrash: () => void,
+): Promise<CreatedTarget> {
+  const { BrowserManager } = await import('../browser/manager');
+  const bm = new BrowserManager();
+  await bm.launchPersistent(profileDir, onCrash);
+  return {
+    target: bm,
+    getContext: () => bm.getContext(),
+    setDomainFilter: (filter) => bm.setDomainFilter(filter),
+    setInitScript: (script) => bm.setInitScript(script),
+    getTabList: () => bm.getTabList(),
+    getPageById: (id) => bm.getPageById(id),
+    getTabCount: () => bm.getTabCount(),
+  };
+}
+
+/**
  * Create the default browser-backed target factory.
  * This preserves the exact same behavior as the pre-factory SessionManager code.
  */

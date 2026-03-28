@@ -3,19 +3,20 @@
  *
  * Exposes all browse commands as MCP tools over stdio transport.
  * Each tool call maps to a browse command executed against a local
- * BrowserManager instance (no HTTP server needed).
+ * BrowserTarget instance (no HTTP server needed).
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { BrowserManager } from '../browser/manager';
 import { SessionBuffers } from '../network/buffers';
 import { rewriteError } from '../automation/registry';
 import { getToolDefinitions, mapToolCallToCommand } from './tools/index';
 import { prepareWriteContext, finalizeWriteContext } from '../automation/action-context';
 import { executeCommand } from '../automation/executor';
-import type { ContextLevel } from '../types';
+import { createBrowserTargetFactory } from '../session/target-factory';
+import type { BrowserTarget } from '../browser/target';
+import type { ContextLevel, WriteContextCapture } from '../types';
 
 /**
  * Start the MCP server.
@@ -33,17 +34,20 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
   const { getRuntime } = await import('../engine/resolver');
   const runtime = await getRuntime(process.env.BROWSE_RUNTIME);
   const buffers = new SessionBuffers();
-  const bm = new BrowserManager(buffers);
 
+  let browser: import('playwright').Browser;
   if (runtime.browser) {
     // Process runtime (e.g. lightpanda) — browser already connected
-    await bm.launchWithBrowser(runtime.browser);
+    browser = runtime.browser;
   } else {
     // Library runtime (playwright, rebrowser) — launch Chromium
     const chromium = runtime.chromium;
-    const browser = await chromium.launch({ headless: process.env.BROWSE_HEADED !== '1' });
-    await bm.launchWithBrowser(browser);
+    browser = await chromium.launch({ headless: process.env.BROWSE_HEADED !== '1' });
   }
+
+  const factory = createBrowserTargetFactory(browser);
+  const ct = await factory.create(buffers, false);
+  const bm = ct.target as BrowserTarget;
 
   // ─── MCP Server ─────────────────────────────────────────────────
   const server = new Server(
@@ -73,7 +77,9 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
     }
 
     try {
-      const { output: result, spec } = await executeCommand(command, args, null, {
+      let writeCapture: WriteContextCapture | null = null;
+
+      const { output: result, spec } = await executeCommand(command, args, {
         context: {
           args,
           target: bm,
@@ -84,17 +90,16 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
           before: [async (event) => {
             // Write context capture
             if (event.category === 'write') {
-              (bm as any).__mcpWriteCapture = await prepareWriteContext(mcpContextLevel, bm, buffers);
+              writeCapture = await prepareWriteContext(mcpContextLevel, bm, buffers);
             }
           }],
           after: [async (event) => {
             let res = event.result;
             // Write context finalization
             if (event.category === 'write') {
-              const capture = (bm as any).__mcpWriteCapture;
-              if (capture) {
-                res = await finalizeWriteContext(capture, bm, buffers, res, event.command);
-                delete (bm as any).__mcpWriteCapture;
+              if (writeCapture) {
+                res = await finalizeWriteContext(writeCapture, bm, buffers, res, event.command);
+                writeCapture = null;
               }
               // Detect `set context` command
               if (event.command === 'set' && event.args[0] === 'context') {

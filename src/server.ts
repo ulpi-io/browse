@@ -18,7 +18,7 @@ import { DEFAULTS } from './constants';
 import { type LogEntry, type NetworkEntry } from './network/buffers';
 import { prepareWriteContext, finalizeWriteContext } from './automation/action-context';
 import { executeCommand } from './automation/executor';
-import type { ContextLevel } from './types';
+import type { ContextLevel, WriteContextCapture } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -236,7 +236,9 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
   const effectiveLevel: ContextLevel = opts.contextLevel !== 'off' ? opts.contextLevel : session.contextLevel;
 
   try {
-    const { output, spec } = await executeCommand(command, args, null, {
+    let writeCapture: WriteContextCapture | null = null;
+
+    const { output, spec } = await executeCommand(command, args, {
       context: {
         args,
         target: bt,
@@ -250,7 +252,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
         before: [async (event) => {
           // Write context capture (before execution)
           if (event.category === 'write') {
-            (session as any).__writeCapture = await prepareWriteContext(effectiveLevel, bt, session.buffers);
+            writeCapture = await prepareWriteContext(effectiveLevel, bt, session.buffers);
           }
         }],
         after: [async (event) => {
@@ -258,10 +260,9 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
           // Write context finalization (after execution)
           if (event.category === 'write') {
-            const capture = (session as any).__writeCapture;
-            if (capture) {
-              result = await finalizeWriteContext(capture, bt, session.buffers, result, event.command);
-              delete (session as any).__writeCapture;
+            if (writeCapture) {
+              result = await finalizeWriteContext(writeCapture, bt, session.buffers, result, event.command);
+              writeCapture = null;
             }
 
             // Detect set context command and update session level
@@ -274,7 +275,6 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
                   : val === 'delta' ? 'delta'
                   : val === 'full' ? 'full'
                   : 'off';
-                session.contextEnabled = session.contextLevel !== 'off';
               }
             }
           }
@@ -441,14 +441,14 @@ async function start() {
     // Profile mode: persistent browser context, no session multiplexing.
     // Data (cookies, localStorage, cache) persists across server restarts.
     // launchPersistent() launches its own Chromium — skip the shared browser launch.
-    const { BrowserManager, getProfileDir } = await import('./browser/manager');
+    const { getProfileDir } = await import('./browser/manager');
     const { SessionBuffers } = await import('./network/buffers');
+    const { createPersistentBrowserTarget } = await import('./session/target-factory');
 
     const profileDir = getProfileDir(LOCAL_DIR, profileName);
     fs.mkdirSync(profileDir, { recursive: true });
 
-    const bm = new BrowserManager();
-    await bm.launchPersistent(profileDir, () => {
+    const profileTarget = await createPersistentBrowserTarget(profileDir, () => {
       if (isShuttingDown) return;
       console.error('[browse] Chromium disconnected (profile mode). Shutting down.');
       shutdown();
@@ -459,14 +459,13 @@ async function start() {
 
     profileSession = {
       id: profileName,
-      manager: bm,
+      manager: profileTarget.target,
       buffers: new SessionBuffers(),
       domainFilter: null,
       recording: null,
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),
-      contextEnabled: false,
       contextLevel: 'off',
     };
 

@@ -848,103 +848,16 @@ export function rewriteError(msg: string): string {
 
 // ─── CLI Help Generation ─────────────────────────────────────────
 
-/** Help groups define how commands are displayed in CLI --help output */
-interface HelpGroup {
-  name: string;
-  lines: string[];
-}
-
-const HELP_GROUPS: HelpGroup[] = [
-  { name: 'Navigation', lines: ['goto <url> | back | forward | reload | url'] },
-  { name: 'Content', lines: ['text | html [sel] | links | forms | accessibility'] },
-  { name: 'Interaction', lines: [
-    'click <sel> | rightclick <sel> | dblclick <sel>',
-    'fill <sel> <val> | select <sel> <val>',
-    'hover <sel> | focus <sel> | tap <sel>',
-    'check <sel> | uncheck <sel> | drag <src> <tgt>',
-    'type <text> | press <key> | keydown <key> | keyup <key>',
-    'keyboard inserttext <text>',
-    'scroll [sel|up|down] | scrollinto <sel> | scrollintoview <sel>',
-    'swipe <up|down|left|right> [px]',
-    'wait <sel|ms|--url|--text|--fn|--load|--network-idle>',
-    'viewport <WxH> | highlight <sel> | download <sel> [path]',
-    'upload <sel> <files...>',
-    'dialog-accept [text] | dialog-dismiss',
-  ] },
-  { name: 'Mouse', lines: [
-    'mouse move <x> <y> | mouse down [btn] | mouse up [btn]',
-    'mouse wheel <dy> [dx]',
-  ] },
-  { name: 'Settings', lines: [
-    'set geo <lat> <lng> | set media <dark|light|no-preference>',
-    'set context <on|off>',
-  ] },
-  { name: 'Device', lines: ['emulate <device> | emulate reset | devices [filter]'] },
-  { name: 'Inspection', lines: [
-    'js <expr> | eval <file> | css <sel> <prop> | attrs <sel>',
-    'element-state <sel> | box <sel> | dialog',
-    'console [--clear] | errors [--clear] | network [--clear]',
-    'cookies | storage [set <k> <v>] | perf',
-    'value <sel> | count <sel> | clipboard [write <text>]',
-  ] },
-  { name: 'Visual', lines: [
-    'screenshot [sel|@ref] [path] [--full] [--clip x,y,w,h]',
-    'screenshot --annotate | pdf [path] | responsive [prefix]',
-  ] },
-  { name: 'Snapshot', lines: [
-    'snapshot [-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]',
-    'snapshot-diff',
-  ] },
-  { name: 'Find', lines: [
-    'find role|text|label|placeholder|testid|alt|title <query>',
-    'find first|last <sel> | find nth <n> <sel>',
-  ] },
-  { name: 'Compare', lines: ['diff <url1> <url2> | screenshot-diff <baseline> [current]'] },
-  { name: 'Multi-step', lines: ['chain (reads JSON from stdin)'] },
-  { name: 'Cookies', lines: [
-    'cookie <n>=<v> | cookie set <n> <v> [--domain --secure]',
-    'cookie clear | cookie export <file> | cookie import <file>',
-  ] },
-  { name: 'Network', lines: [
-    'offline [on|off] | route <pattern> block|fulfill',
-    'header <n>:<v> | useragent <str>',
-    'initscript set <code> | clear | show',
-  ] },
-  { name: 'Recording', lines: [
-    'har start | har stop [path]',
-    'video start [dir] | video stop | video status',
-    'record start | record stop | record status',
-    'record export browse|replay [--selectors css,aria,xpath,text] [path]',
-  ] },
-  { name: 'Coverage', lines: ['coverage start | coverage stop'] },
-  { name: 'Tabs', lines: ['tabs | tab <id> | newtab [url] | closetab [id]'] },
-  { name: 'Frames', lines: ['frame <sel> | frame main'] },
-  { name: 'Sessions', lines: ['sessions | session-close <id>'] },
-  { name: 'Profiles', lines: ['--profile <name> | profile list|delete|clean'] },
-  { name: 'Auth', lines: [
-    'auth save <name> <url> <user> <pass|--password-stdin>',
-    'auth login <name> | auth list | auth delete <name>',
-    'cookie-import --list | cookie-import <browser> [--domain <d>] [--profile <p>]',
-  ] },
-  { name: 'State', lines: ['state save|load|list|show|clean [name]'] },
-  { name: 'Handoff', lines: ['handoff [reason] | resume'] },
-  { name: 'React', lines: [
-    'react-devtools enable|disable|tree|props|suspense|errors',
-    'react-devtools profiler|hydration|renders|owners|context',
-  ] },
-  { name: 'Providers', lines: ['provider save|list|delete <name> [api-key]'] },
-  { name: 'Detect', lines: ['detect (frameworks, CDN, third-party, SaaS, infra)'] },
-  { name: 'Performance', lines: [
-    'perf-audit [url] [--no-coverage] [--no-detect] [--json]',
-    'perf-audit save [name] | compare <base> [curr] | list | delete <name>',
-  ] },
-  { name: 'Debug', lines: ['inspect (requires BROWSE_DEBUG_PORT)'] },
-  { name: 'Server', lines: ['status | instances | stop | restart | doctor | upgrade'] },
-  { name: 'Setup', lines: ['install-skill [path]'] },
-];
+/** Category display labels for the help output */
+const CATEGORY_LABELS: Record<string, string> = {
+  read: 'Read',
+  write: 'Write',
+  meta: 'Meta',
+};
 
 /**
- * Generate CLI help text from registry data and help group definitions.
+ * Generate CLI help text derived from the command registry.
+ * Commands are grouped by category (read, write, meta).
  * This is the single source of truth for the --help output.
  */
 export function generateHelp(): string {
@@ -955,10 +868,30 @@ export function generateHelp(): string {
     '',
   ];
 
-  for (const group of HELP_GROUPS) {
-    const label = `${group.name}:`.padEnd(16);
-    for (let i = 0; i < group.lines.length; i++) {
-      lines.push(i === 0 ? `${label}${group.lines[i]}` : `                ${group.lines[i]}`);
+  for (const category of ['read', 'write', 'meta'] as const) {
+    const specs = registry.byCategory(category)
+      .filter(s => !s.mcp?.commandName);  // skip virtual MCP-only aliases
+    if (specs.length === 0) continue;
+
+    const label = `${CATEGORY_LABELS[category]}:`.padEnd(16);
+    const entries = specs.map(s => s.usage ? `${s.name} ${s.usage}` : s.name);
+
+    // Group entries into lines of ~80 chars, joined with " | "
+    const grouped: string[] = [];
+    let current = '';
+    for (const entry of entries) {
+      const sep = current ? ' | ' : '';
+      if (current && (current.length + sep.length + entry.length) > 72) {
+        grouped.push(current);
+        current = entry;
+      } else {
+        current += sep + entry;
+      }
+    }
+    if (current) grouped.push(current);
+
+    for (let i = 0; i < grouped.length; i++) {
+      lines.push(i === 0 ? `${label}${grouped[i]}` : `                ${grouped[i]}`);
     }
   }
 
@@ -998,9 +931,8 @@ export function generateHelp(): string {
 }
 
 // ─── Command Definition Registration ─────────────────────────────
-// Upgrades metadata-only specs to executable definitions by wrapping
-// the existing handler functions. This makes the registry the owner
-// of both metadata and dispatch.
+// Command modules own their definitions — the registry delegates
+// registration to each module's register*Definitions() export.
 
 let definitionsRegistered = false;
 
@@ -1013,43 +945,13 @@ export async function ensureDefinitionsRegistered(): Promise<void> {
   if (definitionsRegistered) return;
   definitionsRegistered = true;
 
-  const { handleReadCommand } = await import('../commands/read');
-  const { handleWriteCommand } = await import('../commands/write');
-  const { handleMetaCommand } = await import('../commands/meta');
-  const { prepareWriteContext, finalizeWriteContext } = await import('./action-context');
+  const { registerReadDefinitions } = await import('../commands/read');
+  const { registerWriteDefinitions } = await import('../commands/write');
+  const { registerMetaDefinitions } = await import('../commands/meta');
 
-  // Register read command definitions
-  for (const spec of registry.byCategory('read')) {
-    registry.define({
-      spec,
-      execute: async (ctx) => {
-        const bt = ctx.target as any; // BrowserTarget
-        return handleReadCommand(spec.name, ctx.args, bt, ctx.buffers);
-      },
-    });
-  }
-
-  // Register write command definitions
-  for (const spec of registry.byCategory('write')) {
-    registry.define({
-      spec,
-      execute: async (ctx) => {
-        const bt = ctx.target as any; // BrowserTarget
-        return handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
-      },
-    });
-  }
-
-  // Register meta command definitions
-  for (const spec of registry.byCategory('meta')) {
-    registry.define({
-      spec,
-      execute: async (ctx) => {
-        const bt = ctx.target as any; // BrowserTarget
-        return handleMetaCommand(spec.name, ctx.args, bt, ctx.shutdown || (() => {}), ctx.sessionManager as any, ctx.session as any);
-      },
-    });
-  }
+  registerReadDefinitions(registry);
+  registerWriteDefinitions(registry);
+  registerMetaDefinitions(registry);
 }
 
 // Re-export types for consumers

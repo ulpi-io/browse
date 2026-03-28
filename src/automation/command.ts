@@ -73,11 +73,11 @@ export interface CommandContext {
   /** Domain filter for the session (may be null) */
   domainFilter?: import('../security/domain-filter').DomainFilter | null;
   /** Session reference for commands that need session-level state */
-  session?: unknown;
+  session?: import('../session/manager').Session;
   /** Shutdown callback for server-control commands */
   shutdown?: () => Promise<void> | void;
   /** Session manager reference for multi-session commands */
-  sessionManager?: unknown;
+  sessionManager?: import('../session/manager').SessionManager;
 }
 
 // ─── Command Definition ──────────────────────────────────────────

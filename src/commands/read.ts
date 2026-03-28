@@ -373,3 +373,26 @@ export async function handleReadCommand(
       throw new Error(`Unknown read command: ${command}`);
   }
 }
+
+// ─── Definition Registration ──────────────────────────────────────
+// Each read command owns its definition — the registry is the single
+// source of truth for both metadata and dispatch.
+
+import type { CommandRegistry, CommandContext } from '../automation/command';
+
+/**
+ * Register all read command definitions in the registry.
+ * Called once during lazy initialization from ensureDefinitionsRegistered().
+ */
+export function registerReadDefinitions(registry: CommandRegistry): void {
+  for (const spec of registry.byCategory('read')) {
+    registry.define({
+      spec,
+      mcpArgDecode: spec.mcp?.argDecode,
+      execute: async (ctx: CommandContext) => {
+        const bt = ctx.target as BrowserTarget;
+        return handleReadCommand(spec.name, ctx.args, bt, ctx.buffers);
+      },
+    });
+  }
+}

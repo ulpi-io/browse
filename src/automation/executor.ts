@@ -12,7 +12,7 @@
  * Future flow/retry/watch execution (v2.1) and plugins (v2.2) will also use this.
  */
 
-import type { CommandSpec, CommandDefinition, CommandContext } from './command';
+import type { CommandSpec, CommandContext } from './command';
 import type { CommandLifecycle, CommandEvent, AfterCommandEvent, CommandErrorEvent } from './events';
 import { registry, ensureDefinitionsRegistered } from './registry';
 
@@ -20,11 +20,6 @@ import { registry, ensureDefinitionsRegistered } from './registry';
 export interface ExecuteOptions {
   /** Lifecycle hooks to apply (transport-specific) */
   lifecycle?: CommandLifecycle;
-  /**
-   * Legacy handler for commands not yet migrated to CommandDefinition.
-   * Once all commands are definition-backed, this will be removed.
-   */
-  legacyHandler?: (command: string, args: string[], spec: CommandSpec) => Promise<string>;
   /** Execution context for definition-backed commands */
   context?: CommandContext;
 }
@@ -42,15 +37,12 @@ export interface ExecuteResult {
 /**
  * Execute a command through the shared pipeline.
  *
- * Resolution order:
- *   1. If the command has a registered CommandDefinition with execute(), use it
- *   2. If a legacyHandler is provided in opts, use it (temporary migration path)
- *   3. Otherwise throw
+ * Looks up the command's registered CommandDefinition and calls its execute().
+ * If no definition exists, throws.
  */
 export async function executeCommand(
   command: string,
   args: string[],
-  handler: ((command: string, args: string[], spec: CommandSpec) => Promise<string>) | null,
   opts?: ExecuteOptions,
 ): Promise<ExecuteResult> {
   // Ensure definitions are registered on first call
@@ -86,16 +78,14 @@ export async function executeCommand(
   let output: string;
 
   try {
-    // Prefer definition-backed execution
     const definition = registry.getDefinition(command);
-    if (definition && opts?.context) {
-      output = await definition.execute({ ...opts.context, args });
-    } else if (handler) {
-      // Legacy path — transport-provided handler
-      output = await handler(command, args, spec);
-    } else {
-      throw new Error(`Command '${command}' has no registered execute function and no legacy handler was provided`);
+    if (!definition) {
+      throw new Error(`Command '${command}' has no registered execute function`);
     }
+    if (!opts?.context) {
+      throw new Error(`Command '${command}' requires an execution context`);
+    }
+    output = await definition.execute({ ...opts.context, args });
   } catch (err: any) {
     const durationMs = Date.now() - start;
 

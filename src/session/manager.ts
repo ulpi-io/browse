@@ -34,7 +34,6 @@ export interface Session {
   outputDir: string;
   lastActivity: number;
   createdAt: number;
-  contextEnabled: boolean;
   contextLevel: ContextLevel;
 }
 
@@ -140,7 +139,6 @@ export class SessionManager {
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),
-      contextEnabled: false,
       contextLevel: 'off',
     };
     this.sessions.set(sessionId, session);

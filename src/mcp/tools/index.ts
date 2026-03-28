@@ -43,9 +43,9 @@ export function getToolDefinitions(): ToolDefinition[] {
 /**
  * Map an MCP tool call to a browse command + args array.
  *
- * Looks up the command spec in the registry and uses its `mcp.argDecode`
- * function to convert MCP params into CLI args. Virtual tools (e.g.
- * perf-audit-save) use `mcp.commandName` to route to the actual handler.
+ * Looks up the command definition (preferred) or spec in the registry and uses
+ * its argDecode function to convert MCP params into CLI args. Virtual tools
+ * (e.g. perf-audit-save) use `mcp.commandName` to route to the actual handler.
  */
 export function mapToolCallToCommand(
   toolName: string,
@@ -60,9 +60,13 @@ export function mapToolCallToCommand(
     throw new Error(`Unknown MCP tool: ${toolName}`);
   }
 
-  // Use the registry's argDecode, or fall back to collecting string param values
-  const args = spec.mcp.argDecode
-    ? spec.mcp.argDecode(params)
+  // Prefer definition's mcpArgDecode, fall back to spec's mcp.argDecode
+  const def = registry.getDefinition(rawCommand);
+  const argDecode = def?.mcpArgDecode ?? spec.mcp.argDecode;
+
+  // Use the resolved argDecode, or fall back to collecting string param values
+  const args = argDecode
+    ? argDecode(params)
     : Object.values(params).filter(v => v != null).map(v => String(v));
 
   // Virtual tools may route to a different command name

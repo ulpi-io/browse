@@ -776,3 +776,24 @@ export async function handleWriteCommand(
       throw new Error(`Unknown write command: ${command}`);
   }
 }
+
+// ─── Definition Registration ──────────────────────────────────────
+
+import type { CommandRegistry, CommandContext } from '../automation/command';
+
+/**
+ * Register all write command definitions in the registry.
+ * Called once during lazy initialization from ensureDefinitionsRegistered().
+ */
+export function registerWriteDefinitions(registry: CommandRegistry): void {
+  for (const spec of registry.byCategory('write')) {
+    registry.define({
+      spec,
+      mcpArgDecode: spec.mcp?.argDecode,
+      execute: async (ctx: CommandContext) => {
+        const bt = ctx.target as BrowserTarget;
+        return handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
+      },
+    });
+  }
+}

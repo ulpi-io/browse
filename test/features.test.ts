@@ -2426,46 +2426,54 @@ describe('Command Registry', () => {
 // ─── Executor Pipeline Tests ─────────────────────────────────────
 
 import { executeCommand } from '../src/automation/executor';
+import { SessionBuffers } from '../src/network/buffers';
+import { registry } from '../src/automation/registry';
 
 describe('Command Executor Pipeline', () => {
+  // Build a context using the shared browser target for definition-backed tests
+  const testBuffers = new SessionBuffers();
+  const makeCtx = () => ({
+    args: [] as string[],
+    target: bm,
+    buffers: testBuffers,
+  });
+
   test('executes a read command through the pipeline', async () => {
-    const result = await executeCommand('text', [], async (_cmd, _args, spec) => {
-      expect(spec.category).toBe('read');
-      return 'page text content';
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await executeCommand('text', [], {
+      context: makeCtx(),
     });
-    expect(result.output).toBe('page text content');
     expect(result.spec.name).toBe('text');
     expect(result.spec.category).toBe('read');
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(typeof result.output).toBe('string');
   });
 
   test('executes a write command through the pipeline', async () => {
-    const result = await executeCommand('click', ['@e1'], async (_cmd, args, spec) => {
-      expect(spec.category).toBe('write');
-      expect(args[0]).toBe('@e1');
-      return 'Clicked @e1';
+    const result = await executeCommand('goto', [baseUrl + '/basic.html'], {
+      context: makeCtx(),
     });
-    expect(result.output).toBe('Clicked @e1');
     expect(result.spec.category).toBe('write');
+    expect(result.output).toBeTruthy();
   });
 
   test('executes a meta command through the pipeline', async () => {
-    const result = await executeCommand('tabs', [], async (_cmd, _args, spec) => {
-      expect(spec.category).toBe('meta');
-      return '→ [0] My Page — https://example.com';
+    const result = await executeCommand('tabs', [], {
+      context: makeCtx(),
     });
-    expect(result.output).toContain('My Page');
     expect(result.spec.category).toBe('meta');
+    expect(result.output).toBeTruthy();
   });
 
   test('unknown command throws', async () => {
     await expect(
-      executeCommand('nonexistent', [], async () => 'never')
+      executeCommand('nonexistent', [])
     ).rejects.toThrow('Unknown command: nonexistent');
   });
 
   test('before hook can abort execution', async () => {
-    const result = await executeCommand('text', [], async () => 'should not run', {
+    const result = await executeCommand('text', [], {
+      context: makeCtx(),
       lifecycle: {
         before: [async () => ({ abort: true as const, result: 'denied by policy' })],
       },
@@ -2475,66 +2483,54 @@ describe('Command Executor Pipeline', () => {
   });
 
   test('after hook enriches result', async () => {
-    const result = await executeCommand('click', ['btn'], async () => 'Clicked btn', {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await executeCommand('goto', [baseUrl + '/basic.html'], {
+      context: makeCtx(),
       lifecycle: {
         after: [async (event) => `${event.result}\n[context] → /new-page`],
       },
     });
-    expect(result.output).toContain('Clicked btn');
     expect(result.output).toContain('[context]');
   });
 
   test('error hook transforms error message', async () => {
     await expect(
-      executeCommand('click', ['missing'], async () => { throw new Error('Timeout 5000ms exceeded'); }, {
+      executeCommand('click', ['#nonexistent-element-xyz'], {
+        context: makeCtx(),
         lifecycle: {
           onError: [async (event) => `Friendly: ${event.error.message}`],
         },
       })
-    ).rejects.toThrow('Friendly: Timeout 5000ms exceeded');
+    ).rejects.toThrow('Friendly:');
   });
 
   test('skipContext and skipRecording commands have correct spec flags', async () => {
-    // console has skipRecording: true
-    const consoleResult = await executeCommand('console', [], async (_cmd, _args, spec) => {
-      expect(spec.skipRecording).toBe(true);
-      return 'log entries';
-    });
-    expect(consoleResult.spec.skipRecording).toBe(true);
+    // Verify spec flags directly from registry (no execution needed)
+    const consoleSpec = registry.get('console');
+    expect(consoleSpec?.skipRecording).toBe(true);
 
-    // status has skipRecording: true
-    const statusResult = await executeCommand('status', [], async (_cmd, _args, spec) => {
-      expect(spec.skipRecording).toBe(true);
-      return 'healthy';
-    });
-    expect(statusResult.spec.skipRecording).toBe(true);
+    const statusSpec = registry.get('status');
+    expect(statusSpec?.skipRecording).toBe(true);
   });
 
-  test('lifecycle hooks execute in order: before → handler → after', async () => {
+  test('lifecycle hooks execute in order: before → execute → after', async () => {
     const order: string[] = [];
 
-    await executeCommand('text', [], async () => {
-      order.push('handler');
-      return 'result';
-    }, {
+    await executeCommand('url', [], {
+      context: makeCtx(),
       lifecycle: {
         before: [async () => { order.push('before'); }],
         after: [async (event) => { order.push('after'); return event.result; }],
       },
     });
 
-    expect(order).toEqual(['before', 'handler', 'after']);
+    expect(order).toEqual(['before', 'after']);
   });
 
-  test('legacy handler path still works when no definition exists', async () => {
-    const result = await executeCommand('text', [], async () => 'legacy path');
-    expect(result.output).toBe('legacy path');
-  });
-
-  test('null handler with no definition throws clear error', async () => {
+  test('missing context throws clear error', async () => {
     await expect(
-      executeCommand('text', [], null)
-    ).rejects.toThrow('no registered execute function');
+      executeCommand('text', [])
+    ).rejects.toThrow('requires an execution context');
   });
 
   test('definition-backed registration works on fresh registry', async () => {

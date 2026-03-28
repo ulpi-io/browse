@@ -77,3 +77,24 @@ export async function handleMetaCommand(
 
   throw new Error(`Unknown meta command: ${command}`);
 }
+
+// ─── Definition Registration ──────────────────────────────────────
+
+import type { CommandRegistry, CommandContext } from '../../automation/command';
+
+/**
+ * Register all meta command definitions in the registry.
+ * Called once during lazy initialization from ensureDefinitionsRegistered().
+ */
+export function registerMetaDefinitions(registry: CommandRegistry): void {
+  for (const spec of registry.byCategory('meta')) {
+    registry.define({
+      spec,
+      mcpArgDecode: spec.mcp?.argDecode,
+      execute: async (ctx: CommandContext) => {
+        const bt = ctx.target as BrowserTarget;
+        return handleMetaCommand(spec.name, ctx.args, bt, ctx.shutdown || (() => {}), ctx.sessionManager, ctx.session);
+      },
+    });
+  }
+}
