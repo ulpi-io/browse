@@ -5,7 +5,7 @@
   "overview": "Full product roadmap from v1.5 through v2.2 — 6 versions spanning network intelligence, verification/CI, visual intelligence, native app automation, agent workflows, and an agent toolkit/SDK.",
   "scopeChallenge": "All 8 previous plans shipped. Current: ~23.5K src lines, 103 commands, v1.5.0. Ruled out: Lighthouse (perf-audit better), AI selectors (non-deterministic), visual regression service (screenshot-diff exists), browser cloud (partnered), full test framework (generates Playwright tests instead).",
   "roadmapShape": [
-    "v1.5-v1.7 deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, and accessibility checks.",
+    "v1.5-v1.7 deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, accessibility checks, and lower-round-trip agent ergonomics.",
     "v2.0 adds macOS app automation as a second runtime behind the same session/dispatch surface; browser behavior must remain unchanged.",
     "v2.1 adds thin orchestration helpers (flow, retry, watch) over existing commands rather than a competing full test framework.",
     "v2.2 adds SDK mode plus checked-in project files for detections, audit rules, saved flows, and config; npm plugins are explicitly out of scope."
@@ -95,6 +95,39 @@
         "TASK-009"
       ],
       "mitigation": "Enforce separate captured-body byte budget; evict oldest body payloads first while preserving request metadata. Cover with explicit eviction tests."
+    },
+    {
+      "risk": "Readiness signal reports settled:true too early on SPA transitions",
+      "affectedTasks": [
+        "TASK-046",
+        "TASK-048",
+        "TASK-009"
+      ],
+      "mitigation": "Combine pending-network and DOM-mutation quiet-window signals, and cover delayed-mutation plus delayed-fetch fixtures before enabling settle mode."
+    },
+    {
+      "risk": "Conditional flags hide real regressions by skipping too much",
+      "affectedTasks": [
+        "TASK-047",
+        "TASK-009"
+      ],
+      "mitigation": "Guard flags must return explicit SKIP output and only suppress not-found, empty, or unchecked states, never malformed selectors or usage errors."
+    },
+    {
+      "risk": "Settle mode hangs on long-polling pages",
+      "affectedTasks": [
+        "TASK-048",
+        "TASK-009"
+      ],
+      "mitigation": "Add a timeout guard, exclude long-lived streaming or socket requests from readiness, and return an explicit timeout note instead of blocking indefinitely."
+    },
+    {
+      "risk": "wait --request and expect --request drift into different matcher semantics",
+      "affectedTasks": [
+        "TASK-050",
+        "TASK-016"
+      ],
+      "mitigation": "Reuse the same parser or helper for method, path, and status matching and cover success, timeout, and status-mismatch cases in one shared test suite."
     },
     {
       "risk": "expect polling burns CPU",
@@ -251,6 +284,26 @@
       "testType": "integration"
     },
     {
+      "codepath": "action-context readiness signal",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "guarded write skip paths",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "selector suggestions on not-found",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "settle mode post-write waiting",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
       "codepath": "expect parser flag validation",
       "coveringTask": "TASK-016",
       "testType": "unit"
@@ -277,6 +330,11 @@
     },
     {
       "codepath": "expect --request + --status",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "wait --request + --status",
       "coveringTask": "TASK-016",
       "testType": "integration"
     },
@@ -673,14 +731,17 @@
     {
       "id": "TASK-009",
       "title": "Test fixtures and integration tests for v1.5",
-      "description": "Add JSON API fixture routes. Test body capture, request command, api command, HAR with bodies.",
+      "description": "Add JSON API fixture routes plus a small SPA-style mutation fixture. Test network body capture, request/api, HAR with bodies, action-context readiness, guarded writes, selector suggestions, and settle mode.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
       "dependsOn": [
         "TASK-004",
         "TASK-005",
-        "TASK-006"
+        "TASK-006",
+        "TASK-046",
+        "TASK-047",
+        "TASK-048"
       ],
       "acceptanceCriteria": [
         "API fixtures in test-server",
@@ -689,11 +750,92 @@
         "api command tested",
         "Truncation tested",
         "Captured-body byte-budget eviction tested",
-        "Test: api GET with session cookie set via cookie command verifies cookie in request"
+        "Test: api GET with session cookie set via cookie command verifies cookie in request",
+        "Action-context readiness signal tested",
+        "Guarded write skip paths tested",
+        "Selector suggestions tested",
+        "Settle mode tested"
       ],
       "filesToModify": [
         "test/test-server.ts",
-        "test/features.test.ts"
+        "test/features.test.ts",
+        "test/action-context.test.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-046",
+      "title": "Add page readiness signal to action-context",
+      "description": "Extend action-context so write-command responses report whether the page is settled after the action, based on both pending network requests and recent DOM mutation activity.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Context-enabled write responses include settled:true or settled:false",
+        "Readiness combines networkPendingCount === 0 with a 300ms DOM-mutation quiet window",
+        "Unsettled output includes the blocking reason or reasons",
+        "DOM-mutation tracking resets on navigation and tab switch",
+        "Long-lived sockets or streaming requests do not keep the page permanently unsettled"
+      ],
+      "filesToModify": [
+        "src/automation/action-context.ts",
+        "src/browser/manager.ts",
+        "src/browser/target.ts",
+        "src/types.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-047",
+      "title": "Add guarded write flags and selector suggestions",
+      "description": "Add conditional flags to common write commands and surface close-match suggestions on selector-not-found errors so agents can recover without full guard snapshots.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "click, hover, focus, and tap support if-exists and if-visible guards",
+        "fill supports if-empty and check supports if-unchecked",
+        "Skipped guarded actions return deterministic SKIP output instead of throwing",
+        "Unguarded selector-not-found errors include up to 3 concrete suggestions when close matches exist",
+        "Invalid selector syntax or malformed usage still throws immediately"
+      ],
+      "filesToModify": [
+        "src/commands/write.ts",
+        "src/automation/registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-048",
+      "title": "Add session-scoped settle mode",
+      "description": "Add an opt-in settle mode for sessions: browse set settle on or off. When enabled, write commands automatically wait for the page readiness signal before returning.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-046"
+      ],
+      "acceptanceCriteria": [
+        "set settle on enables post-write settling for the active session and set settle off disables it",
+        "Navigation and interaction write commands wait for the readiness signal before returning",
+        "Default settle quiet window is 300ms with a documented timeout guard",
+        "wait and set settle do not recursively trigger settle mode",
+        "On settle timeout, the command returns its normal result plus an explicit unsettled timeout note instead of hanging indefinitely"
+      ],
+      "filesToModify": [
+        "src/commands/write.ts",
+        "src/session/manager.ts",
+        "src/types.ts",
+        "src/automation/action-context.ts",
+        "src/automation/registry.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -738,6 +880,33 @@
       ],
       "filesToModify": [
         "src/commands/meta/index.ts",
+        "src/automation/registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-050",
+      "title": "Add request-matching mode to wait",
+      "description": "Extend wait with --request <pattern> and optional --status N so agents can wait for a specific API request to complete before proceeding, reusing the same matcher semantics as expect --request.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-010"
+      ],
+      "acceptanceCriteria": [
+        "wait --request pattern --status 200 returns when a matching completed request exists in the buffer or arrives before timeout",
+        "If status is omitted, the first completed matching request satisfies the wait",
+        "Request matcher semantics are shared with expect --request",
+        "Timeout error includes recent matching requests or last seen matching status",
+        "Status without request is a usage error",
+        "A matching request that started but did not finish before timeout does not satisfy the wait"
+      ],
+      "filesToModify": [
+        "src/commands/write.ts",
+        "src/expect.ts",
         "src/automation/registry.ts"
       ],
       "filesToCreate": [],
@@ -843,19 +1012,23 @@
     },
     {
       "id": "TASK-016",
-      "title": "Integration tests for expect + budget",
-      "description": "Test all expect conditions, timeout behavior, request/status assertions, and deterministic budget evaluation.",
+      "title": "Integration tests for expect + wait-request + budget",
+      "description": "Test all expect conditions, the request-matching wait mode, timeout behavior, request/status assertions, and deterministic budget evaluation.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
       "dependsOn": [
         "TASK-011",
-        "TASK-012"
+        "TASK-012",
+        "TASK-050"
       ],
       "acceptanceCriteria": [
-        "Parser unit tests cover valid flag combinations and malformed comparator/request-status errors",
-        "All condition types tested",
+        "Parser unit tests cover valid flag combinations and malformed comparator or request-status errors",
+        "All expect condition types tested",
         "expect --request + --status success and failure cases tested",
+        "wait --request + --status success tested",
+        "wait --request timeout with clear last-seen-status output tested",
+        "wait --request without status tested",
         "Timeout failure tested",
         "Deterministic budget evaluator unit tests cover pass/fail and unmeasured metrics",
         "Budget pass/fail tested"
@@ -1661,10 +1834,21 @@
     "TASK-009": [
       "TASK-004",
       "TASK-005",
-      "TASK-006"
+      "TASK-006",
+      "TASK-046",
+      "TASK-047",
+      "TASK-048"
+    ],
+    "TASK-046": [],
+    "TASK-047": [],
+    "TASK-048": [
+      "TASK-046"
     ],
     "TASK-010": [],
     "TASK-011": [
+      "TASK-010"
+    ],
+    "TASK-050": [
       "TASK-010"
     ],
     "TASK-012": [],
@@ -1681,7 +1865,8 @@
     ],
     "TASK-016": [
       "TASK-011",
-      "TASK-012"
+      "TASK-012",
+      "TASK-050"
     ],
     "TASK-017": [
       "TASK-013",
