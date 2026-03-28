@@ -33,21 +33,33 @@ export class SessionBuffers {
   // Flush cursors — used by server.ts flush logic
   lastConsoleFlushed = 0;
   lastNetworkFlushed = 0;
+  // Running counters — used by action-context.ts for O(1) state capture
+  consoleErrorCount = 0;
+  networkPendingCount = 0;
 
   addConsoleEntry(entry: LogEntry) {
     if (this.consoleBuffer.length >= DEFAULTS.BUFFER_HIGH_WATER_MARK) {
-      this.consoleBuffer.shift();
+      const evicted = this.consoleBuffer.shift()!;
+      if (evicted.level === 'error') this.consoleErrorCount--;
     }
     this.consoleBuffer.push(entry);
     this.consoleTotalAdded++;
+    if (entry.level === 'error') this.consoleErrorCount++;
   }
 
   addNetworkEntry(entry: NetworkEntry) {
     if (this.networkBuffer.length >= DEFAULTS.BUFFER_HIGH_WATER_MARK) {
-      this.networkBuffer.shift();
+      const evicted = this.networkBuffer.shift()!;
+      if (evicted.status == null) this.networkPendingCount--;
     }
     this.networkBuffer.push(entry);
     this.networkTotalAdded++;
+    if (entry.status == null) this.networkPendingCount++;
+  }
+
+  /** Called when a network entry gets its status (response arrived). */
+  resolveNetworkEntry() {
+    if (this.networkPendingCount > 0) this.networkPendingCount--;
   }
 }
 

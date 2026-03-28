@@ -16,6 +16,7 @@ import { handleReadCommand } from './commands/read';
 import { handleWriteCommand } from './commands/write';
 import { handleMetaCommand } from './commands/meta';
 import { getToolDefinitions, mapToolCallToCommand } from './mcp-tools';
+import { capturePageState, buildContextDelta, formatContextLine } from './action-context';
 
 /**
  * Start the MCP server.
@@ -75,7 +76,23 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
       if (READ_COMMANDS.has(command)) {
         result = await handleReadCommand(command, args, bm, buffers);
       } else if (WRITE_COMMANDS.has(command)) {
+        // Capture page state before write command
+        const before = await capturePageState(bm.getPage(), bm, buffers).catch(() => null);
+
         result = await handleWriteCommand(command, args, bm);
+
+        // Capture after state and append context delta
+        if (before) {
+          try {
+            const after = await capturePageState(bm.getPage(), bm, buffers);
+            const delta = buildContextDelta(before, after);
+            if (delta) {
+              result += '\n' + formatContextLine(delta, command);
+            }
+          } catch {
+            // Don't let context capture failures break the command
+          }
+        }
       } else if (META_COMMANDS.has(command)) {
         result = await handleMetaCommand(
           command, args, bm,

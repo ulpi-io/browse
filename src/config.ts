@@ -14,6 +14,7 @@ export interface BrowseConfig {
   idleTimeout?: number;
   viewport?: string;
   device?: string;
+  context?: boolean;
 }
 
 /**

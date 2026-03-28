@@ -36,6 +36,7 @@ const cliFlags = {
   profile: '' as string,
   provider: '' as string,
   runtime: '' as string,
+  context: false,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -457,6 +458,9 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   if (cliFlags.maxOutput > 0) {
     headers['X-Browse-Max-Output'] = String(cliFlags.maxOutput);
   }
+  if (cliFlags.context) {
+    headers['X-Browse-Context'] = '1';
+  }
 
   try {
     const resp = await fetch(`http://127.0.0.1:${state.port}/command`, {
@@ -646,6 +650,15 @@ export async function main() {
   }
   contentBoundaries = contentBoundaries || process.env.BROWSE_CONTENT_BOUNDARIES === '1' || config.contentBoundaries === true;
 
+  // Extract --context flag (only before command)
+  let contextMode = false;
+  const ctxIdx = args.indexOf('--context');
+  if (ctxIdx !== -1 && ctxIdx < findCommandIndex(args)) {
+    contextMode = true;
+    args.splice(ctxIdx, 1);
+  }
+  contextMode = contextMode || process.env.BROWSE_CONTEXT === '1' || config.context === true;
+
   // Extract --allowed-domains flag (only before command)
   let allowedDomains: string | undefined;
   const domIdx = args.indexOf('--allowed-domains');
@@ -790,6 +803,7 @@ export async function main() {
   cliFlags.profile = profileName || '';
   cliFlags.runtime = runtimeName || '';
   cliFlags.provider = providerName || '';
+  cliFlags.context = contextMode;
 
   // Resolve cloud provider CDP URL
   if (providerName) {
@@ -849,6 +863,7 @@ Interaction:    click <sel> | rightclick <sel> | dblclick <sel>
 Mouse:          mouse move <x> <y> | mouse down [btn] | mouse up [btn]
                 mouse wheel <dy> [dx]
 Settings:       set geo <lat> <lng> | set media <dark|light|no-preference>
+                set context <on|off>
 Device:         emulate <device> | emulate reset | devices [filter]
 Inspection:     js <expr> | eval <file> | css <sel> <prop> | attrs <sel>
                 element-state <sel> | box <sel> | dialog
@@ -900,6 +915,7 @@ Options:
   --profile <name>         Persistent browser profile (own Chromium, full state persistence)
   --json                   Wrap output as {success, data, command}
   --content-boundaries     Wrap page content in nonce-delimited markers
+  --context                Enable action context (shows what changed after write commands)
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
   --headed                 Run browser in headed (visible) mode
   --chrome                 Launch system Chrome (uses your profile, cookies, extensions)

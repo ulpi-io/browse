@@ -657,7 +657,7 @@ export async function handleWriteCommand(
 
     case 'set': {
       const sub = args[0];
-      if (!sub) throw new Error('Usage: browse set <geo|media> [args]\n  geo <lat> <lng>\n  media <dark|light|no-preference>');
+      if (!sub) throw new Error('Usage: browse set <geo|media|context> [args]\n  geo <lat> <lng>\n  media <dark|light|no-preference>\n  context <on|off>');
       switch (sub) {
         case 'geo': {
           const lat = parseFloat(args[1]);
@@ -677,8 +677,18 @@ export async function handleWriteCommand(
           await page.emulateMedia({ colorScheme: scheme as 'dark' | 'light' | 'no-preference' });
           return `Color scheme set to ${scheme}`;
         }
+        case 'context': {
+          const val = args[1]?.toLowerCase();
+          if (val !== 'on' && val !== 'off') {
+            throw new Error('Usage: browse set context <on|off>');
+          }
+          // Return signal string — server.ts will update session.contextEnabled
+          return val === 'on'
+            ? 'Context enabled — write commands will include page state changes'
+            : 'Context disabled';
+        }
         default:
-          throw new Error(`Unknown set subcommand: ${sub}. Use geo|media`);
+          throw new Error(`Unknown set subcommand: ${sub}. Use geo|media|context`);
       }
     }
 

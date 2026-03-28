@@ -237,7 +237,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 
   {
     name: 'browse_goto',
-    description: 'Navigate to a URL. Waits for DOMContentLoaded. Returns the HTTP status code. This is the primary way to open web pages.',
+    description: 'Navigate to a URL. Waits for DOMContentLoaded. Returns the HTTP status code. This is the primary way to open web pages. When context is active, appends a [context] line showing URL change, title change, and any new console errors.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -263,7 +263,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_click',
-    description: 'Click an element on the page. Supports CSS selectors and @ref identifiers from snapshot. Waits for the element to be actionable, then clicks it. Use browse_snapshot first to find element refs.',
+    description: 'Click an element on the page. Supports CSS selectors and @ref identifiers from snapshot. Waits for the element to be actionable, then clicks it. Use browse_snapshot first to find element refs. May include a [context] line showing state changes (e.g., navigation, dialog) after the click.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -285,7 +285,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_fill',
-    description: 'Fill an input field with text. Clears existing content first, then types the value. Works with text inputs, textareas, and contenteditable elements. Use browse_snapshot to find the input ref first.',
+    description: 'Fill an input field with text. Clears existing content first, then types the value. Works with text inputs, textareas, and contenteditable elements. Use browse_snapshot to find the input ref first. May include a [context] line if the fill action triggers state changes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -297,7 +297,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_select',
-    description: 'Select an option in a dropdown/select element by value or label. Use browse_forms to see available options first.',
+    description: 'Select an option in a dropdown/select element by value or label. Use browse_forms to see available options first. May include a [context] line if the selection triggers state changes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -331,7 +331,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_check',
-    description: 'Check a checkbox or radio button. Ensures the element becomes checked. No-op if already checked.',
+    description: 'Check a checkbox or radio button. Ensures the element becomes checked. No-op if already checked. May include a [context] line if the action triggers state changes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -342,7 +342,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_uncheck',
-    description: 'Uncheck a checkbox. Ensures the element becomes unchecked. No-op if already unchecked.',
+    description: 'Uncheck a checkbox. Ensures the element becomes unchecked. No-op if already unchecked. May include a [context] line if the action triggers state changes.',
     inputSchema: {
       type: 'object',
       properties: {
