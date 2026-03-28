@@ -25,7 +25,7 @@ const RECORDING_COMMANDS = new Set(['record', 'har', 'video']);
 const SESSIONS_COMMANDS = new Set(['sessions', 'session-close', 'state', 'handoff', 'resume']);
 
 const INSPECTION_COMMANDS = new Set([
-  'snapshot', 'snapshot-diff', 'diff', 'frame', 'find', 'inspect', 'detect', 'coverage', 'perf-audit',
+  'snapshot', 'snapshot-diff', 'diff', 'frame', 'find', 'inspect', 'detect', 'coverage', 'perf-audit', 'api',
 ]);
 
 const AUTH_COMMANDS = new Set(['auth', 'cookie-import']);

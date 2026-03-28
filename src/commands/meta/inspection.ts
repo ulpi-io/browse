@@ -513,6 +513,85 @@ export async function handleInspectionCommand(
       }
     }
 
+    case 'api': {
+      const method = (args[0] || '').toUpperCase();
+      if (!method || !args[1]) throw new Error('Usage: browse api <method> <url> [--body <json>] [--header <k:v>]');
+      const url = args[1];
+
+      // Parse --body and --header flags
+      let body: string | undefined;
+      const headers: Record<string, string> = {};
+      for (let i = 2; i < args.length; i++) {
+        if (args[i] === '--body' && args[i + 1]) {
+          body = args[++i];
+        } else if (args[i] === '--header' && args[i + 1]) {
+          const hdr = args[++i];
+          const colonIdx = hdr.indexOf(':');
+          if (colonIdx > 0) {
+            headers[hdr.slice(0, colonIdx).trim()] = hdr.slice(colonIdx + 1).trim();
+          }
+        }
+      }
+
+      // If body is provided and no Content-Type set, default to JSON
+      if (body && !headers['Content-Type'] && !headers['content-type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      const page = bm.getPage();
+      const result = await page.evaluate(async ({ method, url, body, headers }) => {
+        try {
+          const opts: RequestInit = { method, headers };
+          if (body) opts.body = body;
+          const res = await fetch(url, opts);
+          const contentType = res.headers.get('content-type') || '';
+          const resHeaders: Record<string, string> = {};
+          res.headers.forEach((v, k) => { resHeaders[k] = v; });
+
+          let resBody: string;
+          if (contentType.includes('json')) {
+            try {
+              resBody = JSON.stringify(await res.json(), null, 2);
+            } catch {
+              resBody = await res.text();
+            }
+          } else {
+            resBody = await res.text();
+          }
+
+          return {
+            ok: true,
+            status: res.status,
+            statusText: res.statusText,
+            headers: resHeaders,
+            body: resBody,
+          };
+        } catch (err: any) {
+          return { ok: false, error: err.message || String(err) };
+        }
+      }, { method, url, body, headers });
+
+      if (!result.ok) {
+        if (result.error?.includes('Failed to fetch') || result.error?.includes('NetworkError')) {
+          throw new Error(`Connection refused: ${url}. Is the API server running?`);
+        }
+        if (result.error?.includes('CORS') || result.error?.includes('blocked')) {
+          throw new Error(`CORS blocked: origin mismatch. Navigate to the API's origin first, or use the --header flag.`);
+        }
+        throw new Error(`API request failed: ${result.error}`);
+      }
+
+      const lines: string[] = [];
+      lines.push(`${result.status} ${result.statusText}`);
+      lines.push('');
+      for (const [k, v] of Object.entries(result.headers || {})) {
+        lines.push(`${k}: ${v}`);
+      }
+      lines.push('');
+      lines.push(result.body || '');
+      return lines.join('\n');
+    }
+
     default:
       throw new Error(`Unknown inspection command: ${command}`);
   }

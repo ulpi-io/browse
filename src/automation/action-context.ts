@@ -14,6 +14,9 @@ import type { BrowserTarget } from '../browser/target';
 import type { SessionBuffers } from '../network/buffers';
 import { handleSnapshot } from '../browser/snapshot';
 
+/** Threshold (ms) below which recent DOM mutations make the page "unsettled". */
+const DOM_MUTATION_SETTLE_MS = 300;
+
 /**
  * Capture a snapshot of the current page state.
  * Called before and after each write command to detect changes.
@@ -38,14 +41,44 @@ export async function capturePageState(
     // page may be closed or navigating
   }
 
+  const networkPendingCount = buffers.networkPendingCount;
+
+  // Determine DOM mutation age — catches ongoing DOM churn after interactions.
+  // Infinity means no mutations observed since last page load (clean baseline).
+  let mutationAge = Infinity;
+  try {
+    mutationAge = await bm.getLastMutationAge();
+  } catch {
+    // Non-critical — if we can't read mutation age, assume settled on DOM side
+  }
+
+  // Compute settled signal
+  const networkSettled = networkPendingCount === 0;
+  const domSettled = mutationAge > DOM_MUTATION_SETTLE_MS;
+  const settled = networkSettled && domSettled;
+
+  let settledReason: string | undefined;
+  if (!settled) {
+    const reasons: string[] = [];
+    if (!networkSettled) {
+      reasons.push(`network: ${networkPendingCount} pending`);
+    }
+    if (!domSettled) {
+      reasons.push(`dom: mutation ${Math.round(mutationAge)}ms ago`);
+    }
+    settledReason = reasons.join(', ');
+  }
+
   return {
     url,
     title,
     tabCount: bm.getTabCount(),
     dialog: bm.getLastDialog(),
     consoleErrorCount: buffers.consoleErrorCount,
-    networkPendingCount: buffers.networkPendingCount,
+    networkPendingCount,
     timestamp: Date.now(),
+    settled,
+    ...(settledReason !== undefined ? { settledReason } : {}),
   };
 }
 
@@ -109,9 +142,17 @@ export function buildContextDelta(
  * Format a context delta as a single-line human-readable string.
  * Appended to command output so the caller sees what changed.
  *
- * Example: `[context] -> /checkout | title: "Order Summary" | errors: +2`
+ * Example: `[context] -> /checkout | title: "Order Summary" | errors: +2 | settled:true`
+ *
+ * @param delta    What changed between before and after page states.
+ * @param _command The write command name (reserved for future per-command logic).
+ * @param afterState Optional after-state; when provided, the settled signal is appended.
  */
-export function formatContextLine(delta: ContextDelta, _command: string): string {
+export function formatContextLine(
+  delta: ContextDelta,
+  _command: string,
+  afterState?: PageState,
+): string {
   const parts: string[] = [];
 
   if (delta.navigated && delta.urlChanged != null) {
@@ -137,6 +178,16 @@ export function formatContextLine(delta: ContextDelta, _command: string): string
 
   if (delta.dialogDismissed === true) {
     parts.push('dialog dismissed');
+  }
+
+  // Settled signal — always present when afterState is provided
+  if (afterState !== undefined) {
+    if (afterState.settled) {
+      parts.push('settled:true');
+    } else {
+      const reason = afterState.settledReason ?? 'unknown';
+      parts.push(`settled:false (${reason})`);
+    }
   }
 
   return `[context] ${parts.join(' | ')}`;
@@ -319,13 +370,15 @@ export async function finalizeWriteContext(
 
   try {
     // State context line (shared by all non-off levels)
+    // Always produced when beforeState is available — carries the settled signal
+    // even when no other fields changed.
     let contextLine = '';
     if (capture.beforeState) {
       const afterState = await capturePageState(bm.getPage(), bm, buffers);
       const delta = buildContextDelta(capture.beforeState, afterState);
-      if (delta) {
-        contextLine = '\n' + formatContextLine(delta, command);
-      }
+      // Always emit context line: either delta fields changed, or settled signal is useful
+      const effectiveDelta = delta ?? {};
+      contextLine = '\n' + formatContextLine(effectiveDelta, command, afterState);
     }
 
     if (capture.level === 'state') {

@@ -36,6 +36,40 @@ import { getProfileDir, listProfiles, deleteProfile } from './profiles';
 const ESBUILD_KEEPNAMES_POLYFILL =
   'if(typeof globalThis.__name==="undefined"){globalThis.__name=function(fn){return fn};}';
 
+/**
+ * DOM mutation tracking script.
+ *
+ * Installs a MutationObserver that records when the DOM last changed.
+ * `window.__browseMutationAge` returns the milliseconds since the last observed
+ * DOM mutation, or Infinity when no mutations have been observed on this page.
+ *
+ * Resets automatically on each page load because addInitScript() re-runs
+ * on every navigation — no explicit reset needed.
+ *
+ * Keyed on `globalThis` so that the polyfill guard avoids double-registration
+ * when addInitScript() is called multiple times on the same context.
+ */
+const MUTATION_OBSERVER_SCRIPT = `
+(function() {
+  if (typeof globalThis.__browseMutationTime !== 'undefined') return;
+  globalThis.__browseMutationTime = null;
+  var observer = new MutationObserver(function() {
+    globalThis.__browseMutationTime = Date.now();
+  });
+  observer.observe(document.documentElement || document, {
+    childList: true, subtree: true, attributes: true, characterData: true
+  });
+  Object.defineProperty(globalThis, '__browseMutationAge', {
+    get: function() {
+      return globalThis.__browseMutationTime === null
+        ? Infinity
+        : (Date.now() - globalThis.__browseMutationTime);
+    },
+    configurable: true,
+  });
+})();
+`;
+
 // DeviceDescriptor, DEVICE_ALIASES, CUSTOM_DEVICES, resolveDevice, listDevices
 // are defined in ./emulation and re-exported from there + from this file below.
 
@@ -89,6 +123,14 @@ export class BrowserManager implements BrowserTarget {
 
   // ─── Coverage ──────────────────────────────────────────────
   private coverageActive: boolean = false;
+
+  // ─── Network body capture ─────────────────────────────
+  private captureNetworkBodies: boolean = false;
+  /** Per-session byte budget for captured response bodies (default 5MB) */
+  private bodyBudgetBytes = 5 * 1024 * 1024;
+  private bodyBudgetUsed = 0;
+  /** Per-entry body size limit (default 256KB) */
+  private bodyLimitBytes = parseInt(process.env.BROWSE_NETWORK_BODY_LIMIT || '262144', 10);
 
   // ─── Init Script (domain filter JS injection) ─────────────
   private initScript: string | null = null;
@@ -145,6 +187,7 @@ export class BrowserManager implements BrowserTarget {
       ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
     });
     await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
+    await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
 
     // Create first tab
     await this.newTab();
@@ -166,6 +209,7 @@ export class BrowserManager implements BrowserTarget {
         viewport: { width: 1920, height: 1080 },
       });
       await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
+      await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
       // Register existing pages
       const pages = this.context.pages();
       if (pages.length > 0) {
@@ -180,6 +224,7 @@ export class BrowserManager implements BrowserTarget {
         ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
       });
       await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
+      await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
     }
 
     // Create first tab
@@ -219,6 +264,7 @@ export class BrowserManager implements BrowserTarget {
     this.isPersistent = true;
     this.ownsBrowser = true;
     await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
+    await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
 
     // Crash handler
     if (this.browser) {
@@ -362,6 +408,7 @@ export class BrowserManager implements BrowserTarget {
 
   private async applyContextOptions(context: BrowserContext): Promise<void> {
     await context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
+    await context.addInitScript(MUTATION_OBSERVER_SCRIPT);
     if (Object.keys(this.extraHeaders).length > 0) {
       await context.setExtraHTTPHeaders(this.extraHeaders);
     }
@@ -857,6 +904,7 @@ export class BrowserManager implements BrowserTarget {
     // Restore cookies and headers into new context before creating tabs
     try {
       await newContext.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
+      await newContext.addInitScript(MUTATION_OBSERVER_SCRIPT);
       if (savedCookies.length > 0) {
         await newContext.addCookies(savedCookies);
       }
@@ -1210,6 +1258,35 @@ export class BrowserManager implements BrowserTarget {
     return this.domainFilter;
   }
 
+  setCaptureNetworkBodies(enabled: boolean): void {
+    this.captureNetworkBodies = enabled;
+  }
+
+  getCaptureNetworkBodies(): boolean {
+    return this.captureNetworkBodies;
+  }
+
+  // ─── DOM mutation tracking ──────────────────────────────────
+
+  /**
+   * Returns the milliseconds since the last observed DOM mutation on the
+   * current page, or Infinity if no mutations have been seen since page load.
+   *
+   * Reads `window.__browseMutationAge` which is kept up-to-date by the
+   * MutationObserver injected via MUTATION_OBSERVER_SCRIPT.
+   */
+  async getLastMutationAge(): Promise<number> {
+    try {
+      const age = await this.getPage().evaluate(
+        () => (globalThis as any).__browseMutationAge as number | undefined
+      );
+      return age ?? Infinity;
+    } catch {
+      // Page closed / navigating — treat as no mutations known
+      return Infinity;
+    }
+  }
+
   /**
    * Reverse-lookup: find the tab ID that owns this page.
    * Returns undefined if the page isn't committed to any tab yet (during newTab).
@@ -1219,6 +1296,18 @@ export class BrowserManager implements BrowserTarget {
   }
 
   // ─── Console/Network/Ref Wiring ────────────────────────────
+  /** Evict oldest captured response bodies to stay within the per-session byte budget */
+  private evictOldestBodies(): void {
+    const entries = this.buffers.networkBuffer;
+    for (let i = 0; i < entries.length && this.bodyBudgetUsed > this.bodyBudgetBytes; i++) {
+      const e = entries[i];
+      if (e.responseBody && !e.responseBody.startsWith('[binary')) {
+        this.bodyBudgetUsed -= e.responseBody.length;
+        e.responseBody = '[evicted]';
+      }
+    }
+  }
+
   private wirePageEvents(page: Page) {
     // Clear ref map on navigation — but ONLY if this page belongs to the tab
     // that owns the current refs. Otherwise, navigating tab B clears tab A's refs.
@@ -1264,8 +1353,16 @@ export class BrowserManager implements BrowserTarget {
         method: req.method(),
         url: req.url(),
       };
+      // Capture request headers + body when body capture is enabled
+      if (this.captureNetworkBodies) {
+        entry.requestHeaders = req.headers();
+        const method = req.method().toUpperCase();
+        if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+          const postData = req.postData();
+          entry.requestBody = postData ?? '[binary upload]';
+        }
+      }
       this.buffers.addNetworkEntry(entry);
-      // Store direct reference for accurate correlation on duplicate URLs
       this.requestEntryMap.set(req, entry);
     });
 
@@ -1274,10 +1371,27 @@ export class BrowserManager implements BrowserTarget {
       if (entry) {
         entry.status = res.status();
         entry.duration = Date.now() - entry.timestamp;
+        // Capture response headers when body capture is enabled
+        if (this.captureNetworkBodies) {
+          entry.responseHeaders = res.headers();
+        }
+        // Decrement pending count — request has received a response
+        this.buffers.resolveNetworkEntry();
       }
     });
 
-    // Capture response sizes via Content-Length header (avoids reading full body into memory)
+    // Decrement pending count for failed requests (no response arrives)
+    page.on('requestfailed', (req) => {
+      const entry = this.requestEntryMap.get(req);
+      if (entry) {
+        entry.duration = Date.now() - entry.timestamp;
+        // Mark as failed so it doesn't linger as pending
+        if (entry.status == null) {
+          this.buffers.resolveNetworkEntry();
+        }
+      }
+    });
+
     page.on('requestfinished', async (req) => {
       try {
         const res = await req.response();
@@ -1286,6 +1400,30 @@ export class BrowserManager implements BrowserTarget {
           if (entry) {
             const cl = res.headers()['content-length'];
             entry.size = cl ? parseInt(cl, 10) : 0;
+
+            // Capture response body when body capture is enabled
+            if (this.captureNetworkBodies) {
+              const contentType = res.headers()['content-type'] || '';
+              const isText = /json|text|xml|html|javascript|css/i.test(contentType);
+              if (isText) {
+                try {
+                  let body = await res.text();
+                  if (body.length > this.bodyLimitBytes) {
+                    body = body.slice(0, this.bodyLimitBytes) + `...(truncated at ${this.bodyLimitBytes}B)`;
+                  }
+                  // Enforce per-session byte budget — evict oldest bodies when over budget
+                  this.bodyBudgetUsed += body.length;
+                  entry.responseBody = body;
+                  if (this.bodyBudgetUsed > this.bodyBudgetBytes) {
+                    this.evictOldestBodies();
+                  }
+                } catch {
+                  // Body unavailable (redirect, abort) — skip gracefully
+                }
+              } else {
+                entry.responseBody = `[binary ${entry.size || 0} bytes]`;
+              }
+            }
           }
         }
       } catch {}

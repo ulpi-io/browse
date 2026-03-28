@@ -72,6 +72,9 @@ export interface BrowserTarget extends AutomationTarget {
   setInitScript(script: string): void;
   getInitScript(): string | null;
 
+  // ─── DOM mutation tracking ──────────────────────────────────
+  getLastMutationAge(): Promise<number>;
+
   // ─── Snapshot ───────────────────────────────────────────
   getLastSnapshot(): string | null;
   getLastSnapshotOpts(): string[];
@@ -93,6 +96,10 @@ export interface BrowserTarget extends AutomationTarget {
   // ─── Session handoff ────────────────────────────────────
   handoff(message: string, useChromium?: boolean): Promise<string>;
   resume(): Promise<string>;
+
+  // ─── Network body capture ───────────────────────────────
+  setCaptureNetworkBodies(enabled: boolean): void;
+  getCaptureNetworkBodies(): boolean;
 
   // ─── React DevTools ─────────────────────────────────────
   getReactDevToolsEnabled(): boolean;

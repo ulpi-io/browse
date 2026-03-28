@@ -36,6 +36,114 @@ async function rebuildRoutes(context: BrowserContext, bm: BrowserTarget, domainF
   }
 }
 
+/**
+ * Find similar elements on the page for selector suggestions.
+ * Only used for CSS selectors (not @refs) after a not-found failure.
+ */
+async function findSelectorSuggestions(page: import('playwright').Page, selector: string): Promise<string[]> {
+  try {
+    // Extract meaningful tokens from the selector for fuzzy matching
+    const tagMatch = selector.match(/^([a-zA-Z][a-zA-Z0-9]*)/);
+    const idMatch = selector.match(/#([a-zA-Z0-9_-]+)/);
+    const classMatches = [...selector.matchAll(/\.([a-zA-Z0-9_-]+)/g)].map(m => m[1]);
+    const attrMatch = selector.match(/\[([a-zA-Z0-9_-]+)/);
+    const textMatch = selector.match(/:text\("([^"]+)"\)/) || selector.match(/:has-text\("([^"]+)"\)/);
+
+    const suggestions = await page.evaluate(
+      ({ tag, id, classes, attr, text }) => {
+        const results: string[] = [];
+
+        // Try by ID similarity
+        if (id) {
+          const el = document.getElementById(id);
+          if (!el) {
+            document.querySelectorAll('[id]').forEach((e) => {
+              const eid = e.id;
+              if (eid.toLowerCase().includes(id.toLowerCase()) || id.toLowerCase().includes(eid.toLowerCase())) {
+                results.push(`#${eid}`);
+              }
+            });
+          }
+        }
+
+        // Try by class similarity
+        if (classes.length > 0) {
+          const targetClass = classes[0];
+          document.querySelectorAll('[class]').forEach((e) => {
+            if ([...e.classList].some(c => c.toLowerCase().includes(targetClass.toLowerCase()))) {
+              const tagName = e.tagName.toLowerCase();
+              const firstClass = e.classList[0];
+              const candidate = `${tagName}.${firstClass}`;
+              if (!results.includes(candidate)) results.push(candidate);
+            }
+          });
+        }
+
+        // Try by tag + attribute
+        if (tag) {
+          const tagEls = document.querySelectorAll(tag);
+          if (tagEls.length > 0 && tagEls.length <= 10) {
+            tagEls.forEach((e) => {
+              const el = e as HTMLElement;
+              if (el.id) results.push(`${tag}#${el.id}`);
+              else if (el.getAttribute('name')) results.push(`${tag}[name="${el.getAttribute('name')}"]`);
+              else if (el.getAttribute('data-testid')) results.push(`${tag}[data-testid="${el.getAttribute('data-testid')}"]`);
+            });
+          }
+        }
+
+        // Try by text content similarity
+        if (text) {
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          let node: Node | null;
+          while ((node = walker.nextNode()) && results.length < 6) {
+            const content = node.textContent?.trim() || '';
+            if (content.toLowerCase().includes(text.toLowerCase()) && content.length < 50) {
+              const parent = node.parentElement;
+              if (parent) {
+                const t = parent.tagName.toLowerCase();
+                if (parent.id) results.push(`${t}#${parent.id}`);
+                else if (parent.className) results.push(`${t}.${parent.className.split(' ')[0]}`);
+                else results.push(t);
+              }
+            }
+          }
+        }
+
+        // Deduplicate and limit
+        return [...new Set(results)].slice(0, 3);
+      },
+      {
+        tag: tagMatch ? tagMatch[1] : null,
+        id: idMatch ? idMatch[1] : null,
+        classes: classMatches,
+        attr: attrMatch ? attrMatch[1] : null,
+        text: textMatch ? textMatch[1] : null,
+      }
+    );
+
+    return suggestions;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Re-throw a selector timeout error enriched with nearby element suggestions.
+ * Only runs for CSS selectors (not @refs). Suggestions are best-effort.
+ */
+async function rethrowWithSuggestions(err: unknown, page: import('playwright').Page, selector: string): Promise<never> {
+  const error = err as Error;
+  // Only add suggestions for timeout-style not-found errors on CSS selectors
+  if (error.message && (error.message.includes('Timeout') || error.message.includes('waiting for')) && !selector.startsWith('@')) {
+    const suggestions = await findSelectorSuggestions(page, selector);
+    if (suggestions.length > 0) {
+      throw new Error(`Element not found: ${selector}\nDid you mean: ${suggestions.join(', ')}?`);
+    }
+  }
+  throw err;
+}
+
 export async function handleWriteCommand(
   command: string,
   args: string[],
@@ -72,13 +180,30 @@ export async function handleWriteCommand(
     }
 
     case 'click': {
-      const selector = args[0];
-      if (!selector) throw new Error('Usage: browse click <selector>');
+      const ifExists = args.includes('--if-exists');
+      const ifVisible = args.includes('--if-visible');
+      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
+      const selector = filteredArgs[0];
+      if (!selector) throw new Error('Usage: browse click <selector> [--if-exists] [--if-visible]');
       const resolved = bm.resolveRef(selector);
-      if ('locator' in resolved) {
-        await resolved.locator.click({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
-      } else {
-        await page.click(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      if (ifExists || ifVisible) {
+        const count = await locator.count();
+        if (count === 0) return `SKIP: element not found`;
+        if (ifVisible) {
+          const visible = await locator.first().isVisible();
+          if (!visible) return `SKIP: element not visible`;
+        }
+      }
+      try {
+        if ('locator' in resolved) {
+          await resolved.locator.click({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        } else {
+          await page.click(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        }
+      } catch (err) {
+        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+        throw err;
       }
       // Wait briefly for any navigation/DOM update
       await page.waitForLoadState('domcontentloaded').catch(() => {});
@@ -86,14 +211,26 @@ export async function handleWriteCommand(
     }
 
     case 'fill': {
-      const [selector, ...valueParts] = args;
+      const ifEmpty = args.includes('--if-empty');
+      const filteredArgs = args.filter(a => a !== '--if-empty');
+      const [selector, ...valueParts] = filteredArgs;
       const value = valueParts.join(' ');
-      if (!selector) throw new Error('Usage: browse fill <selector> <value>');
+      if (!selector) throw new Error('Usage: browse fill <selector> <value> [--if-empty]');
       const resolved = bm.resolveRef(selector);
-      if ('locator' in resolved) {
-        await resolved.locator.fill(value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
-      } else {
-        await page.fill(resolved.selector, value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      if (ifEmpty) {
+        const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+        const currentValue = await locator.first().inputValue().catch(() => '');
+        if (currentValue !== '') return `SKIP: field already has value "${currentValue}"`;
+      }
+      try {
+        if ('locator' in resolved) {
+          await resolved.locator.fill(value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        } else {
+          await page.fill(resolved.selector, value, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        }
+      } catch (err) {
+        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+        throw err;
       }
       return `Filled ${selector}`;
     }
@@ -112,13 +249,30 @@ export async function handleWriteCommand(
     }
 
     case 'hover': {
-      const selector = args[0];
-      if (!selector) throw new Error('Usage: browse hover <selector>');
+      const ifExists = args.includes('--if-exists');
+      const ifVisible = args.includes('--if-visible');
+      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
+      const selector = filteredArgs[0];
+      if (!selector) throw new Error('Usage: browse hover <selector> [--if-exists] [--if-visible]');
       const resolved = bm.resolveRef(selector);
-      if ('locator' in resolved) {
-        await resolved.locator.hover({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
-      } else {
-        await page.hover(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      if (ifExists || ifVisible) {
+        const count = await locator.count();
+        if (count === 0) return `SKIP: element not found`;
+        if (ifVisible) {
+          const visible = await locator.first().isVisible();
+          if (!visible) return `SKIP: element not visible`;
+        }
+      }
+      try {
+        if ('locator' in resolved) {
+          await resolved.locator.hover({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        } else {
+          await page.hover(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        }
+      } catch (err) {
+        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+        throw err;
       }
       return `Hovered ${selector}`;
     }
@@ -431,25 +585,54 @@ export async function handleWriteCommand(
     }
 
     case 'focus': {
-      const selector = args[0];
-      if (!selector) throw new Error('Usage: browse focus <selector>');
+      const ifExists = args.includes('--if-exists');
+      const ifVisible = args.includes('--if-visible');
+      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
+      const selector = filteredArgs[0];
+      if (!selector) throw new Error('Usage: browse focus <selector> [--if-exists] [--if-visible]');
       const resolved = bm.resolveRef(selector);
-      if ('locator' in resolved) {
-        await resolved.locator.focus({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
-      } else {
-        await page.locator(resolved.selector).focus({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      if (ifExists || ifVisible) {
+        const count = await locator.count();
+        if (count === 0) return `SKIP: element not found`;
+        if (ifVisible) {
+          const visible = await locator.first().isVisible();
+          if (!visible) return `SKIP: element not visible`;
+        }
+      }
+      try {
+        if ('locator' in resolved) {
+          await resolved.locator.focus({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        } else {
+          await page.locator(resolved.selector).focus({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        }
+      } catch (err) {
+        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+        throw err;
       }
       return `Focused ${selector}`;
     }
 
     case 'check': {
-      const selector = args[0];
-      if (!selector) throw new Error('Usage: browse check <selector>');
+      const ifUnchecked = args.includes('--if-unchecked');
+      const filteredArgs = args.filter(a => a !== '--if-unchecked');
+      const selector = filteredArgs[0];
+      if (!selector) throw new Error('Usage: browse check <selector> [--if-unchecked]');
       const resolved = bm.resolveRef(selector);
-      if ('locator' in resolved) {
-        await resolved.locator.check({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
-      } else {
-        await page.locator(resolved.selector).check({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+      if (ifUnchecked) {
+        const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+        const checked = await locator.first().isChecked();
+        if (checked) return `SKIP: already checked`;
+      }
+      try {
+        if ('locator' in resolved) {
+          await resolved.locator.check({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        } else {
+          await page.locator(resolved.selector).check({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
+        }
+      } catch (err) {
+        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+        throw err;
       }
       return `Checked ${selector}`;
     }
@@ -546,9 +729,21 @@ export async function handleWriteCommand(
     }
 
     case 'tap': {
-      const selector = args[0];
-      if (!selector) throw new Error('Usage: browse tap <selector>');
+      const ifExists = args.includes('--if-exists');
+      const ifVisible = args.includes('--if-visible');
+      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
+      const selector = filteredArgs[0];
+      if (!selector) throw new Error('Usage: browse tap <selector> [--if-exists] [--if-visible]');
       const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      if (ifExists || ifVisible) {
+        const count = await locator.count();
+        if (count === 0) return `SKIP: element not found`;
+        if (ifVisible) {
+          const visible = await locator.first().isVisible();
+          if (!visible) return `SKIP: element not visible`;
+        }
+      }
       try {
         if ('locator' in resolved) {
           await resolved.locator.tap({ timeout: DEFAULTS.ACTION_TIMEOUT_MS });
@@ -561,6 +756,7 @@ export async function handleWriteCommand(
             `Tap requires a touch-enabled context. Run 'browse emulate "iPhone 14"' (or any mobile device) first to enable touch.`
           );
         }
+        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
         throw err;
       }
       return `Tapped ${selector}`;

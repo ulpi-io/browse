@@ -18,6 +18,14 @@ export interface NetworkEntry {
   status?: number;
   duration?: number;
   size?: number;
+  /** Request headers (populated when body capture is enabled) */
+  requestHeaders?: Record<string, string>;
+  /** Request body — POST/PUT/PATCH only (populated when body capture is enabled) */
+  requestBody?: string;
+  /** Response headers (populated when body capture is enabled) */
+  responseHeaders?: Record<string, string>;
+  /** Response body — text-like content types only, capped at NETWORK_BODY_LIMIT (populated when body capture is enabled) */
+  responseBody?: string;
 }
 
 /**

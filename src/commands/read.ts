@@ -359,6 +359,53 @@ export async function handleReadCommand(
       ).join('\n');
     }
 
+    case 'request': {
+      const query = args[0];
+      if (!query) throw new Error('Usage: browse request <index|url-pattern>');
+      const nb = (buffers || bm.getBuffers()).networkBuffer;
+      if (nb.length === 0) return 'No network entries. Navigate to a page first.';
+
+      let entry: import('../network/buffers').NetworkEntry | undefined;
+      const idx = parseInt(query, 10);
+      if (!isNaN(idx) && String(idx) === query) {
+        // Numeric index lookup
+        if (idx < 0 || idx >= nb.length) return `No request at index ${idx}. Buffer has ${nb.length} entries.`;
+        entry = nb[idx];
+      } else {
+        // URL pattern match (most recent)
+        for (let i = nb.length - 1; i >= 0; i--) {
+          if (nb[i].url.includes(query)) { entry = nb[i]; break; }
+        }
+        if (!entry) {
+          const recent = nb.slice(-3).map(e => `${e.method} ${e.url}`).join(', ');
+          return `No request matching '${query}'. Recent: ${recent}`;
+        }
+      }
+
+      const lines: string[] = [];
+      lines.push(`${entry.method} ${entry.url} → ${entry.status ?? 'pending'} (${entry.duration ?? '?'}ms)`);
+      if (entry.requestHeaders) {
+        lines.push('\nRequest Headers:');
+        for (const [k, v] of Object.entries(entry.requestHeaders)) lines.push(`  ${k}: ${v}`);
+      }
+      if (entry.requestBody) {
+        lines.push('\nRequest Body:');
+        lines.push(entry.requestBody);
+      }
+      if (entry.responseHeaders) {
+        lines.push('\nResponse Headers:');
+        for (const [k, v] of Object.entries(entry.responseHeaders)) lines.push(`  ${k}: ${v}`);
+      }
+      if (entry.responseBody) {
+        lines.push('\nResponse Body:');
+        lines.push(entry.responseBody);
+      }
+      if (!entry.requestHeaders && !entry.responseHeaders) {
+        lines.push('\nRequest bodies not available. Enable with --network-bodies or BROWSE_NETWORK_BODIES=1.');
+      }
+      return lines.join('\n');
+    }
+
     case 'devices': {
       const filter = args.join(' ').toLowerCase();
       const all = listDevices();

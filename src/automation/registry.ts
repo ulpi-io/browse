@@ -143,6 +143,11 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { clear: { type: 'boolean', description: 'Clear error entries from the buffer.' } } },
     argDecode: (p) => p.clear ? ['--clear'] : [],
   } }),
+  r('request',        'Inspect a single network entry in detail',          { usage: '<index|url-pattern>', safeToRetry: true, mcp: {
+    description: 'Inspect a single network entry with full details: headers, bodies, timing. Search by buffer index (numeric) or URL pattern match (most recent match). Requires --network-bodies for body content.',
+    inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Buffer index (e.g. "3") or URL pattern (e.g. "/api/cart").' } }, required: ['query'] },
+    argDecode: (p) => [String(p.query)],
+  } }),
 ]);
 
 // ─── Write Commands ──────────────────────────────────────────────
@@ -168,7 +173,7 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: {} },
     argDecode: () => [],
   } }),
-  w('click',           'Click element',                                     { usage: '<sel>', mcp: {
+  w('click',           'Click element',                                     { usage: '<sel> [--if-exists] [--if-visible]', mcp: {
     description: 'Click an element on the page. Supports CSS selectors and @ref identifiers from snapshot. When context is set to delta/full, response includes ARIA snapshot changes with clickable @refs.',
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref (e.g. "@e3") to click.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
@@ -183,7 +188,7 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to right-click.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
   } }),
-  w('fill',            'Fill input field',                                  { usage: '<sel> <val>', mcp: {
+  w('fill',            'Fill input field',                                  { usage: '<sel> <val> [--if-empty]', mcp: {
     description: 'Fill an input field with text. Clears existing content first, then types the value. Works with text inputs, textareas, and contenteditable elements. Use browse_snapshot to find the input ref first. May include a [context] line if the fill action triggers state changes.',
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the input element.' }, value: { type: 'string', description: 'Text value to fill into the input.' } }, required: ['selector', 'value'] },
     argDecode: (p) => [String(p.selector), String(p.value)],
@@ -193,17 +198,17 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the select element.' }, value: { type: 'string', description: 'Option value or visible text to select.' } }, required: ['selector', 'value'] },
     argDecode: (p) => [String(p.selector), String(p.value)],
   } }),
-  w('hover',           'Hover element',                                     { usage: '<sel>', mcp: {
+  w('hover',           'Hover element',                                     { usage: '<sel> [--if-exists] [--if-visible]', mcp: {
     description: 'Hover over an element. Triggers mouseover/mouseenter events. Use to reveal tooltips, dropdown menus, or hover-activated content. May include a [context] line showing state changes after the action.',
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to hover over.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
   } }),
-  w('focus',           'Focus element',                                     { usage: '<sel>', mcp: {
+  w('focus',           'Focus element',                                     { usage: '<sel> [--if-exists] [--if-visible]', mcp: {
     description: 'Focus an element. Use to bring keyboard focus to an input or interactive element before typing.',
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to focus.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
   } }),
-  w('check',           'Check checkbox',                                    { usage: '<sel>', mcp: {
+  w('check',           'Check checkbox',                                    { usage: '<sel> [--if-unchecked]', mcp: {
     description: 'Check a checkbox or radio button. Ensures the element becomes checked. No-op if already checked. May include a [context] line if the action triggers state changes.',
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the checkbox/radio.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
@@ -213,7 +218,7 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the checkbox.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
   } }),
-  w('tap',             'Tap element (touch)',                                { usage: '<sel>', mcp: {
+  w('tap',             'Tap element (touch)',                                { usage: '<sel> [--if-exists] [--if-visible]', mcp: {
     description: 'Tap an element (touch event). Requires a touch-enabled context — use browse_emulate with a mobile device first. May include a [context] line showing state changes after the action.',
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to tap.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
@@ -728,6 +733,16 @@ registry.registerAll([
       if (p.no_coverage) args.push('--no-coverage');
       if (p.no_detect) args.push('--no-detect');
       if (p.json) args.push('--json');
+      return args;
+    },
+  } }),
+  m('api',              'Run fetch() in page context with cookies/auth',    { usage: '<method> <url> [--body <json>] [--header <k:v>]', mcp: {
+    description: 'Run a fetch() request inside the page context, inheriting cookies and authentication. Returns status, headers, and parsed body. Useful for API testing without leaving the current page.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string', description: 'HTTP method (GET, POST, PUT, DELETE, etc.).' }, url: { type: 'string', description: 'API URL to request.' }, body: { type: 'string', description: 'Request body (JSON string). Content-Type defaults to application/json.' }, headers: { type: 'string', description: 'Custom headers as "Key: Value" (one per --header flag).' } }, required: ['method', 'url'] },
+    argDecode: (p) => {
+      const args = [String(p.method), String(p.url)];
+      if (p.body) args.push('--body', String(p.body));
+      if (p.headers) args.push('--header', String(p.headers));
       return args;
     },
   } }),

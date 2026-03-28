@@ -303,7 +303,10 @@ describe('MCP Server', () => {
       const fillResp = await waitForResponse(fillId);
       expect(fillResp.result).toBeDefined();
       const text = fillResp.result.content[0].text;
-      expect(text).not.toContain('[context]');
+      // Context may include settled signal even without URL/title change
+      // Verify no URL or title change is reported
+      expect(text).not.toContain('→ /');
+      expect(text).not.toContain('title:');
     });
   });
 

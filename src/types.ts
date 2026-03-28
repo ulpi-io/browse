@@ -21,6 +21,8 @@ export interface PageState {
   consoleErrorCount: number;
   networkPendingCount: number;
   timestamp: number;
+  settled: boolean;
+  settledReason?: string; // e.g. "network: 3 pending" or "dom: mutation 150ms ago"
 }
 
 export interface ContextDelta {
