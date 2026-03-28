@@ -309,6 +309,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
   try {
     let result: string;
+    let contextLine = '';
 
     if (READ_COMMANDS.has(command)) {
       result = await handleReadCommand(command, args, session.manager, session.buffers);
@@ -316,18 +317,18 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       // Capture page state before write command (only if context enabled)
       const contextEnabled = session.contextEnabled || opts.contextEnabled;
       const before = contextEnabled
-        ? await capturePageState(session.manager.getPage(), session.manager, session.buffers)
+        ? await capturePageState(session.manager.getPage(), session.manager, session.buffers).catch(() => null)
         : null;
 
       result = await handleWriteCommand(command, args, session.manager, session.domainFilter);
 
-      // Capture after state and append context delta
+      // Capture after state — context line stored separately so truncation doesn't eat it
       if (before) {
         try {
           const after = await capturePageState(session.manager.getPage(), session.manager, session.buffers);
           const delta = buildContextDelta(before, after);
           if (delta) {
-            result += '\n' + formatContextLine(delta, command);
+            contextLine = '\n' + formatContextLine(delta, command);
           }
         } catch {
           // Don't let context capture failures break the command
@@ -377,9 +378,14 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       session.recording.push(step);
     }
 
-    // Apply max-output truncation
+    // Apply max-output truncation (before context append, so context is never cut)
     if (opts.maxOutput > 0 && result.length > opts.maxOutput) {
       result = result.slice(0, opts.maxOutput) + `\n... (truncated at ${opts.maxOutput} chars)`;
+    }
+
+    // Append action context line after truncation (write commands only)
+    if (contextLine) {
+      result += contextLine;
     }
 
     // Apply content boundaries for page-content commands

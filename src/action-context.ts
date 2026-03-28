@@ -34,21 +34,13 @@ export async function capturePageState(
     // page may be closed or navigating
   }
 
-  const consoleErrorCount = buffers.consoleBuffer.filter(
-    (e) => e.level === 'error',
-  ).length;
-
-  const networkPendingCount = buffers.networkBuffer.filter(
-    (e) => e.status == null,
-  ).length;
-
   return {
     url,
     title,
     tabCount: bm.getTabCount(),
     dialog: bm.getLastDialog(),
-    consoleErrorCount,
-    networkPendingCount,
+    consoleErrorCount: buffers.consoleErrorCount,
+    networkPendingCount: buffers.networkPendingCount,
     timestamp: Date.now(),
   };
 }
@@ -68,7 +60,7 @@ export function buildContextDelta(
     let displayPath = after.url;
     try {
       const parsed = new URL(after.url);
-      displayPath = parsed.pathname + parsed.search;
+      displayPath = parsed.pathname;
     } catch {
       // e.g. about:blank — use raw url
     }
@@ -135,7 +127,8 @@ export function formatContextLine(delta: ContextDelta, _command: string): string
   }
 
   if (delta.dialogAppeared != null) {
-    parts.push(`dialog: [${delta.dialogAppeared.type}] "${delta.dialogAppeared.message}"`);
+    const msg = delta.dialogAppeared.message.replace(/"/g, '\\"').replace(/\n/g, ' ');
+    parts.push(`dialog: [${delta.dialogAppeared.type}] "${msg}"`);
   }
 
   if (delta.dialogDismissed === true) {
