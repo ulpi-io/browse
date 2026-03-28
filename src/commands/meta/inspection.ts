@@ -6,6 +6,7 @@ import type { BrowserTarget } from '../../browser/target';
 import type { Session } from '../../session/manager';
 import { handleSnapshot } from '../../browser/snapshot';
 import { DEFAULTS } from '../../constants';
+import { parseExpectArgs, checkConditions } from '../../expect';
 import * as Diff from 'diff';
 
 /** Pad string right to width */
@@ -18,6 +19,24 @@ function padL(str: string, w: number): string {
 }
 
 const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
+
+/**
+ * Extract the --budget value from an args array.
+ * Supports both "--budget=lcp:2500,cls:0.1" and "--budget lcp:2500,cls:0.1".
+ * Returns the raw budget string, or undefined if not present.
+ */
+function extractBudgetArg(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('--budget=')) {
+      return arg.slice('--budget='.length).trim() || undefined;
+    }
+    if (arg === '--budget' && args[i + 1] && !args[i + 1].startsWith('--')) {
+      return args[i + 1].trim() || undefined;
+    }
+  }
+  return undefined;
+}
 
 export async function handleInspectionCommand(
   command: string,
@@ -379,13 +398,16 @@ export async function handleInspectionCommand(
       // ── save [name] ──────────────────────────────────────────────────────
       if (subcommand === 'save') {
         const subArgs = args.slice(1);
-        const flags = new Set(subArgs.filter(a => a.startsWith('--')));
+        const flags = new Set(subArgs.filter(a => a.startsWith('--') && !a.startsWith('--budget=')));
         const positionalArgs = subArgs.filter(a => !a.startsWith('--'));
         const jsonOutput = flags.has('--json');
         const options = {
           includeCoverage: !flags.has('--no-coverage'),
           includeDetection: !flags.has('--no-detect'),
         };
+
+        // Extract --budget=lcp:2500,cls:0.1 or --budget lcp:2500,cls:0.1
+        const budgetStr = extractBudgetArg(subArgs);
 
         // Separate name from URL: last positional that looks like a URL is navigated to
         let name: string | undefined;
@@ -403,8 +425,8 @@ export async function handleInspectionCommand(
           await handleWriteCommand('goto', [url], bm, currentSession?.domainFilter);
         }
 
-        const { runPerfAudit } = await import('../../perf-audit');
-        const { formatPerfAudit } = await import('../../perf-audit/formatter');
+        const { runPerfAudit, parseBudget, evaluateBudget } = await import('../../perf-audit');
+        const { formatPerfAudit, formatBudgetResult } = await import('../../perf-audit/formatter');
         const { saveAudit } = await import('../../perf-audit/persist');
 
         const networkEntries = currentSession?.buffers?.networkBuffer || [];
@@ -423,8 +445,21 @@ export async function handleInspectionCommand(
         }
 
         const filePath = saveAudit(LOCAL_DIR, name, report);
-        const formatted = formatPerfAudit(report, jsonOutput);
-        return `${formatted}\n\nAudit saved: ${filePath}`;
+        let formatted = formatPerfAudit(report, jsonOutput);
+        formatted += `\n\nAudit saved: ${filePath}`;
+
+        if (budgetStr) {
+          const budget = parseBudget(budgetStr);
+          const vitals = report.webVitals as unknown as Record<string, number | null>;
+          const budgetResult = evaluateBudget(vitals, budget);
+          const budgetFormatted = formatBudgetResult(budgetResult);
+          if (!budgetResult.allPassed) {
+            throw new Error(`${formatted}\n\n${budgetFormatted}\n\nPerformance budget exceeded.`);
+          }
+          formatted += `\n\n${budgetFormatted}\nAll budgets met.`;
+        }
+
+        return formatted;
       }
 
       // ── compare <baseline> [current] ─────────────────────────────────────
@@ -488,7 +523,7 @@ export async function handleInspectionCommand(
 
       // ── Default: run audit (existing behavior) ───────────────────────────
       {
-        const flags = new Set(args.filter(a => a.startsWith('--')));
+        const flags = new Set(args.filter(a => a.startsWith('--') && !a.startsWith('--budget=')));
         const positionalArgs = args.filter(a => !a.startsWith('--'));
         const url = positionalArgs[0];
 
@@ -498,18 +533,34 @@ export async function handleInspectionCommand(
         };
         const jsonOutput = flags.has('--json');
 
+        // Extract --budget=lcp:2500,cls:0.1 or --budget lcp:2500,cls:0.1
+        const budgetStr = extractBudgetArg(args);
+
         if (url) {
           const { handleWriteCommand } = await import('../write');
           await handleWriteCommand('goto', [url], bm, currentSession?.domainFilter);
         }
 
-        const { runPerfAudit } = await import('../../perf-audit');
-        const { formatPerfAudit } = await import('../../perf-audit/formatter');
+        const { runPerfAudit, parseBudget, evaluateBudget } = await import('../../perf-audit');
+        const { formatPerfAudit, formatBudgetResult } = await import('../../perf-audit/formatter');
 
         const networkEntries = currentSession?.buffers?.networkBuffer || [];
         const report = await runPerfAudit(bm, networkEntries, options);
 
-        return formatPerfAudit(report, jsonOutput);
+        const formatted = formatPerfAudit(report, jsonOutput);
+
+        if (budgetStr) {
+          const budget = parseBudget(budgetStr);
+          const vitals = report.webVitals as unknown as Record<string, number | null>;
+          const budgetResult = evaluateBudget(vitals, budget);
+          const budgetFormatted = formatBudgetResult(budgetResult);
+          if (!budgetResult.allPassed) {
+            throw new Error(`${formatted}\n\n${budgetFormatted}\n\nPerformance budget exceeded.`);
+          }
+          return `${formatted}\n\n${budgetFormatted}\nAll budgets met.`;
+        }
+
+        return formatted;
       }
     }
 
@@ -590,6 +641,52 @@ export async function handleInspectionCommand(
       lines.push('');
       lines.push(result.body || '');
       return lines.join('\n');
+    }
+
+    case 'expect': {
+      const { conditions, timeout, verbose } = parseExpectArgs(args);
+      const page = bm.getPage();
+      const buffers = currentSession?.buffers;
+
+      // --timeout 0 → single check, no polling
+      if (timeout === 0) {
+        const results = await checkConditions(conditions, page, bm, buffers);
+        const failures = results.filter(r => !r.passed);
+        if (failures.length === 0) {
+          if (verbose) {
+            return results.map(r => `PASS: ${r.description} (actual: ${r.actual})`).join('\n');
+          }
+          return 'OK';
+        }
+        throw new Error(
+          'Expect failed:\n' +
+          results.map(r => `  ${r.passed ? 'PASS' : 'FAIL'}: ${r.description} (actual: ${r.actual})`).join('\n')
+        );
+      }
+
+      // Polling loop
+      const start = Date.now();
+      let lastResults: Awaited<ReturnType<typeof checkConditions>> = [];
+
+      while (Date.now() - start < timeout) {
+        lastResults = await checkConditions(conditions, page, bm, buffers);
+        const allPassed = lastResults.every(r => r.passed);
+        if (allPassed) {
+          if (verbose) {
+            return lastResults.map(r => `PASS: ${r.description} (actual: ${r.actual})`).join('\n');
+          }
+          return 'OK';
+        }
+        // Wait 100ms before next poll
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Timeout — report failures
+      const failures = lastResults.filter(r => !r.passed);
+      throw new Error(
+        `Expect timed out after ${timeout}ms:\n` +
+        lastResults.map(r => `  ${r.passed ? 'PASS' : 'FAIL'}: ${r.description} (actual: ${r.actual})`).join('\n')
+      );
     }
 
     default:

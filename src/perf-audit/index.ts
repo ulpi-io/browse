@@ -33,6 +33,96 @@ export interface PerfAuditOptions {
   includeDetection?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Budget types and pure evaluator
+// ---------------------------------------------------------------------------
+
+/**
+ * Performance budget thresholds.
+ * Keys are metric names (case-insensitive), values are numeric thresholds.
+ * Supported keys: lcp, cls, tbt, fcp, ttfb, inp
+ */
+export type PerfBudget = Record<string, number>;
+
+export interface BudgetLineResult {
+  /** Metric key (lowercase), e.g. "lcp" */
+  key: string;
+  /** The measured value (null means metric was not available — skipped) */
+  measured: number | null;
+  /** The budget threshold */
+  threshold: number;
+  /** true = metric was not measured, skip rather than fail */
+  skipped: boolean;
+  /** true = metric passes budget, false = exceeds budget */
+  passed: boolean;
+}
+
+export interface BudgetEvalResult {
+  lines: BudgetLineResult[];
+  /** true when all non-skipped metrics pass their budgets */
+  allPassed: boolean;
+}
+
+/** Supported budget metric keys (lowercase). */
+const BUDGET_KEYS = new Set(['lcp', 'cls', 'tbt', 'fcp', 'ttfb', 'inp']);
+
+/**
+ * Parse a budget string like "lcp:2500,cls:0.1,tbt:300" into a Record.
+ * Unknown keys are silently ignored. Throws on malformed numeric values.
+ */
+export function parseBudget(raw: string): PerfBudget {
+  const budget: PerfBudget = {};
+  const parts = raw.split(',');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(':');
+    if (colon < 1) throw new Error(`Invalid budget entry "${trimmed}" — expected key:value`);
+    const key = trimmed.slice(0, colon).trim().toLowerCase();
+    const rawVal = trimmed.slice(colon + 1).trim();
+    const val = Number(rawVal);
+    if (!isFinite(val)) throw new Error(`Invalid budget value for "${key}": "${rawVal}"`);
+    if (BUDGET_KEYS.has(key)) {
+      budget[key] = val;
+    }
+    // silently skip unknown keys
+  }
+  return budget;
+}
+
+/**
+ * Evaluate measured web vitals against a budget.
+ * Pure function — deterministic, no I/O, safe to unit-test with fixed fixtures.
+ *
+ * @param vitals - Partial map of metric key -> measured value (null = not measured)
+ * @param budget - Budget thresholds (from parseBudget)
+ */
+export function evaluateBudget(
+  vitals: Partial<Record<string, number | null>>,
+  budget: PerfBudget,
+): BudgetEvalResult {
+  const lines: BudgetLineResult[] = [];
+  let allPassed = true;
+
+  for (const [key, threshold] of Object.entries(budget)) {
+    const measured = Object.prototype.hasOwnProperty.call(vitals, key)
+      ? (vitals[key] ?? null)
+      : null;
+
+    if (measured === null) {
+      // Metric not available — skip, do not fail
+      lines.push({ key, measured: null, threshold, skipped: true, passed: true });
+      continue;
+    }
+
+    const passed = measured <= threshold;
+    if (!passed) allPassed = false;
+    lines.push({ key, measured, threshold, skipped: false, passed });
+  }
+
+  return { lines, allPassed };
+}
+
 export interface CoverageResult {
   js: Array<{
     url: string;

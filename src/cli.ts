@@ -422,7 +422,7 @@ export const SAFE_TO_RETRY = new Set([
   // Meta commands that are read-only or idempotent
   'tabs', 'status', 'url', 'snapshot', 'snapshot-diff', 'devices', 'sessions', 'frame', 'find', 'record', 'cookie-import',
   'box', 'errors', 'doctor', 'upgrade',
-  'react-devtools', 'provider', 'detect', 'coverage',
+  'react-devtools', 'provider', 'detect', 'coverage', 'expect',
 ]);
 
 // Commands that are inherently long-running (reload + analysis + detection).

@@ -290,14 +290,18 @@ registry.registerAll([
       return args;
     },
   } }),
-  w('wait',            'Wait for element/URL/network',                      { usage: '<sel|ms|--url|--network-idle>', mcp: {
-    description: 'Wait for various conditions: element visibility, URL match, text appearance, JS expression, network idle, or a fixed time. Use to synchronize with page loading or async operations.',
-    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to wait for. Mutually exclusive with other wait modes.' }, state: { type: 'string', description: 'Wait for element state (used with selector).', enum: ['visible', 'hidden', 'attached', 'detached'] }, timeout: { type: 'number', description: 'Timeout in milliseconds (default: 15000).' }, url: { type: 'string', description: 'URL pattern to wait for (e.g. "**/success*").' }, text: { type: 'string', description: 'Wait for this text to appear in the page body.' }, fn: { type: 'string', description: 'JavaScript expression to wait for (must become truthy).' }, load: { type: 'string', description: 'Wait for load state.', enum: ['load', 'domcontentloaded', 'networkidle'] }, network_idle: { type: 'boolean', description: 'Wait for network to settle (no pending requests).' }, ms: { type: 'number', description: 'Wait for a fixed number of milliseconds.' }, download: { type: 'boolean', description: 'Wait for a download to complete.' }, download_path: { type: 'string', description: 'Save downloaded file to this path (used with download).' } } },
+  w('wait',            'Wait for element/URL/network/request',               { usage: '<sel|ms|--url|--network-idle|--request>', mcp: {
+    description: 'Wait for various conditions: element visibility, URL match, text appearance, JS expression, network idle, network request match, or a fixed time. Use to synchronize with page loading or async operations.',
+    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to wait for. Mutually exclusive with other wait modes.' }, state: { type: 'string', description: 'Wait for element state (used with selector).', enum: ['visible', 'hidden', 'attached', 'detached'] }, timeout: { type: 'number', description: 'Timeout in milliseconds (default: 15000).' }, url: { type: 'string', description: 'URL pattern to wait for (e.g. "**/success*").' }, text: { type: 'string', description: 'Wait for this text to appear in the page body.' }, fn: { type: 'string', description: 'JavaScript expression to wait for (must become truthy).' }, load: { type: 'string', description: 'Wait for load state.', enum: ['load', 'domcontentloaded', 'networkidle'] }, network_idle: { type: 'boolean', description: 'Wait for network to settle (no pending requests).' }, request: { type: 'string', description: 'Wait for a matching network request (e.g. "POST /api/order"). Polls network buffer.' }, status: { type: 'number', description: 'Expected HTTP status code (use with request).' }, ms: { type: 'number', description: 'Wait for a fixed number of milliseconds.' }, download: { type: 'boolean', description: 'Wait for a download to complete.' }, download_path: { type: 'string', description: 'Save downloaded file to this path (used with download).' } } },
     argDecode: (p) => {
       const args: string[] = [];
       if (p.network_idle) {
         args.push('--network-idle');
         if (p.timeout) args.push(String(p.timeout));
+      } else if (p.request) {
+        args.push('--request', String(p.request));
+        if (p.status != null) args.push('--status', String(p.status));
+        if (p.timeout) args.push('--timeout', String(p.timeout));
       } else if (p.url) {
         args.push('--url', String(p.url));
         if (p.timeout) args.push(String(p.timeout));
@@ -724,15 +728,16 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: {} },
     argDecode: () => [],
   } }),
-  m('perf-audit',       'Performance audit',                                { usage: '[url] [--json]', mcp: {
-    description: 'Run a full performance audit on the current page (or a URL). Returns Core Web Vitals (LCP, CLS, TBT, FCP, TTFB, INP), LCP critical path reconstruction, layout shift attribution, long task script attribution, resource breakdown, render-blocking detection, image audit, font audit, DOM complexity, tech stack detection (108 frameworks, 55 SaaS platforms), third-party impact analysis, JS/CSS coverage, and prioritized recommendations. The page is reloaded as part of the audit.',
-    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to audit. If provided, navigates there first. If omitted, audits the current page.' }, no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection (faster audit).' }, no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection.' }, json: { type: 'boolean', description: 'Return structured JSON instead of formatted text.' } } },
+  m('perf-audit',       'Performance audit',                                { usage: '[url] [--json] [--budget lcp:2500,cls:0.1,tbt:300]', mcp: {
+    description: 'Run a full performance audit on the current page (or a URL). Returns Core Web Vitals (LCP, CLS, TBT, FCP, TTFB, INP), LCP critical path reconstruction, layout shift attribution, long task script attribution, resource breakdown, render-blocking detection, image audit, font audit, DOM complexity, tech stack detection (108 frameworks, 55 SaaS platforms), third-party impact analysis, JS/CSS coverage, and prioritized recommendations. The page is reloaded as part of the audit. Use the budget parameter to enforce performance thresholds — fails with a pass/fail table if any metric exceeds its budget.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'URL to audit. If provided, navigates there first. If omitted, audits the current page.' }, no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection (faster audit).' }, no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection.' }, json: { type: 'boolean', description: 'Return structured JSON instead of formatted text.' }, budget: { type: 'string', description: 'Performance budget thresholds as comma-separated key:value pairs (e.g. "lcp:2500,cls:0.1,tbt:300"). Supported keys: lcp, cls, tbt, fcp, ttfb, inp. Metrics that were not measured are skipped. If any measured metric exceeds its threshold, an error is thrown with a pass/fail table.' } } },
     argDecode: (p) => {
       const args: string[] = [];
       if (p.url) args.push(String(p.url));
       if (p.no_coverage) args.push('--no-coverage');
       if (p.no_detect) args.push('--no-detect');
       if (p.json) args.push('--json');
+      if (p.budget) args.push('--budget', String(p.budget));
       return args;
     },
   } }),
@@ -743,6 +748,30 @@ registry.registerAll([
       const args = [String(p.method), String(p.url)];
       if (p.body) args.push('--body', String(p.body));
       if (p.headers) args.push('--header', String(p.headers));
+      return args;
+    },
+  } }),
+  m('expect',            'Assert page conditions',                          { usage: '--url|--text|--visible|--hidden|--count|--request [--timeout ms]', safeToRetry: true, mcp: {
+    description: 'Assert one or more page conditions. Polls until all conditions pass or timeout expires. Conditions: --url (URL contains), --text (text visible), --visible (element visible), --hidden (element hidden), --count with --eq/--gt/--lt (element count), --request with optional --status (network request match). Returns "OK" on success, throws with per-condition FAIL details on timeout. Use --timeout 0 for a single check without polling.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'Assert URL contains this string (e.g. "/checkout").' }, text: { type: 'string', description: 'Assert this text is visible on the page.' }, visible: { type: 'string', description: 'CSS selector or @ref that must be visible.' }, hidden: { type: 'string', description: 'CSS selector or @ref that must be hidden.' }, count_selector: { type: 'string', description: 'CSS selector to count elements for.' }, count_eq: { type: 'number', description: 'Assert element count equals this number (use with count_selector).' }, count_gt: { type: 'number', description: 'Assert element count is greater than this (use with count_selector).' }, count_lt: { type: 'number', description: 'Assert element count is less than this (use with count_selector).' }, request: { type: 'string', description: 'Match a network request (e.g. "POST /api/order").' }, status: { type: 'number', description: 'Expected HTTP status code (use with request).' }, timeout: { type: 'number', description: 'Timeout in milliseconds (default 3000). Use 0 for single check.' }, verbose: { type: 'boolean', description: 'Show per-condition PASS details on success.' } } },
+    argDecode: (p) => {
+      const args: string[] = [];
+      if (p.url) args.push('--url', String(p.url));
+      if (p.text) args.push('--text', String(p.text));
+      if (p.visible) args.push('--visible', String(p.visible));
+      if (p.hidden) args.push('--hidden', String(p.hidden));
+      if (p.count_selector) {
+        args.push('--count', String(p.count_selector));
+        if (p.count_eq != null) args.push('--eq', String(p.count_eq));
+        else if (p.count_gt != null) args.push('--gt', String(p.count_gt));
+        else if (p.count_lt != null) args.push('--lt', String(p.count_lt));
+      }
+      if (p.request) {
+        args.push('--request', String(p.request));
+        if (p.status != null) args.push('--status', String(p.status));
+      }
+      if (p.timeout != null) args.push('--timeout', String(p.timeout));
+      if (p.verbose) args.push('--verbose');
       return args;
     },
   } }),
@@ -757,7 +786,7 @@ registry.registerAll([
 registry.registerAll([
   m('perf-audit-save',     'Save performance audit report',                  { mcp: {
     description: 'Run a performance audit and save the report to .browse/audits/ for later comparison.',
-    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Name for the saved report. Auto-generated from URL + timestamp if omitted.' }, url: { type: 'string', description: 'URL to audit. If omitted, audits the current page.' }, no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection (faster audit).' }, no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection.' } } },
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Name for the saved report. Auto-generated from URL + timestamp if omitted.' }, url: { type: 'string', description: 'URL to audit. If omitted, audits the current page.' }, no_coverage: { type: 'boolean', description: 'Skip JS/CSS coverage collection (faster audit).' }, no_detect: { type: 'boolean', description: 'Skip framework/SaaS/infrastructure detection.' }, budget: { type: 'string', description: 'Performance budget thresholds as comma-separated key:value pairs (e.g. "lcp:2500,cls:0.1,tbt:300"). Supported keys: lcp, cls, tbt, fcp, ttfb, inp. Metrics that were not measured are skipped. If any measured metric exceeds its threshold, an error is thrown with a pass/fail table.' } } },
     commandName: 'perf-audit',
     argDecode: (p) => {
       const args: string[] = ['save'];
@@ -765,6 +794,7 @@ registry.registerAll([
       if (p.url) args.push(String(p.url));
       if (p.no_coverage) args.push('--no-coverage');
       if (p.no_detect) args.push('--no-detect');
+      if (p.budget) args.push('--budget', String(p.budget));
       return args;
     },
   } }),

@@ -49,7 +49,7 @@ export async function handleRecordingCommand(
       if (subcommand === 'export') {
         if (!currentSession) throw new Error('Recording requires a session context');
         const format = args[1];
-        if (!format) throw new Error('Usage: browse record export browse|replay [--selectors css,aria,xpath,text] [path]');
+        if (!format) throw new Error('Usage: browse record export browse|replay|playwright [--selectors css,aria,xpath,text] [path]');
 
         // Use active recording or last stopped recording
         const steps = currentSession.recording || (currentSession as any)._lastRecording;
@@ -81,8 +81,11 @@ export async function handleRecordingCommand(
         } else if (format === 'replay') {
           const { exportReplay } = await import('../../export/replay');
           output = exportReplay(steps, selectorFilter as any);
+        } else if (format === 'playwright') {
+          const { exportPlaywrightTest } = await import('../../export/replay');
+          output = exportPlaywrightTest(steps, selectorFilter as any);
         } else {
-          throw new Error(`Unknown format: ${format}. Use "browse" (chain JSON) or "replay" (Playwright/Puppeteer).`);
+          throw new Error(`Unknown format: ${format}. Use "browse" (chain JSON), "replay" (Puppeteer), or "playwright" (Playwright Test).`);
         }
 
         if (filePath) {

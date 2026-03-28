@@ -320,7 +320,7 @@ export async function handleWriteCommand(
 
     case 'wait': {
       const selector = args[0];
-      if (!selector) throw new Error('Usage: browse wait <selector|ms|--url|--text|--fn|--load|--network-idle> [args]');
+      if (!selector) throw new Error('Usage: browse wait <selector|ms|--url|--text|--fn|--load|--network-idle|--request> [args]');
 
       // wait --network-idle [timeout] — wait for network to settle
       if (selector === '--network-idle') {
@@ -383,6 +383,49 @@ export async function handleWriteCommand(
         }
         const tmpPath = await download.path();
         return `Downloaded: ${filename} (saved to ${tmpPath})`;
+      }
+
+      // wait --request "POST /api" [--status 200] [--timeout 10000] — wait for matching network request
+      if (selector === '--request') {
+        const requestPattern = args[1];
+        if (!requestPattern) throw new Error('Usage: browse wait --request "METHOD /url-pattern" [--status N] [--timeout ms]');
+        const { matchNetworkRequest, parseRequestValue } = await import('../expect');
+        // Parse remaining flags
+        let expectedStatus: number | undefined;
+        let timeout = DEFAULTS.COMMAND_TIMEOUT_MS;
+        for (let i = 2; i < args.length; i++) {
+          if (args[i] === '--status') {
+            const val = args[++i];
+            if (!val || isNaN(parseInt(val, 10))) throw new Error('--status requires a number');
+            expectedStatus = parseInt(val, 10);
+          } else if (args[i] === '--timeout') {
+            const val = args[++i];
+            if (!val || isNaN(parseInt(val, 10))) throw new Error('--timeout requires a number in milliseconds');
+            timeout = parseInt(val, 10);
+          }
+        }
+
+        const buffers = bm.getBuffers();
+        const cond = { value: requestPattern, status: expectedStatus };
+        const start = Date.now();
+
+        while (Date.now() - start < timeout) {
+          const match = matchNetworkRequest(cond, buffers);
+          if (match.found) {
+            const elapsed = Date.now() - start;
+            return `Request matched: ${match.description} (${elapsed}ms)`;
+          }
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Timeout — provide helpful info about closest match
+        const finalMatch = matchNetworkRequest(cond, buffers);
+        const { method, pattern } = parseRequestValue(requestPattern);
+        const desc = method ? `${method} ${pattern}` : pattern;
+        throw new Error(
+          `Timeout waiting for request "${desc}"${expectedStatus != null ? ` with status ${expectedStatus}` : ''} after ${timeout}ms.\n` +
+          (finalMatch.description !== 'no matching requests in buffer' ? `Most recent similar: ${finalMatch.description}` : 'No matching requests found in network buffer.')
+        );
       }
 
       // wait <ms> — wait for milliseconds (numeric first arg)

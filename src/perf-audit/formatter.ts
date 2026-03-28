@@ -7,7 +7,7 @@
  * is detected, and separates fixable items from platform constraints.
  */
 
-import type { PerfAuditReport, CoverageResult } from './index';
+import type { PerfAuditReport, CoverageResult, BudgetEvalResult } from './index';
 import type { WebVitalsReport } from './web-vitals';
 import type {
   ImageAuditItem,
@@ -713,6 +713,46 @@ function formatTopRecommendations(report: PerfAuditReport): string | null {
 
   for (let i = 0; i < capped.length; i++) {
     lines.push(`  ${i + 1}. ${capped[i]}`);
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Budget result formatter
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a BudgetEvalResult as a pass/fail table.
+ *
+ * Example output:
+ *   Budget:
+ *     ✓ LCP    1200ms  ≤  2500ms
+ *     ✗ TBT     450ms  >   300ms
+ *     - INP       ---  (not measured, skipped)
+ */
+export function formatBudgetResult(result: BudgetEvalResult): string {
+  const lines: string[] = ['Budget:'];
+
+  for (const line of result.lines) {
+    const label = line.key.toUpperCase();
+    if (line.skipped) {
+      lines.push(`  - ${padRight(label, 6)}  ---     (not measured, skipped)`);
+      continue;
+    }
+
+    const measured = line.measured as number;
+    // Format value with appropriate units: CLS is unitless, others are ms
+    const measuredStr = line.key === 'cls'
+      ? measured.toFixed(3)
+      : formatMs(measured);
+    const thresholdStr = line.key === 'cls'
+      ? line.threshold.toFixed(3)
+      : formatMs(line.threshold);
+
+    const icon = line.passed ? '✓' : '✗';
+    const op = line.passed ? '≤' : '>';
+    lines.push(`  ${icon} ${padRight(label, 6)}  ${padLeft(measuredStr, 8)}  ${op}  ${thresholdStr}`);
   }
 
   return lines.join('\n');

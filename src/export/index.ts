@@ -5,5 +5,5 @@
 export { exportBrowse, resolveRefSelectors } from './record';
 export type { RecordedStep } from './record';
 
-export { exportReplay } from './replay';
+export { exportReplay, exportPlaywrightTest } from './replay';
 export type { SelectorFilter } from './replay';

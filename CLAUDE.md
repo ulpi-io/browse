@@ -161,6 +161,7 @@ Command counts and sets are derived from `src/automation/registry.ts` — no han
 - **No destructive git.** NEVER run `git reset --hard`, `git checkout .`, `git clean -f`, or any command that destroys uncommitted work. If branches diverge, use `git pull --rebase` or ask the user. Uncommitted files may contain in-progress work.
 - **No shortcuts.** When you find a bug, stop and fix it. Don't patch around it, don't defer it.
 - **No filtered-out errors.** If `tsc --noEmit` shows errors in files you're touching, fix them in the same task. Never `grep -v` errors out of the output to make a check "pass" — that's hiding debt, not completing work.
+- **No sed/awk.** Always use the Edit tool for file modifications, never shell commands like `sed` or `awk`. Edit provides review and context; shell edits are opaque.
 - **No fake reviews.** Find real bugs or say it's clean. Never list non-issues as findings.
 - **Automagic for customers.** The tool must self-heal. Zombie servers, port conflicts, stale state — all handled automatically. If you need `pkill` or `rm` before testing, that's a bug.
 - **Build command:** Always `npm run build` (esbuild with `--external` flags for playwright optional deps).
