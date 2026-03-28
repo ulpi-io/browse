@@ -14,6 +14,22 @@ All 8 previous plans shipped (cloud-providers, handoff, mcp-server, perf-audit, 
 
 Ruled out: Lighthouse integration (perf-audit already better), AI-powered selectors (non-deterministic), visual regression service (screenshot-diff exists), browser cloud (partnered with Browserbase/Browserless), full test framework (browse is a tool, generates Playwright tests instead).
 
+## Roadmap Shape
+
+- **v1.5-v1.7 Core Browser Intelligence** — deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, and accessibility checks.
+- **v2.0 Runtime Expansion** — add macOS app automation as a second runtime behind the same session/dispatch surface; browser behavior must remain unchanged.
+- **v2.1 Thin Agent Workflows** — add orchestration helpers (`flow`, `retry`, `watch`) as a thin layer over existing commands, not as a competing full test framework.
+- **v2.2 Ecosystem Surface** — add two opt-in extension models: per-project plugins and a direct SDK entry point. Global CLI usage remains the default product entry.
+
+## Anti-Drift Rules
+
+- Markdown and JSON are a paired artifact. Task IDs, file paths, dependencies, priorities, acceptance criteria, and coverage entries must stay isomorphic.
+- Every acceptance criterion must be backed by at least one explicit test bullet in the owning test task or coverage map. No untested promises.
+- Any task that changes shared runtime behavior must own the shared wiring files (`session-manager.ts`, `server.ts`, `command-registry.ts`, `mcp-tools.ts`, CLI help) instead of assuming they will be updated implicitly later.
+- Parser, formatter, generator, and diff logic require unit/contract tests in addition to integration tests.
+- Platform-specific features require mocked contract tests plus gated real-environment integration tests. Smoke coverage alone is insufficient.
+- Packaging and distribution tasks require `npm pack`-level verification so shipped artifacts, `files`, `exports`, and bundled binaries are proven from the actual package output.
+
 ## Architecture
 
 ```
@@ -114,7 +130,7 @@ Add optional body and header fields to the `NetworkEntry` interface in `src/buff
 
 Extend the `page.on('request', ...)` handler (line ~1495) to capture request bodies via `req.postData()` for POST/PUT/PATCH methods. Only when body capture is enabled (new `captureNetworkBodies` flag on BrowserManager).
 
-**Files:** `src/browser-manager.ts`
+**Files:** `src/browser-manager.ts`, `src/buffers.ts`
 
 **Type:** feature
 **Effort:** S
@@ -146,6 +162,7 @@ Extend the `page.on('response', ...)` handler (line ~1506) to capture response b
 - [ ] Binary responses stored as `[binary N bytes]` (no data capture)
 - [ ] Bodies truncated at 256KB with `...(truncated at 262144B)` suffix
 - [ ] `response.text()` called inside try/catch — redirects, aborted requests don't throw
+- [ ] Captured bodies obey a per-session byte budget in addition to the per-entry cap; oldest captured bodies are evicted first while request metadata remains available
 - [ ] Edge case: concurrent responses don't block each other (async body reads)
 - [ ] Edge case: response body unavailable after redirect (caught gracefully)
 
@@ -288,7 +305,9 @@ Add JSON API fixture routes to test-server.ts. Write integration tests covering 
 - [ ] Test: network buffer captures response body for GET data endpoint
 - [ ] Test: `request /api/data` returns full entry with body
 - [ ] Test: `api GET <baseUrl>/api/data` returns parsed JSON
+- [ ] Test: response-body byte-budget eviction keeps latest captured bodies while older body payloads fall back gracefully
 - [ ] Test: body truncation at limit works correctly
+- [ ] Test: `api GET` with a session cookie set earlier sends the cookie through page-context fetch
 - [ ] Edge case test: binary response body stored as `[binary N bytes]`
 - [ ] Test: `api GET` with session cookie set via `cookie` command → verify cookie appears in request sent by fetch
 
@@ -320,6 +339,7 @@ Create `src/expect.ts` with `parseExpectArgs(args: string[]): ExpectConditions` 
 - [ ] Parses `--request "POST /api" --status 200` into network buffer search
 - [ ] Parses `--timeout 5000` (default 3000ms)
 - [ ] `checkConditions()` returns array of `{ passed: boolean, description: string, actual: string }`
+- [ ] Edge case: invalid comparator or malformed `--request/--status` combination throws a clear usage error
 - [ ] Edge case: no conditions → throws "Usage: browse expect <conditions>"
 
 **Agent:** nodejs-cli-senior-engineer
@@ -367,6 +387,7 @@ Parse `--budget lcp:2500,cls:0.1,tbt:300` flag in perf-audit command. After audi
 - [ ] Budget exceeded → error thrown with per-metric pass/fail breakdown
 - [ ] Budget passed → normal perf-audit output + "All budgets met." suffix
 - [ ] Exit code 1 on failure (CLI propagates server 500 as exit(1))
+- [ ] Budget evaluation is implemented as a deterministic, directly testable unit over collected metric values rather than only through live-browser timing assertions
 - [ ] Edge case: metric not measured (e.g., INP on page with no interaction) → skipped, not failed
 
 **Agent:** nodejs-cli-senior-engineer
@@ -415,6 +436,7 @@ Add `exportPlaywrightTest(steps: RecordedStep[]): string` to `src/record-export.
 - [ ] `expect --text "Order"` → `await expect(page.getByText('Order')).toBeVisible();`
 - [ ] `record export playwright [path]` subcommand registered in meta.ts
 - [ ] Generated file imports `{ test, expect }` from `@playwright/test` and wraps in `test('recorded flow', ...)`
+- [ ] Generated Playwright source parses without syntax errors and is safe to hand to `tsc --noEmit`
 - [ ] Edge case: commands without resolved selectors fall back to CSS selectors
 
 **Agent:** nodejs-cli-senior-engineer
@@ -449,9 +471,9 @@ Register `expect` command: MCP tool definition, CLI help text, chain set, SAFE_T
 
 ### TASK-016: Integration tests for expect + budget
 
-Test expect command with all condition types (url, text, visible, count, timeout). Test perf-audit budget mode with known metrics.
+Test expect command with all condition types (url, text, visible, count, request/status, timeout). Test perf-audit budget mode with deterministic metric fixtures.
 
-**Files:** `test/features.test.ts`
+**Files:** `test/features.test.ts`, `test/expect.test.ts` (new), `test/perf-audit-budget.test.ts` (new)
 
 **Type:** test
 **Effort:** M
@@ -461,10 +483,14 @@ Test expect command with all condition types (url, text, visible, count, timeout
 - [ ] Test: `expect --url` fails with FAIL message when timeout
 - [ ] Test: `expect --text` finds visible text
 - [ ] Test: `expect --visible` / `--hidden` work on visible/hidden elements
+- [ ] Unit test: parser accepts valid flag combinations and rejects malformed comparator / request-status combinations with actionable errors
 - [ ] Test: `expect --count ".item" --eq N` counts correctly
+- [ ] Test: `expect --request "POST /api" --status 200` succeeds when matching request is present
+- [ ] Test: `expect --request "POST /api" --status 500` fails with clear actual-status output
 - [ ] Test: multiple conditions (--url + --text) require all to pass
-- [ ] Test: budget pass — all metrics under budget
-- [ ] Test: budget fail — LCP over budget → error thrown with breakdown
+- [ ] Unit test: budget evaluator supports `lcp`, `cls`, `tbt`, `fcp`, `ttfb`, `inp` and skips unmeasured metrics deterministically
+- [ ] Test: budget pass — deterministic metric fixture stays under budget
+- [ ] Test: budget fail — LCP over budget → error thrown with pass/fail breakdown
 - [ ] Edge case test: timeout 0 checks once without polling
 
 **Agent:** nodejs-cli-senior-engineer
@@ -478,7 +504,7 @@ Test expect command with all condition types (url, text, visible, count, timeout
 
 Test that recorded sessions with expect commands export correctly to both Puppeteer Replay and Playwright Test formats.
 
-**Files:** `test/features.test.ts`
+**Files:** `test/features.test.ts`, `test/record-export.test.ts` (new)
 
 **Type:** test
 **Effort:** S
@@ -488,6 +514,7 @@ Test that recorded sessions with expect commands export correctly to both Puppet
 - [ ] Test: recorded expect --text exports as waitForElement in replay format
 - [ ] Test: recorded session exports valid Playwright test file with `test()` wrapper
 - [ ] Test: generated Playwright test includes `expect(page).toHaveURL()` for URL assertions
+- [ ] Test: generated Playwright test parses as valid TypeScript/JavaScript source
 - [ ] Edge case test: recording with no expects exports without assertion steps
 
 **Agent:** nodejs-cli-senior-engineer
@@ -572,7 +599,7 @@ Add text formatter for VisualReport: viewport summary line, landmark structure w
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** none
-**Depends on:** TASK-019
+**Depends on:** TASK-018, TASK-019
 **Priority:** P1
 
 ---
@@ -652,9 +679,9 @@ Register `visual`, `layout`, `a11y-audit`: MCP tools, CLI help, chain sets, SAFE
 
 ### TASK-024: Test fixtures and integration tests for v1.7
 
-Create HTML fixtures with known visual issues and accessibility problems. Write integration tests verifying detection.
+Create HTML fixtures with known visual issues and accessibility problems. Write integration tests verifying detection plus unit tests for visual helpers.
 
-**Files:** `test/fixtures/visual-issues.html` (new), `test/fixtures/a11y-issues.html` (new), `test/features.test.ts`
+**Files:** `test/fixtures/visual-issues.html` (new), `test/fixtures/a11y-issues.html` (new), `test/features.test.ts`, `test/visual.test.ts` (new)
 
 **Type:** test
 **Effort:** M
@@ -665,8 +692,11 @@ Create HTML fixtures with known visual issues and accessibility problems. Write 
 - [ ] Test: `visual` detects contrast failure in fixture
 - [ ] Test: `visual` detects overlap in fixture
 - [ ] Test: `visual` detects overflow in fixture
+- [ ] Unit test: `parseColor()`, `luminance()`, `overlaps()`, and effective-background resolution handle the documented edge cases
 - [ ] Test: `layout` returns correct computed properties for known element
-- [ ] Test: `a11y-audit` score < 100 on issues fixture, identifies specific findings
+- [ ] Test: `a11y-audit` score < 100 on issues fixture, identifies alt/label/heading/touch-target/generic-link/missing-lang findings
+- [ ] Test: focus-order warning triggers for tabindex-vs-DOM-order mismatch
+- [ ] Test: gradient background skips contrast check rather than emitting a false failure
 - [ ] Test: `a11y-audit` score = 100 on clean fixture (basic.html)
 
 **Agent:** nodejs-cli-senior-engineer
@@ -729,7 +759,7 @@ Add `browse-ax --pid <pid> action <element-path> <action-name>` command. Element
 
 ### TASK-027: Swift AX bridge — set value + screenshot
 
-Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fields. Add `browse-ax --pid <pid> screenshot <path>` that captures the app's window as PNG.
+Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fields. Add focused-element keyboard input commands (`type`, `press`) and `browse-ax --pid <pid> screenshot <path>` for capturing the app's window as PNG.
 
 **Files:** `browse-ax/Sources/main.swift`
 
@@ -738,10 +768,13 @@ Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fi
 
 **Acceptance Criteria:**
 - [ ] `set-value [0,1,3] "test@example.com"` sets AXValue on the target element
+- [ ] `type "hello"` sends text input to the currently focused element
+- [ ] `press Enter` sends a key event to the focused element
 - [ ] Returns success/failure JSON
 - [ ] `screenshot /tmp/app.png` captures the frontmost window of the target PID as PNG
 - [ ] Uses CGWindowListCreateImage for window capture (no full-screen capture)
 - [ ] Edge case: text field is not editable → "Element is not editable (AXEnabled: false)"
+- [ ] Edge case: no focused element for `type` / `press` → clear error instead of silent drop
 - [ ] Edge case: app window is minimized → "Window is minimized. Restore it first."
 
 **Agent:** ios-macos-senior-engineer
@@ -753,18 +786,19 @@ Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fi
 
 ### TASK-028: Build system for Swift binary
 
-Configure build process: compile Swift binary to universal (arm64 + x86_64), include in npm package, auto-download on first use if not bundled. Add `postinstall` script or lazy-download pattern (like react-devtools hook download).
+Configure build process: produce distributable macOS bridge artifacts, include them in the npm package (or lazily download them), and resolve the correct binary at runtime. Add `postinstall` script or lazy-download pattern (like react-devtools hook download).
 
-**Files:** `browse-ax/Package.swift`, `package.json`, `src/app-bridge.ts` (new)
+**Files:** `browse-ax/Package.swift`, `package.json`, `scripts/build-all.sh`, `src/app-bridge.ts` (new)
 
 **Type:** infra
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `swift build -c release` produces universal binary in `browse-ax/.build/release/browse-ax`
+- [ ] Build pipeline produces arm64 and x86_64 bridge artifacts and packages either a universal binary (`lipo`) or an explicit per-arch runtime selection strategy
 - [ ] Binary included in npm package (or lazy-downloaded to `.browse/bin/browse-ax` on first use)
 - [ ] `app-bridge.ts` exports `ensureBridge(): Promise<string>` that returns path to binary (download if needed)
 - [ ] Works on macOS arm64 and x86_64
+- [ ] `npm pack` verification proves the shipped tarball contains the expected bridge artifact metadata or lazy-download bootstrap files
 - [ ] Edge case: non-macOS platform → throws "App automation requires macOS (uses Accessibility API)"
 
 **Agent:** ios-macos-senior-engineer
@@ -799,9 +833,9 @@ Create `src/app-manager.ts` with AppManager class. Spawns browse-ax binary, comm
 
 ---
 
-### TASK-030: AppManager class — tap, fill, type, press, swipe
+### TASK-030: AppManager class — tap, fill, type, press
 
-Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)` → AXSetValue, `type(text)` → keyboard events, `press(key)` → key event, `swipe(direction)` → gesture.
+Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)` → AXSetValue, `type(text)` → keyboard input, `press(key)` → key event.
 
 **Files:** `src/app-manager.ts`
 
@@ -813,7 +847,6 @@ Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)
 - [ ] `fill(@e2, "test")` resolves ref, sets AXValue
 - [ ] `type("hello")` sends keyboard events character by character
 - [ ] `press("Enter")` sends key event
-- [ ] `swipe("down")` sends gesture via AX API
 - [ ] Each method returns confirmation string (same format as web commands)
 - [ ] Edge case: stale ref → "Ref @e3 not found. Run 'snapshot' to refresh."
 
@@ -826,9 +859,9 @@ Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)
 
 ### TASK-031: App command dispatcher and --app CLI flag
 
-Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to AppManager. Add `--app <name>` flag to CLI and server routing.
+Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to AppManager. Add `--app <name>` flag to CLI and server routing, and introduce a shared session-target abstraction so browser and app sessions route through the same top-level dispatch model without web regressions.
 
-**Files:** `src/commands/app.ts` (new), `src/cli.ts`, `src/server.ts`
+**Files:** `src/commands/app.ts` (new), `src/cli.ts`, `src/server.ts`, `src/session-manager.ts`, `src/command-registry.ts`, `src/types.ts`
 
 **Type:** feature
 **Effort:** M
@@ -836,10 +869,12 @@ Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to A
 **Acceptance Criteria:**
 - [ ] `browse --app "Simulator" snapshot -i` routes to AppManager.snapshot
 - [ ] `browse --app "Simulator" tap @e3` routes to AppManager.tap
-- [ ] Supported commands: snapshot, text, tap, fill, type, press, swipe, screenshot, expect, wait
+- [ ] Shared session-target abstraction cleanly separates browser sessions from app sessions while preserving existing browser dispatch behavior
+- [ ] Supported commands: snapshot, text, tap, fill, type, press, screenshot, expect, wait
 - [ ] Unsupported commands (html, css, js, etc.) → clear error "Command 'html' not available for apps. Use 'text' or 'snapshot' instead."
 - [ ] `--app` flag stored in `cliFlags.app`, sent as `X-Browse-App` header
 - [ ] Server creates AppManager (alongside or instead of BrowserManager) when app header present
+- [ ] Unsupported-command gating happens centrally before command execution, not ad hoc in scattered handlers
 - [ ] Edge case: `--app` and `--session` work together (isolated app sessions)
 
 **Agent:** nodejs-cli-senior-engineer
@@ -867,16 +902,16 @@ Wire action context (before/after state capture + delta) into app commands. Stat
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** none
-**Depends on:** TASK-031
+**Depends on:** TASK-029, TASK-031
 **Priority:** P2
 
 ---
 
 ### TASK-033: MCP tools + CLI help for app commands
 
-Register app-specific MCP tools, update CLI help with --app usage, add `doctor` check for browse-ax binary and Accessibility permission.
+Register app-specific MCP tools, update CLI help with --app usage, and extend `doctor` to validate bridge availability plus Accessibility permission guidance.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`
+**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `src/commands/meta.ts`
 
 **Type:** chore
 **Effort:** S
@@ -886,6 +921,7 @@ Register app-specific MCP tools, update CLI help with --app usage, add `doctor` 
 - [ ] Each tool has `app` param (app name) + command-specific params
 - [ ] CLI help shows `--app <name>` in Options section with description
 - [ ] `browse doctor` checks: browse-ax binary present, Accessibility permission granted
+- [ ] `browse doctor` shows explicit next-step instructions when the bridge or permission is missing
 - [ ] Edge case: non-macOS → doctor reports "App automation not available (macOS only)"
 
 **Agent:** nodejs-cli-senior-engineer
@@ -897,9 +933,9 @@ Register app-specific MCP tools, update CLI help with --app usage, add `doctor` 
 
 ### TASK-034: Integration tests for app automation
 
-Test with a simple macOS app (TextEdit or a test Electron app). Verify snapshot, tap, fill, action context.
+Test AppManager with mocked bridge-protocol tests plus a gated real macOS integration target (TextEdit or a test Electron app). Verify snapshot, tap, fill, action context, unsupported-command handling, and browser/app session isolation.
 
-**Files:** `test/app.test.ts` (new)
+**Files:** `test/app.test.ts` (new), `test/app-manager.test.ts` (new)
 
 **Type:** test
 **Effort:** M
@@ -909,12 +945,15 @@ Test with a simple macOS app (TextEdit or a test Electron app). Verify snapshot,
 - [ ] Test: text on TextEdit returns window content
 - [ ] Test: fill on TextEdit text field sets value
 - [ ] Test: action context reports changes after interaction
+- [ ] Unit/contract test: mocked bridge returns permission denied / app-not-running / stale-ref failures with the documented messages
+- [ ] Test: unsupported app command is rejected centrally with the documented guidance
+- [ ] Test: browser session behavior is unchanged while an app session is active
 - [ ] Test: stale ref after window change → clear error
 - [ ] Skip: tests skip on non-macOS platforms (CI compatibility)
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Depends on:** TASK-031, TASK-032
+**Depends on:** TASK-031, TASK-032, TASK-033
 **Priority:** P2
 
 ---
@@ -925,9 +964,9 @@ Test with a simple macOS app (TextEdit or a test Electron app). Verify snapshot,
 
 ### TASK-035: Flow YAML parser
 
-Create `src/flow-parser.ts` that parses flow YAML files into `FlowStep[]`. Each step has: command, args, optional conditions (from expect syntax). Validates step format, rejects unknown commands.
+Create `src/flow-parser.ts` that parses flow YAML files into `FlowStep[]`. Each step has: command, args, optional conditions (from expect syntax). Validate step format, reject unknown commands, and use an explicit YAML parser dependency with line/column errors.
 
-**Files:** `src/flow-parser.ts` (new)
+**Files:** `src/flow-parser.ts` (new), `package.json`
 
 **Type:** feature
 **Effort:** M
@@ -937,7 +976,9 @@ Create `src/flow-parser.ts` that parses flow YAML files into `FlowStep[]`. Each 
 - [ ] Parses `- click: "@e3"` into `{ command: 'click', args: ['@e3'] }`
 - [ ] Parses multi-arg fills: `- fill: { "@e4": "value" }` into fill command
 - [ ] Parses expect blocks: `- expect: { url: "/checkout", timeout: 5000 }` into expect command args
+- [ ] `package.json` adds an explicit YAML parser dependency rather than relying on ad hoc parsing
 - [ ] Validates all commands exist in command registry
+- [ ] Edge case: duplicate keys / unsupported step shape fail with line/column context
 - [ ] Edge case: empty steps array → "Flow file has no steps"
 - [ ] Edge case: malformed YAML → clear parse error with line number
 
@@ -1022,9 +1063,9 @@ Add `case 'watch':` to `src/commands/meta.ts`. Injects MutationObserver via `pag
 
 ### TASK-039: MCP tools + CLI help + tests for v2.1
 
-Register flow, retry, watch commands. Write integration tests.
+Register flow, retry, watch commands. Write unit + integration tests for parser and failure paths.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `test/features.test.ts`
+**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `test/features.test.ts`, `test/flow-parser.test.ts` (new)
 
 **Type:** chore
 **Effort:** M
@@ -1032,9 +1073,13 @@ Register flow, retry, watch commands. Write integration tests.
 **Acceptance Criteria:**
 - [ ] `browse_flow`, `browse_retry`, `browse_watch` MCP tool definitions
 - [ ] CLI help lists under Workflows category
+- [ ] Unit test: flow parser returns actionable errors for malformed YAML, duplicate keys, and unknown commands
 - [ ] Test: flow executes 3-step goto+fill+expect sequence
 - [ ] Test: retry succeeds on second attempt (flaky fixture that fails once)
+- [ ] Test: retry exhausts max attempts and reports the last error clearly
 - [ ] Test: watch detects DOM change (timer-based mutation in fixture)
+- [ ] Test: watch on missing selector fails immediately with the documented error
+- [ ] Test: watch terminates cleanly when navigation replaces the observed page
 - [ ] Test: flow stops on expect failure with clear step number
 
 **Agent:** nodejs-cli-senior-engineer
@@ -1050,17 +1095,18 @@ Register flow, retry, watch commands. Write integration tests.
 
 ### TASK-040: Plugin loader and registry
 
-Create `src/plugin.ts` with plugin discovery (scan `node_modules/browse-plugin-*`), loading (`require(pkg).register(context)`), and registry. Context object exposes `addCommand()`, `addDetection()`, `addAuditRule()`.
+Create `src/plugin.ts` with project-local plugin discovery, loading, and registry. Plugins are opt-in trusted code loaded from the current project root, not from global npm locations. The registry must participate in command dispatch and MCP tool exposure.
 
-**Files:** `src/plugin.ts` (new)
+**Files:** `src/plugin.ts` (new), `src/command-registry.ts`, `src/server.ts`, `src/mcp-tools.ts`
 
 **Type:** feature
 **Effort:** L
 
 **Acceptance Criteria:**
-- [ ] Scans `node_modules/browse-plugin-*` for installed plugins on server startup
-- [ ] Each plugin's `register(ctx)` called with context providing addCommand, addDetection, addAuditRule
-- [ ] `addCommand(name, category, handler)` registers command in appropriate set + dispatch
+- [ ] Detects project root from `cwd` / nearest `package.json`; plugin discovery is skipped with a clear message when no project root exists
+- [ ] Scans project-local `node_modules/browse-plugin-*` for installed plugins on server startup; global npm/plugin injection is out of scope
+- [ ] Each plugin's `register(ctx)` called with context providing addCommand, addDetection, addAuditRule and an explicit plugin API version contract
+- [ ] `addCommand(name, category, handler)` registers command in dynamic dispatch and dynamic MCP tool exposure
 - [ ] `addDetection(signature)` adds to detection database
 - [ ] `addAuditRule(rule)` adds to a11y-audit or perf-audit
 - [ ] Plugin errors caught and logged (don't crash server)
@@ -1074,18 +1120,19 @@ Create `src/plugin.ts` with plugin discovery (scan `node_modules/browse-plugin-*
 
 ### TASK-041: Plugin install/remove/list commands
 
-Add `browse plugin install <name>`, `browse plugin remove <name>`, `browse plugin list` subcommands. Wraps `npm install browse-plugin-<name>` in the project directory.
+Add `browse plugin install <name>`, `browse plugin remove <name>`, `browse plugin list` subcommands. Install/remove operations run in the detected project root using project-local dependencies.
 
-**Files:** `src/commands/meta.ts`, `src/command-registry.ts`
+**Files:** `src/commands/meta.ts`, `src/command-registry.ts`, `src/plugin.ts`
 
 **Type:** feature
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] `browse plugin install shopify-audit` runs `npm install browse-plugin-shopify-audit`
-- [ ] `browse plugin remove shopify-audit` runs `npm uninstall browse-plugin-shopify-audit`
+- [ ] `browse plugin install shopify-audit` runs `npm install -D browse-plugin-shopify-audit` in the detected project root
+- [ ] `browse plugin remove shopify-audit` runs `npm uninstall browse-plugin-shopify-audit` in the detected project root
 - [ ] `browse plugin list` scans node_modules and lists installed browse-plugin-* packages with version
 - [ ] Server restart required after install/remove (or lazy reload on next command)
+- [ ] Edge case: no project root / no `package.json` → clear error explaining that plugin management is project-local only
 - [ ] Edge case: npm not found → "npm is required for plugin management"
 
 **Agent:** nodejs-cli-senior-engineer
@@ -1097,9 +1144,9 @@ Add `browse plugin install <name>`, `browse plugin remove <name>`, `browse plugi
 
 ### TASK-042: SDK mode — library entry point
 
-Create `src/sdk.ts` that exports a clean, typed API wrapping BrowserManager. Publish alongside CLI via package.json `exports` field. Library mode skips HTTP server — direct function calls.
+Create `src/sdk.ts` that exports a clean, typed API wrapping BrowserManager. Publish alongside CLI via `package.json` `exports` field. Library mode skips HTTP server and is validated from the packed npm artifact, independent of the plugin system.
 
-**Files:** `src/sdk.ts` (new), `package.json`
+**Files:** `src/sdk.ts` (new), `package.json`, `scripts/build-all.sh`
 
 **Type:** feature
 **Effort:** M
@@ -1109,12 +1156,12 @@ Create `src/sdk.ts` that exports a clean, typed API wrapping BrowserManager. Pub
 - [ ] `createBrowser()` launches Chromium, returns typed API: goto, click, fill, text, snapshot, screenshot, close, etc.
 - [ ] No HTTP server spawned (direct BrowserManager calls)
 - [ ] TypeScript types exported for all return values
-- [ ] package.json `exports`: `{ ".": "./dist/sdk.js", "./cli": "./dist/browse.cjs" }`
+- [ ] package.json `exports` and `files` expose both CLI and SDK artifacts with matching types
+- [ ] `npm pack` + install-into-temp-project verification proves `createBrowser()` is importable from the shipped tarball
 - [ ] Edge case: calling CLI methods (stop, restart, status) throws "Not available in SDK mode"
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Depends on:** TASK-040
 **Priority:** P1
 
 ---
@@ -1144,9 +1191,9 @@ Extend detection loader to scan `.browse/detections/` for JSON signature files. 
 
 ### TASK-044: MCP tools + tests for v2.2
 
-Register plugin commands as MCP tools. Write integration tests for plugin loading, SDK mode, and custom detections.
+Register plugin commands as MCP tools. Write integration tests for plugin loading, SDK mode, and custom detections plus contract tests for plugin isolation and packed-SDK verification.
 
-**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `test/features.test.ts`
+**Files:** `src/mcp-tools.ts`, `src/cli.ts`, `test/features.test.ts`, `test/plugin.test.ts` (new), `test/sdk-pack.test.ts` (new)
 
 **Type:** test
 **Effort:** M
@@ -1155,21 +1202,25 @@ Register plugin commands as MCP tools. Write integration tests for plugin loadin
 - [ ] `browse_plugin_list` MCP tool
 - [ ] CLI help lists plugin commands
 - [ ] Test: plugin list returns empty array when no plugins installed
+- [ ] Test: plugin load failure is logged and isolated without crashing server startup
+- [ ] Test: duplicate plugin command name keeps the first registration and emits warning output
+- [ ] Test: plugin-provided command appears in dynamic dispatch and MCP tool definitions
 - [ ] Test: SDK mode createBrowser() returns working API, close() cleans up
 - [ ] Test: SDK goto + text returns page content
+- [ ] Test: packed tarball install exposes the SDK entry point from `exports`
 - [ ] Test: custom detection JSON in temp .browse/detections/ directory detected by browse detect
 - [ ] Edge case test: malformed custom detection JSON → warning, not crash
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
-**Depends on:** TASK-040, TASK-042, TASK-043
+**Depends on:** TASK-040, TASK-041, TASK-042, TASK-043
 **Priority:** P2
 
 ---
 
 ### TASK-045: Plugin API documentation
 
-Document plugin API: how to create a browse plugin, register function interface, addCommand/addDetection/addAuditRule methods, publishing to npm.
+Document plugin API: how to create a browse plugin, register function interface, addCommand/addDetection/addAuditRule methods, the project-local trust/install model, and publishing to npm.
 
 **Files:** `docs/plugin-api.md` (new)
 
@@ -1178,14 +1229,16 @@ Document plugin API: how to create a browse plugin, register function interface,
 
 **Acceptance Criteria:**
 - [ ] Explains plugin naming convention (browse-plugin-*)
+- [ ] Explains that plugins are project-local trusted code loaded from the current package root, not from global installs
 - [ ] Shows complete register function signature with TypeScript types
+- [ ] Documents plugin API versioning / compatibility expectations
 - [ ] Example: creating a custom perf-audit rule
 - [ ] Example: creating a custom command
 - [ ] Publishing instructions (npm publish)
 
 **Agent:** general-purpose
 **Review:** none
-**Depends on:** TASK-040
+**Depends on:** TASK-040, TASK-041
 **Priority:** P3
 
 ---
@@ -1194,17 +1247,20 @@ Document plugin API: how to create a browse plugin, register function interface,
 
 | Risk | Affected Tasks | Mitigation |
 |------|---------------|------------|
-| Response body capture slows down page loads | TASK-003 | Only capture when opt-in (--network-bodies). Skip binary bodies. Cap at 256KB. |
-| Memory pressure from large response bodies in ring buffer | TASK-003 | Bodies are strings — GC handles references. Ring buffer eviction (50K cap) prevents unbounded growth. |
-| expect polling burns CPU | TASK-011 | 100ms interval. Use page.waitForFunction for URL/text conditions (Playwright-native, no polling). |
-| WCAG contrast calculation wrong on gradients/images | TASK-019 | Skip contrast check when background is gradient or image. Document limitation. |
-| macOS Accessibility permission UX is confusing | TASK-025 | Doctor command checks permission. Clear error message with System Settings deep link. |
-| User denies or can't find AX permission grant | TASK-025, TASK-031 | `browse --app` fails fast with "Accessibility permission required" + `open x-apple.systempreferences:...` deep link URL. `browse doctor` shows step-by-step instructions. |
-| Swift binary doesn't compile on user's machine | TASK-028 | Ship pre-compiled universal binary in npm package. Lazy-download fallback. |
-| AX tree too deep/wide for iOS Simulator | TASK-025 | Depth limit (30). Filter non-interactive elements in snapshot -i mode. |
-| Flow YAML syntax errors confuse agents | TASK-035 | Validate all commands against command registry. Report errors with line numbers. |
-| Plugin API breaking changes | TASK-040 | Version the plugin API. Start at v1. Only break in major versions. |
-| SDK mode API surface too large | TASK-042 | Export minimal API. Only expose commands that make sense without a server. |
+| Response body capture slows down page loads | TASK-003 | Only capture when opt-in (`--network-bodies`). Skip binary bodies. Cap per-entry body size and total session body bytes. |
+| Memory pressure from captured bodies still grows too high | TASK-003, TASK-009 | Enforce a separate captured-body byte budget; evict oldest body payloads first while preserving request metadata. Cover with explicit eviction tests. |
+| expect polling burns CPU | TASK-011, TASK-016 | 100ms interval. Use Playwright-native waits where possible and unit-test timeout / zero-timeout semantics. |
+| Budget tests flap because live browser metrics vary | TASK-012, TASK-016 | Extract deterministic budget evaluation logic and test it with fixed report fixtures instead of relying only on live perf runs. |
+| Generated Playwright export is structurally present but syntactically broken | TASK-014, TASK-017 | Require parse / compile validation of generated source in tests. |
+| WCAG contrast calculation wrong on gradients/images | TASK-019, TASK-024 | Skip contrast check when background is gradient or image. Document limitation and test the skip path explicitly. |
+| macOS Accessibility permission UX is confusing | TASK-025, TASK-033 | `browse doctor` checks permission and prints step-by-step remediation with System Settings guidance. |
+| User denies or can't find AX permission grant | TASK-025, TASK-031, TASK-034 | `browse --app` fails fast with "Accessibility permission required". Mocked bridge tests and doctor output verify the recovery path. |
+| Runtime split breaks existing browser sessions | TASK-031, TASK-034 | Introduce shared session-target abstraction and require browser-regression coverage while app sessions are active. |
+| Swift bridge packaging drifts from shipped npm artifact | TASK-028 | Verify bridge asset presence through `npm pack`, not only local source builds. |
+| Flow YAML syntax errors confuse agents | TASK-035, TASK-039 | Use explicit YAML parser dependency with line/column errors. Cover malformed YAML, duplicate keys, and unknown commands in parser tests. |
+| Plugin discovery loads the wrong install scope or untrusted code | TASK-040, TASK-041, TASK-045 | Restrict discovery to the detected project root, document the trust model, and fail clearly when no project root exists. |
+| Plugin API breaking changes | TASK-040, TASK-045 | Version the plugin API, document compatibility expectations, and test duplicate/failing plugins without crashing server startup. |
+| SDK mode ships but `exports` / tarball contents are wrong | TASK-042, TASK-044 | Validate packed tarball import behavior in a temp install using the published `exports` surface. |
 
 ## Test Coverage Map
 
@@ -1215,32 +1271,48 @@ Document plugin API: how to create a browse plugin, register function interface,
 | api command (GET, POST, cookies) | TASK-009 | integration |
 | HAR export with bodies | TASK-009 | integration |
 | Body truncation at limit | TASK-009 | integration |
+| Captured-body byte-budget eviction | TASK-009 | integration |
+| expect parser flag validation | TASK-016 | unit |
 | expect --url condition | TASK-016 | integration |
 | expect --text condition | TASK-016 | integration |
 | expect --visible/--hidden | TASK-016 | integration |
 | expect --count | TASK-016 | integration |
+| expect --request + --status | TASK-016 | integration |
 | expect timeout failure | TASK-016 | integration |
+| perf-audit budget evaluator | TASK-016 | unit |
 | perf-audit --budget pass | TASK-016 | integration |
 | perf-audit --budget fail | TASK-016 | integration |
 | replay export with expects | TASK-017 | integration |
 | playwright test export | TASK-017 | integration |
+| generated Playwright source parses / compiles | TASK-017 | contract |
+| visual helper functions (`parseColor`, `luminance`, `overlaps`, bg resolution) | TASK-024 | unit |
 | visual landmark scan | TASK-024 | integration |
 | visual contrast detection | TASK-024 | integration |
 | visual overlap detection | TASK-024 | integration |
 | visual overflow detection | TASK-024 | integration |
 | layout computed properties | TASK-024 | integration |
 | a11y-audit scoring | TASK-024 | integration |
-| a11y-audit findings (alt, label, heading) | TASK-024 | integration |
+| a11y-audit findings (alt, label, heading, touch target, generic link, missing lang) | TASK-024 | integration |
+| a11y focus-order warning | TASK-024 | integration |
 | AX bridge tree retrieval | TASK-034 | integration |
-| AX bridge tap/fill actions | TASK-034 | integration |
+| AX bridge tap/fill/type/press actions | TASK-034 | integration |
 | App snapshot with @refs | TASK-034 | integration |
 | App action context | TASK-034 | integration |
+| App mocked bridge failures (permission denied, stale ref, app missing) | TASK-034 | contract |
+| Browser sessions remain stable while app sessions are active | TASK-034 | integration |
+| Flow parser malformed YAML / duplicate keys / unknown commands | TASK-039 | unit |
 | Flow execution (pass) | TASK-039 | integration |
 | Flow execution (fail at step) | TASK-039 | integration |
 | Retry with backoff | TASK-039 | integration |
+| Retry max-failure reporting | TASK-039 | integration |
 | Watch DOM change | TASK-039 | integration |
+| Watch selector-missing / navigation termination | TASK-039 | integration |
 | Plugin loading | TASK-044 | integration |
+| Plugin failure isolation | TASK-044 | contract |
+| Duplicate plugin command handling | TASK-044 | contract |
+| Dynamic MCP exposure for plugin commands | TASK-044 | contract |
 | SDK createBrowser + commands | TASK-044 | integration |
+| Packed tarball SDK import via `exports` | TASK-044 | packaging |
 | Custom detection signatures | TASK-044 | integration |
 
 ## Task Dependencies
@@ -1266,7 +1338,7 @@ Document plugin API: how to create a browse plugin, register function interface,
   "TASK-017": ["TASK-013", "TASK-014"],
   "TASK-018": [],
   "TASK-019": ["TASK-018"],
-  "TASK-020": ["TASK-019"],
+  "TASK-020": ["TASK-018", "TASK-019"],
   "TASK-021": ["TASK-018"],
   "TASK-022": ["TASK-018"],
   "TASK-023": ["TASK-020", "TASK-021", "TASK-022"],
@@ -1278,9 +1350,9 @@ Document plugin API: how to create a browse plugin, register function interface,
   "TASK-029": ["TASK-025", "TASK-028"],
   "TASK-030": ["TASK-029"],
   "TASK-031": ["TASK-029", "TASK-030"],
-  "TASK-032": ["TASK-031"],
+  "TASK-032": ["TASK-029", "TASK-031"],
   "TASK-033": ["TASK-031"],
-  "TASK-034": ["TASK-031", "TASK-032"],
+  "TASK-034": ["TASK-031", "TASK-032", "TASK-033"],
   "TASK-035": [],
   "TASK-036": ["TASK-035", "TASK-011"],
   "TASK-037": ["TASK-010"],
@@ -1288,9 +1360,9 @@ Document plugin API: how to create a browse plugin, register function interface,
   "TASK-039": ["TASK-036", "TASK-037", "TASK-038"],
   "TASK-040": [],
   "TASK-041": ["TASK-040"],
-  "TASK-042": ["TASK-040"],
+  "TASK-042": [],
   "TASK-043": [],
-  "TASK-044": ["TASK-040", "TASK-042", "TASK-043"],
-  "TASK-045": ["TASK-040"]
+  "TASK-044": ["TASK-040", "TASK-041", "TASK-042", "TASK-043"],
+  "TASK-045": ["TASK-040", "TASK-041"]
 }
 ```

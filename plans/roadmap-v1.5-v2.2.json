@@ -4,6 +4,20 @@
   "mode": "EXPANSION",
   "overview": "Full product roadmap from v1.5 through v2.2 — 6 versions spanning network intelligence, verification/CI, visual intelligence, native app automation, agent workflows, and ecosystem/SDK.",
   "scopeChallenge": "All 8 previous plans shipped. Current: 31K lines, 99 commands, v1.4.5. Ruled out: Lighthouse (perf-audit better), AI selectors (non-deterministic), visual regression service (screenshot-diff exists), browser cloud (partnered), full test framework (generates Playwright tests instead).",
+  "roadmapShape": [
+    "v1.5-v1.7 deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, and accessibility checks.",
+    "v2.0 adds macOS app automation as a second runtime behind the same session/dispatch surface; browser behavior must remain unchanged.",
+    "v2.1 adds thin orchestration helpers (flow, retry, watch) over existing commands rather than a competing full test framework.",
+    "v2.2 adds opt-in per-project plugins and a direct SDK entry point while keeping the global CLI as the default product entry."
+  ],
+  "antiDriftRules": [
+    "Markdown and JSON are a paired artifact; task IDs, files, dependencies, priorities, acceptance criteria, and coverage entries must stay isomorphic.",
+    "Every acceptance criterion must be backed by at least one explicit test bullet in the owning test task or coverage map.",
+    "Any task that changes shared runtime behavior must own the shared wiring files instead of assuming they will be updated implicitly later.",
+    "Parser, formatter, generator, and diff logic require unit or contract tests in addition to integration tests.",
+    "Platform-specific features require mocked contract tests plus gated real-environment integration tests.",
+    "Packaging and distribution tasks require npm-pack-level verification of shipped artifacts, exports, and bundled binaries."
+  ],
   "existingCodeLeverage": [
     {
       "subProblem": "Network event capture",
@@ -72,42 +86,79 @@
       "affectedTasks": [
         "TASK-003"
       ],
-      "mitigation": "Opt-in only. Skip binary. Cap 256KB."
+      "mitigation": "Opt-in only. Skip binary. Cap per-entry body size and total session body bytes."
     },
     {
-      "risk": "Memory from large bodies in ring buffer",
+      "risk": "Memory from captured bodies still grows too high",
       "affectedTasks": [
-        "TASK-003"
+        "TASK-003",
+        "TASK-009"
       ],
-      "mitigation": "String refs GC'd. 50K cap evicts old."
+      "mitigation": "Enforce separate captured-body byte budget; evict oldest body payloads first while preserving request metadata. Cover with explicit eviction tests."
     },
     {
       "risk": "expect polling burns CPU",
       "affectedTasks": [
-        "TASK-011"
+        "TASK-011",
+        "TASK-016"
       ],
-      "mitigation": "100ms interval. Use Playwright waitForFunction."
+      "mitigation": "100ms interval. Use Playwright-native waits where possible and unit-test timeout and zero-timeout semantics."
     },
     {
-      "risk": "WCAG contrast wrong on gradients",
+      "risk": "Budget tests flap because live browser metrics vary",
       "affectedTasks": [
-        "TASK-019"
+        "TASK-012",
+        "TASK-016"
       ],
-      "mitigation": "Skip gradient/image backgrounds. Document."
+      "mitigation": "Extract deterministic budget evaluation logic and test it with fixed report fixtures instead of relying only on live perf runs."
+    },
+    {
+      "risk": "Generated Playwright export is structurally present but syntactically broken",
+      "affectedTasks": [
+        "TASK-014",
+        "TASK-017"
+      ],
+      "mitigation": "Require parse or compile validation of generated source in tests."
+    },
+    {
+      "risk": "WCAG contrast wrong on gradients or images",
+      "affectedTasks": [
+        "TASK-019",
+        "TASK-024"
+      ],
+      "mitigation": "Skip gradient or image backgrounds, document the limitation, and test the skip path explicitly."
     },
     {
       "risk": "macOS AX permission UX confusing",
       "affectedTasks": [
-        "TASK-025"
+        "TASK-025",
+        "TASK-033"
       ],
-      "mitigation": "Doctor checks permission. Clear error."
+      "mitigation": "browse doctor checks permission and prints step-by-step remediation with System Settings guidance."
     },
     {
-      "risk": "Swift binary compile fails",
+      "risk": "User denies or cannot find AX permission grant",
+      "affectedTasks": [
+        "TASK-025",
+        "TASK-031",
+        "TASK-034"
+      ],
+      "mitigation": "browse --app fails fast with accessibility guidance. Mocked bridge tests and doctor output verify the recovery path."
+    },
+    {
+      "risk": "Runtime split breaks existing browser sessions",
+      "affectedTasks": [
+        "TASK-031",
+        "TASK-034"
+      ],
+      "mitigation": "Introduce shared session-target abstraction and require browser-regression coverage while app sessions are active."
+    },
+    {
+      "risk": "Swift bridge packaging drifts from shipped npm artifact",
       "affectedTasks": [
         "TASK-028"
       ],
-      "mitigation": "Ship pre-compiled universal binary."
+      "mitigation": "Verify bridge asset presence through npm pack, not only local source builds."
     },
     {
       "risk": "AX tree too deep for Simulator",
@@ -119,31 +170,35 @@
     {
       "risk": "Flow YAML syntax confuses agents",
       "affectedTasks": [
-        "TASK-035"
+        "TASK-035",
+        "TASK-039"
       ],
-      "mitigation": "Validate commands. Line-number errors."
+      "mitigation": "Use explicit YAML parser dependency with line and column errors. Cover malformed YAML, duplicate keys, and unknown commands in parser tests."
+    },
+    {
+      "risk": "Plugin discovery loads the wrong install scope or untrusted code",
+      "affectedTasks": [
+        "TASK-040",
+        "TASK-041",
+        "TASK-045"
+      ],
+      "mitigation": "Restrict discovery to the detected project root, document the trust model, and fail clearly when no project root exists."
     },
     {
       "risk": "Plugin API breaking changes",
       "affectedTasks": [
-        "TASK-040"
+        "TASK-040",
+        "TASK-045"
       ],
-      "mitigation": "Version API. Break only in majors."
+      "mitigation": "Version the plugin API, document compatibility expectations, and test duplicate or failing plugins without crashing startup."
     },
     {
-      "risk": "SDK API surface too large",
+      "risk": "SDK mode ships but exports or tarball contents are wrong",
       "affectedTasks": [
-        "TASK-042"
+        "TASK-042",
+        "TASK-044"
       ],
-      "mitigation": "Minimal export. Only server-less commands."
-    },
-    {
-      "risk": "User denies or cannot find AX permission grant",
-      "affectedTasks": [
-        "TASK-025",
-        "TASK-031"
-      ],
-      "mitigation": "browse --app fails fast with Accessibility permission required + System Settings deep link. browse doctor shows step-by-step."
+      "mitigation": "Validate packed tarball import behavior in a temp install using the published exports surface."
     }
   ],
   "testCoverageMap": [
@@ -153,22 +208,77 @@
       "testType": "integration"
     },
     {
-      "codepath": "request command",
+      "codepath": "request command (index + pattern)",
       "coveringTask": "TASK-009",
       "testType": "integration"
     },
     {
-      "codepath": "api command",
+      "codepath": "api command (GET, POST, cookies)",
       "coveringTask": "TASK-009",
       "testType": "integration"
     },
     {
-      "codepath": "expect conditions (url/text/visible/count)",
+      "codepath": "HAR export with bodies",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Body truncation at limit",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Captured-body byte-budget eviction",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "expect parser flag validation",
+      "coveringTask": "TASK-016",
+      "testType": "unit"
+    },
+    {
+      "codepath": "expect --url condition",
       "coveringTask": "TASK-016",
       "testType": "integration"
     },
     {
-      "codepath": "perf-audit --budget",
+      "codepath": "expect --text condition",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "expect --visible/--hidden",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "expect --count",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "expect --request + --status",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "expect timeout failure",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "perf-audit budget evaluator",
+      "coveringTask": "TASK-016",
+      "testType": "unit"
+    },
+    {
+      "codepath": "perf-audit --budget pass",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "perf-audit --budget fail",
       "coveringTask": "TASK-016",
       "testType": "integration"
     },
@@ -183,7 +293,32 @@
       "testType": "integration"
     },
     {
-      "codepath": "visual landmark + anomaly detection",
+      "codepath": "generated Playwright source parses / compiles",
+      "coveringTask": "TASK-017",
+      "testType": "contract"
+    },
+    {
+      "codepath": "visual helper functions (`parseColor`, `luminance`, `overlaps`, bg resolution)",
+      "coveringTask": "TASK-024",
+      "testType": "unit"
+    },
+    {
+      "codepath": "visual landmark scan",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "visual contrast detection",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "visual overlap detection",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "visual overflow detection",
       "coveringTask": "TASK-024",
       "testType": "integration"
     },
@@ -198,7 +333,22 @@
       "testType": "integration"
     },
     {
-      "codepath": "AX bridge tree + actions",
+      "codepath": "a11y-audit findings (alt, label, heading, touch target, generic link, missing lang)",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "a11y focus-order warning",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "AX bridge tree retrieval",
+      "coveringTask": "TASK-034",
+      "testType": "integration"
+    },
+    {
+      "codepath": "AX bridge tap/fill/type/press actions",
       "coveringTask": "TASK-034",
       "testType": "integration"
     },
@@ -208,19 +358,84 @@
       "testType": "integration"
     },
     {
-      "codepath": "Flow execution",
+      "codepath": "App action context",
+      "coveringTask": "TASK-034",
+      "testType": "integration"
+    },
+    {
+      "codepath": "App mocked bridge failures (permission denied, stale ref, app missing)",
+      "coveringTask": "TASK-034",
+      "testType": "contract"
+    },
+    {
+      "codepath": "Browser sessions remain stable while app sessions are active",
+      "coveringTask": "TASK-034",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Flow parser malformed YAML / duplicate keys / unknown commands",
+      "coveringTask": "TASK-039",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Flow execution (pass)",
       "coveringTask": "TASK-039",
       "testType": "integration"
     },
     {
-      "codepath": "Retry + watch",
+      "codepath": "Flow execution (fail at step)",
       "coveringTask": "TASK-039",
       "testType": "integration"
     },
     {
-      "codepath": "Plugin loading + SDK mode",
+      "codepath": "Retry with backoff",
+      "coveringTask": "TASK-039",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Retry max-failure reporting",
+      "coveringTask": "TASK-039",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Watch DOM change",
+      "coveringTask": "TASK-039",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Watch selector-missing / navigation termination",
+      "coveringTask": "TASK-039",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Plugin loading",
       "coveringTask": "TASK-044",
       "testType": "integration"
+    },
+    {
+      "codepath": "Plugin failure isolation",
+      "coveringTask": "TASK-044",
+      "testType": "contract"
+    },
+    {
+      "codepath": "Duplicate plugin command handling",
+      "coveringTask": "TASK-044",
+      "testType": "contract"
+    },
+    {
+      "codepath": "Dynamic MCP exposure for plugin commands",
+      "coveringTask": "TASK-044",
+      "testType": "contract"
+    },
+    {
+      "codepath": "SDK createBrowser + commands",
+      "coveringTask": "TASK-044",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Packed tarball SDK import via `exports`",
+      "coveringTask": "TASK-044",
+      "testType": "packaging"
     },
     {
       "codepath": "Custom detection signatures",
@@ -286,10 +501,12 @@
         "Text bodies captured",
         "Binary as placeholder",
         "Truncation at 256KB",
+        "Per-session body-byte budget evicts oldest captured bodies while preserving request metadata",
         "Redirect/abort graceful"
       ],
       "filesToModify": [
-        "src/browser-manager.ts"
+        "src/browser-manager.ts",
+        "src/buffers.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -433,6 +650,7 @@
         "request command tested",
         "api command tested",
         "Truncation tested",
+        "Captured-body byte-budget eviction tested",
         "Test: api GET with session cookie set via cookie command verifies cookie in request"
       ],
       "filesToModify": [
@@ -454,6 +672,7 @@
       "acceptanceCriteria": [
         "All condition types parsed",
         "checkConditions returns pass/fail array",
+        "Invalid comparator or malformed request-status combination throws clear usage error",
         "Clear usage error on no conditions"
       ],
       "filesToModify": [],
@@ -499,6 +718,7 @@
         "Budget parsed into metric:value map",
         "Exceeded → error with breakdown",
         "Passed → normal output + confirmation",
+        "Budget evaluation is deterministic and directly testable outside live browser timing",
         "Exit code 1 on failure"
       ],
       "filesToModify": [
@@ -546,7 +766,8 @@
         "goto → page.goto",
         "click → getByRole().click()",
         "expect --url → toHaveURL()",
-        "record export playwright subcommand works"
+        "record export playwright subcommand works",
+        "Generated Playwright source parses or compiles without syntax errors"
       ],
       "filesToModify": [
         "src/record-export.ts",
@@ -585,7 +806,7 @@
     {
       "id": "TASK-016",
       "title": "Integration tests for expect + budget",
-      "description": "Test all expect conditions, timeout behavior, budget pass/fail.",
+      "description": "Test all expect conditions, timeout behavior, request/status assertions, and deterministic budget evaluation.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
@@ -594,14 +815,20 @@
         "TASK-012"
       ],
       "acceptanceCriteria": [
+        "Parser unit tests cover valid flag combinations and malformed comparator/request-status errors",
         "All condition types tested",
+        "expect --request + --status success and failure cases tested",
         "Timeout failure tested",
+        "Deterministic budget evaluator unit tests cover pass/fail and unmeasured metrics",
         "Budget pass/fail tested"
       ],
       "filesToModify": [
         "test/features.test.ts"
       ],
-      "filesToCreate": [],
+      "filesToCreate": [
+        "test/expect.test.ts",
+        "test/perf-audit-budget.test.ts"
+      ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"
     },
@@ -619,12 +846,15 @@
       "acceptanceCriteria": [
         "Replay expect steps correct",
         "Playwright test file valid",
+        "Generated Playwright test parses as valid source",
         "Edge case: no expects"
       ],
       "filesToModify": [
         "test/features.test.ts"
       ],
-      "filesToCreate": [],
+      "filesToCreate": [
+        "test/record-export.test.ts"
+      ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "none"
     },
@@ -681,6 +911,7 @@
       "effort": "M",
       "priority": "P1",
       "dependsOn": [
+        "TASK-018",
         "TASK-019"
       ],
       "acceptanceCriteria": [
@@ -776,7 +1007,7 @@
     {
       "id": "TASK-024",
       "title": "Test fixtures + integration tests for v1.7",
-      "description": "Create visual-issues.html and a11y-issues.html fixtures. Test all detection types.",
+      "description": "Create visual-issues.html and a11y-issues.html fixtures. Test all detection types and visual helper functions.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
@@ -788,15 +1019,19 @@
       "acceptanceCriteria": [
         "2 new fixtures",
         "Contrast/overlap/overflow detected",
+        "Visual helper functions unit tested",
         "Layout returns correct properties",
-        "a11y score < 100 on issues fixture"
+        "a11y score < 100 on issues fixture",
+        "a11y findings cover alt, label, heading, touch target, generic link, missing lang, and focus-order warning",
+        "Gradient-background contrast skip is tested"
       ],
       "filesToModify": [
         "test/features.test.ts"
       ],
       "filesToCreate": [
         "test/fixtures/visual-issues.html",
-        "test/fixtures/a11y-issues.html"
+        "test/fixtures/a11y-issues.html",
+        "test/visual.test.ts"
       ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"
@@ -848,8 +1083,8 @@
     },
     {
       "id": "TASK-027",
-      "title": "Swift AX bridge — set value + screenshot",
-      "description": "Add set-value and screenshot commands to browse-ax.",
+      "title": "Swift AX bridge — set value + keyboard + screenshot",
+      "description": "Add set-value, type, press, and screenshot commands to browse-ax.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -858,7 +1093,10 @@
       ],
       "acceptanceCriteria": [
         "set-value sets AXValue",
+        "type sends text input to focused element",
+        "press sends key event to focused element",
         "screenshot captures window as PNG",
+        "Clear error when no focused element exists for type/press",
         "Clear errors for non-editable/minimized"
       ],
       "filesToModify": [
@@ -871,7 +1109,7 @@
     {
       "id": "TASK-028",
       "title": "Build system for Swift binary",
-      "description": "Compile universal binary, ship in npm or lazy-download. app-bridge.ts handles path resolution.",
+      "description": "Produce distributable macOS bridge artifacts, ship them in npm or lazy-download them, and resolve the correct binary at runtime.",
       "type": "infra",
       "effort": "M",
       "priority": "P1",
@@ -879,12 +1117,14 @@
         "TASK-025"
       ],
       "acceptanceCriteria": [
-        "Universal binary compiled",
+        "Build pipeline produces arm64 and x86_64 artifacts and packages either a universal binary or explicit per-arch runtime selection",
         "app-bridge.ts ensureBridge() returns path",
+        "npm pack verification proves bridge artifact bootstrap files are present in the shipped tarball",
         "Non-macOS throws clear error"
       ],
       "filesToModify": [
-        "package.json"
+        "package.json",
+        "scripts/build-all.sh"
       ],
       "filesToCreate": [
         "src/app-bridge.ts"
@@ -918,8 +1158,8 @@
     },
     {
       "id": "TASK-030",
-      "title": "AppManager — tap, fill, type, press, swipe",
-      "description": "Add interaction methods to AppManager using browse-ax action/set-value commands.",
+      "title": "AppManager — tap, fill, type, press",
+      "description": "Add interaction methods to AppManager using browse-ax action/set-value/type/press commands.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -930,6 +1170,7 @@
         "tap resolves ref + AXPress",
         "fill resolves ref + AXSetValue",
         "type sends keyboard events",
+        "press sends key event",
         "Stale ref error"
       ],
       "filesToModify": [
@@ -942,7 +1183,7 @@
     {
       "id": "TASK-031",
       "title": "App command dispatcher + --app flag",
-      "description": "Create commands/app.ts, add --app flag to CLI, route app commands in server.",
+      "description": "Create commands/app.ts, add --app flag to CLI, route app commands in server, and introduce a shared session-target abstraction so browser and app sessions share top-level dispatch safely.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -953,12 +1194,17 @@
       "acceptanceCriteria": [
         "--app Simulator snapshot -i works",
         "--app Simulator tap @e3 works",
+        "Shared session-target abstraction preserves existing browser dispatch while enabling app sessions",
         "Unsupported commands → clear error",
+        "Unsupported command gating happens centrally before execution",
         "--app + --session work together"
       ],
       "filesToModify": [
         "src/cli.ts",
-        "src/server.ts"
+        "src/server.ts",
+        "src/session-manager.ts",
+        "src/command-registry.ts",
+        "src/types.ts"
       ],
       "filesToCreate": [
         "src/commands/app.ts"
@@ -974,6 +1220,7 @@
       "effort": "M",
       "priority": "P2",
       "dependsOn": [
+        "TASK-029",
         "TASK-031"
       ],
       "acceptanceCriteria": [
@@ -992,7 +1239,7 @@
     {
       "id": "TASK-033",
       "title": "MCP tools + CLI help for app commands",
-      "description": "Register app MCP tools, update CLI help, add doctor check for browse-ax.",
+      "description": "Register app MCP tools, update CLI help, and extend doctor to validate bridge availability plus Accessibility guidance.",
       "type": "chore",
       "effort": "S",
       "priority": "P2",
@@ -1002,11 +1249,13 @@
       "acceptanceCriteria": [
         "App MCP tools defined",
         "CLI help shows --app",
-        "Doctor checks browse-ax + AX permission"
+        "Doctor checks browse-ax + AX permission",
+        "Doctor prints explicit remediation steps when bridge or permission is missing"
       ],
       "filesToModify": [
         "src/mcp-tools.ts",
-        "src/cli.ts"
+        "src/cli.ts",
+        "src/commands/meta.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -1015,23 +1264,28 @@
     {
       "id": "TASK-034",
       "title": "Integration tests for app automation",
-      "description": "Test with TextEdit or Electron app. Verify snapshot, tap, fill, context.",
+      "description": "Test AppManager with mocked bridge-contract tests plus gated real macOS integration. Verify snapshot, tap, fill, context, unsupported-command handling, and browser/app session isolation.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
       "dependsOn": [
         "TASK-031",
-        "TASK-032"
+        "TASK-032",
+        "TASK-033"
       ],
       "acceptanceCriteria": [
         "Snapshot returns tree with @refs",
         "Fill sets value",
         "Context reports changes",
+        "Mocked bridge failures cover permission denied, app missing, and stale ref",
+        "Unsupported app command rejection tested",
+        "Browser session behavior remains stable while app session is active",
         "Skips on non-macOS"
       ],
       "filesToModify": [],
       "filesToCreate": [
-        "test/app.test.ts"
+        "test/app.test.ts",
+        "test/app-manager.test.ts"
       ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"
@@ -1039,18 +1293,22 @@
     {
       "id": "TASK-035",
       "title": "Flow YAML parser",
-      "description": "Create src/flow-parser.ts. Parses flow YAML into FlowStep[]. Validates commands.",
+      "description": "Create src/flow-parser.ts. Parses flow YAML into FlowStep[]. Validates commands and uses an explicit YAML parser dependency with line or column errors.",
       "type": "feature",
       "effort": "M",
       "priority": "P0",
       "dependsOn": [],
       "acceptanceCriteria": [
         "Parses goto/click/fill/expect steps",
+        "package.json adds explicit YAML parser dependency",
         "Validates commands exist",
+        "Duplicate keys or unsupported step shapes fail with line or column context",
         "Clear error on malformed YAML",
         "Empty steps error"
       ],
-      "filesToModify": [],
+      "filesToModify": [
+        "package.json"
+      ],
       "filesToCreate": [
         "src/flow-parser.ts"
       ],
@@ -1133,7 +1391,7 @@
     {
       "id": "TASK-039",
       "title": "MCP tools + tests for v2.1",
-      "description": "Register flow/retry/watch MCP tools. Integration tests.",
+      "description": "Register flow/retry/watch MCP tools. Write unit and integration tests for parser behavior and workflow failure paths.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
@@ -1144,34 +1402,44 @@
       ],
       "acceptanceCriteria": [
         "3 MCP tools defined",
+        "Flow parser malformed-YAML, duplicate-key, and unknown-command tests exist",
         "Flow 3-step test passes",
         "Retry succeeds on 2nd attempt",
-        "Watch detects change"
+        "Retry max-failure path reports last error",
+        "Watch detects change",
+        "Watch missing-selector and navigation-termination paths are tested"
       ],
       "filesToModify": [
         "src/mcp-tools.ts",
         "src/cli.ts",
         "test/features.test.ts"
       ],
-      "filesToCreate": [],
+      "filesToCreate": [
+        "test/flow-parser.test.ts"
+      ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "none"
     },
     {
       "id": "TASK-040",
       "title": "Plugin loader and registry",
-      "description": "Create src/plugin.ts. Scans node_modules/browse-plugin-*, calls register(ctx) with addCommand/addDetection/addAuditRule.",
+      "description": "Create src/plugin.ts with project-local plugin discovery, loading, and registry. Plugins are trusted per-project code, not global injections, and must participate in dynamic dispatch plus MCP exposure.",
       "type": "feature",
       "effort": "L",
       "priority": "P0",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "Scans node_modules",
-        "register(ctx) called",
-        "addCommand works",
+        "Detects project root from cwd or nearest package.json and skips discovery clearly when none exists",
+        "Scans project-local node_modules only",
+        "register(ctx) called with explicit plugin API version contract",
+        "addCommand works in dynamic dispatch and MCP exposure",
         "Plugin errors caught"
       ],
-      "filesToModify": [],
+      "filesToModify": [
+        "src/command-registry.ts",
+        "src/server.ts",
+        "src/mcp-tools.ts"
+      ],
       "filesToCreate": [
         "src/plugin.ts"
       ],
@@ -1181,7 +1449,7 @@
     {
       "id": "TASK-041",
       "title": "Plugin install/remove/list commands",
-      "description": "Wraps npm install/uninstall for browse-plugin-* packages.",
+      "description": "Wrap project-local npm install/uninstall/list flows for browse-plugin-* packages in the detected project root.",
       "type": "feature",
       "effort": "S",
       "priority": "P1",
@@ -1189,14 +1457,16 @@
         "TASK-040"
       ],
       "acceptanceCriteria": [
-        "install runs npm install",
-        "remove runs npm uninstall",
+        "install runs npm install -D in detected project root",
+        "remove runs npm uninstall in detected project root",
         "list scans node_modules",
+        "No project root or package.json yields clear project-local-only error",
         "npm not found error"
       ],
       "filesToModify": [
         "src/commands/meta.ts",
-        "src/command-registry.ts"
+        "src/command-registry.ts",
+        "src/plugin.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -1205,21 +1475,22 @@
     {
       "id": "TASK-042",
       "title": "SDK mode — library entry point",
-      "description": "Create src/sdk.ts wrapping BrowserManager as clean typed API. No HTTP server. Package exports.",
+      "description": "Create src/sdk.ts wrapping BrowserManager as clean typed API. No HTTP server. Validate SDK mode from the packed npm artifact independently of the plugin system.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
-      "dependsOn": [
-        "TASK-040"
-      ],
+      "dependsOn": [],
       "acceptanceCriteria": [
         "import { createBrowser } works",
         "goto/click/fill/text/snapshot work",
         "No server spawned",
-        "TypeScript types exported"
+        "TypeScript types exported",
+        "package.json exports and files expose CLI plus SDK artifacts",
+        "npm pack temp-install verification proves createBrowser is importable from shipped tarball"
       ],
       "filesToModify": [
-        "package.json"
+        "package.json",
+        "scripts/build-all.sh"
       ],
       "filesToCreate": [
         "src/sdk.ts"
@@ -1251,19 +1522,24 @@
     {
       "id": "TASK-044",
       "title": "MCP tools + tests for v2.2",
-      "description": "Register plugin MCP tools. Test plugin loading, SDK mode, custom detections.",
+      "description": "Register plugin MCP tools. Test plugin loading, SDK mode, custom detections, plugin isolation, and packed-SDK verification.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
       "dependsOn": [
         "TASK-040",
+        "TASK-041",
         "TASK-042",
         "TASK-043"
       ],
       "acceptanceCriteria": [
         "Plugin list MCP tool",
+        "Plugin load failure isolation test",
+        "Duplicate plugin command handling test",
+        "Dynamic MCP exposure for plugin command test",
         "SDK createBrowser test",
         "Custom detection test",
+        "Packed tarball SDK import test",
         "Malformed JSON test"
       ],
       "filesToModify": [
@@ -1271,23 +1547,29 @@
         "src/cli.ts",
         "test/features.test.ts"
       ],
-      "filesToCreate": [],
+      "filesToCreate": [
+        "test/plugin.test.ts",
+        "test/sdk-pack.test.ts"
+      ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"
     },
     {
       "id": "TASK-045",
       "title": "Plugin API documentation",
-      "description": "Document plugin creation, register function, addCommand/addDetection/addAuditRule, publishing.",
+      "description": "Document plugin creation, register function, addCommand/addDetection/addAuditRule, the project-local trust and install model, and publishing.",
       "type": "docs",
       "effort": "S",
       "priority": "P3",
       "dependsOn": [
-        "TASK-040"
+        "TASK-040",
+        "TASK-041"
       ],
       "acceptanceCriteria": [
         "Naming convention",
+        "Project-local trust and install model documented",
         "Register function signature",
+        "Plugin API versioning documented",
         "Examples",
         "Publishing instructions"
       ],
@@ -1358,6 +1640,7 @@
       "TASK-018"
     ],
     "TASK-020": [
+      "TASK-018",
       "TASK-019"
     ],
     "TASK-021": [
@@ -1398,6 +1681,7 @@
       "TASK-030"
     ],
     "TASK-032": [
+      "TASK-029",
       "TASK-031"
     ],
     "TASK-033": [
@@ -1405,7 +1689,8 @@
     ],
     "TASK-034": [
       "TASK-031",
-      "TASK-032"
+      "TASK-032",
+      "TASK-033"
     ],
     "TASK-035": [],
     "TASK-036": [
@@ -1427,17 +1712,17 @@
     "TASK-041": [
       "TASK-040"
     ],
-    "TASK-042": [
-      "TASK-040"
-    ],
+    "TASK-042": [],
     "TASK-043": [],
     "TASK-044": [
       "TASK-040",
+      "TASK-041",
       "TASK-042",
       "TASK-043"
     ],
     "TASK-045": [
-      "TASK-040"
+      "TASK-040",
+      "TASK-041"
     ]
   }
 }

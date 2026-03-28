@@ -1,0 +1,392 @@
+{
+  "title": "Snapshot Context — ARIA Delta After Write Commands",
+  "branch": "feat/snapshot-context",
+  "mode": "HOLD",
+  "overview": "Extend action-context to optionally include ARIA snapshot deltas or full snapshots after write commands. Agents choose a context level per-request or per-session: 'state' (existing — URL/title/dialog), 'delta' (state + ARIA diff with refs for added elements), or 'full' (state + complete new snapshot with refs). Eliminates the snapshot→action→snapshot round-trip, saving ~500-2000 tokens and one HTTP call per interaction step.",
+  "scopeChallenge": "Considered persistent/stable refs (fragile — DOM mutations silently invalidate nth-based locators), MutationObserver-based dirty tracking (too many false positives), and structural tree diffing with node matching (complex, EXPANSION territory). HOLD approach: reuse existing handleSnapshot + Diff.diffLines to produce a line-level delta with refs on added elements. The agent's last snapshot serves as the baseline — no extra ARIA capture before the write, no ref-overwrite risk.",
+  "prerequisites": [
+    {
+      "assumption": "action-context feature is landed (TASK-001–006 from action-context plan)",
+      "status": "already-true",
+      "verification": "src/action-context.ts exists with capturePageState, buildContextDelta, formatContextLine"
+    },
+    {
+      "assumption": "diff library is available",
+      "status": "already-true",
+      "verification": "src/commands/meta.ts imports * as Diff from 'diff'"
+    },
+    {
+      "assumption": "handleSnapshot is exported from snapshot.ts",
+      "status": "already-true",
+      "verification": "src/snapshot.ts: export async function handleSnapshot"
+    },
+    {
+      "assumption": "BrowserManager stores last snapshot per-tab",
+      "status": "already-true",
+      "verification": "src/browser-manager.ts: getLastSnapshot(), getLastSnapshotOpts(), setLastSnapshot()"
+    }
+  ],
+  "nonGoals": [
+    "Persistent/stable element refs across DOM mutations",
+    "Structural tree diffing with node matching or moved-element detection",
+    "MutationObserver-based DOM change tracking",
+    "Automatic context level selection (agent always chooses explicitly)",
+    "Per-tool-call context level in MCP (uses session-level setting)"
+  ],
+  "contracts": [
+    {
+      "boundary": "Context level header",
+      "producer": "CLI (cli.ts)",
+      "consumer": "Server (server.ts)",
+      "shape": "X-Browse-Context: state | delta | full (1 maps to state for backward compat)",
+      "consistencyRule": "Per-request header overrides session-level contextLevel"
+    },
+    {
+      "boundary": "Write context orchestration",
+      "producer": "action-context.ts",
+      "consumer": "server.ts, mcp.ts",
+      "shape": "prepareWriteContext(level, bm, buffers) → WriteContextCapture; finalizeWriteContext(capture, bm, buffers, result, command) → enriched result string",
+      "consistencyRule": "For delta/full, finalizeWriteContext calls handleSnapshot which updates bm.refMap — refs are always from the post-write snapshot"
+    },
+    {
+      "boundary": "ARIA delta format",
+      "producer": "action-context.ts (formatAriaDelta)",
+      "consumer": "Agents consuming CLI/MCP output",
+      "shape": "[snapshot-delta] +N -M =K\\n+ @eN [role] \"name\"\\n- [role] \"name\"",
+      "consistencyRule": "Refs on added lines are valid Locators in the current refMap; returns empty string when snapshots are identical"
+    },
+    {
+      "boundary": "Session context level",
+      "producer": "set context command (write.ts)",
+      "consumer": "server.ts handleCommand",
+      "shape": "session.contextLevel: ContextLevel",
+      "consistencyRule": "Per-request header overrides session level; 'on' maps to 'state' for backward compat"
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "ARIA tree capture + ref building",
+      "existingCode": "src/snapshot.ts — handleSnapshot()",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Line-level text diffing",
+      "existingCode": "src/commands/meta.ts — Diff.diffLines() in snapshot-diff",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Page state capture (URL/title/dialog/tabs)",
+      "existingCode": "src/action-context.ts — capturePageState, buildContextDelta, formatContextLine",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Per-tab snapshot storage",
+      "existingCode": "src/browser-manager.ts — tabSnapshots, getLastSnapshot(), getLastSnapshotOpts()",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Opt-in header pattern",
+      "existingCode": "src/server.ts:655-659 — RequestOptions, X-Browse-Context header parsing",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "CLI flag pattern",
+      "existingCode": "src/cli.ts:653-660 — --context flag parsing",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Set context session command",
+      "existingCode": "src/commands/write.ts:680-688 — set context on/off handler",
+      "source": "local",
+      "action": "extend"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "handleSnapshot() called in finalizeWriteContext overwrites refMap — agent's pre-write refs become invalid mid-command",
+      "affectedTasks": ["TASK-003", "TASK-004"],
+      "mitigation": "Snapshot runs AFTER the write command completes. The write command resolves refs from the existing refMap before finalizeWriteContext is called. New refs are for the agent's next action."
+    },
+    {
+      "risk": "No baseline snapshot for delta (agent never ran snapshot before first write)",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "If bm.getLastSnapshot() returns null, fall back to full mode — take fresh snapshot after write, return entire output. First write gives full, subsequent writes give deltas."
+    },
+    {
+      "risk": "Delta output is large when page changes significantly (e.g., SPA navigation disguised as same-URL)",
+      "affectedTasks": ["TASK-002"],
+      "mitigation": "If added+removed > 80% of total elements, prepend a note: '[snapshot-delta] major change — consider full snapshot'. Let agent decide."
+    },
+    {
+      "risk": "handleSnapshot latency adds overhead to every write command in delta/full mode",
+      "affectedTasks": ["TASK-003", "TASK-004", "TASK-005"],
+      "mitigation": "handleSnapshot is ~10-30ms typical (ariaSnapshot ~5-20ms + parsing ~5-10ms). Acceptable for opt-in. State-only mode has zero snapshot overhead."
+    },
+    {
+      "risk": "Snapshot options mismatch: baseline was -i -V but after snapshot uses -i only",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "Always use bm.getLastSnapshotOpts() for the after snapshot, matching the baseline's filter. Defaults to ['-i'] if no previous options."
+    },
+    {
+      "risk": "Diff library (diff) adds bundle size",
+      "affectedTasks": ["TASK-002"],
+      "mitigation": "Already bundled — imported in meta.ts for snapshot-diff. No new dependency."
+    }
+  ],
+  "testCoverageMap": [
+    { "codepath": "formatAriaDelta() — ARIA line diff with ref preservation", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "prepareWriteContext() — before-write state/snapshot capture", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "finalizeWriteContext() — after-write enrichment at each level", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "server.ts context level parsing from X-Browse-Context header", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "Delta mode: click that adds/removes DOM elements → diff with refs", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "Full mode: click → full snapshot appended to result", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "State mode: backward compatible, no ARIA overhead", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "No-change action: fill → empty delta", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "No baseline: first write in delta mode → falls back to full", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "Refs from delta are valid for subsequent commands", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "MCP write with delta context → ARIA diff in response", "coveringTask": "TASK-009", "testType": "integration" },
+    { "codepath": "MCP read/meta commands → no context appended", "coveringTask": "TASK-009", "testType": "integration" },
+    { "codepath": "set context delta/full session command", "coveringTask": "TASK-008", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Define ContextLevel type and update Session interface",
+      "description": "Add the `ContextLevel` union type to `src/types.ts` alongside the existing action-context types. Add `contextLevel: ContextLevel` to the `Session` interface in `src/session-manager.ts` alongside the existing `contextEnabled` field (keep both — TASK-004 removes `contextEnabled` when it rewires server.ts). Update session creation in `getOrCreate()` to initialize `contextLevel: 'off'`. Add `WriteContextCapture` interface to types.ts for the before/after orchestration pattern.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "ContextLevel = 'off' | 'state' | 'delta' | 'full' exported from types.ts",
+        "Session interface has both contextEnabled (kept temporarily) and contextLevel fields",
+        "TypeScript compiles cleanly: tsc --noEmit succeeds"
+      ],
+      "filesToModify": ["src/types.ts", "src/session-manager.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/types.ts", "src/session-manager.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert types.ts and session-manager.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Implement ARIA delta formatter",
+      "description": "Add `formatAriaDelta(baseline: string, current: string): string` to `src/action-context.ts`. This function takes two snapshot outputs (both with @refs), strips refs from both for comparison using `Diff.diffLines()`, then rebuilds the output with refs preserved on added lines from the 'current' text. Removed lines are shown without refs. Returns a summary line (`[snapshot-delta] +N -M =K`) followed by the diff lines, or empty string if identical. Import `diff` library (already in the bundle via meta.ts). Edge cases: empty baseline returns all lines as added; identical snapshots return empty string; large changes (>80% added+removed) prepend a note suggesting full snapshot.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "formatAriaDelta with identical inputs returns empty string",
+        "formatAriaDelta with added elements returns + lines with @refs from current text",
+        "formatAriaDelta with empty baseline returns full current text prefixed with + markers"
+      ],
+      "filesToModify": ["src/action-context.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/action-context.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Remove formatAriaDelta function from action-context.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Implement write context orchestrator (prepare/finalize)",
+      "description": "Add `prepareWriteContext(level: ContextLevel, bm: BrowserManager, buffers: SessionBuffers): Promise<WriteContextCapture>` and `finalizeWriteContext(capture: WriteContextCapture, bm: BrowserManager, buffers: SessionBuffers, result: string, command: string): Promise<string>` to `src/action-context.ts`. These replace the inline before/after logic in server.ts and mcp.ts.\n\n`prepareWriteContext`: For 'state' — captures PageState only. For 'delta' — captures PageState + stores baseline text from `bm.getLastSnapshot()`. For 'full' — captures PageState. For 'off' — returns null capture.\n\n`finalizeWriteContext`: For 'state' — existing behavior (capturePageState, buildContextDelta, formatContextLine). For 'delta' — run `handleSnapshot(bm.getLastSnapshotOpts() || ['-i'], bm)`, call `formatAriaDelta(baseline, newSnapshot)`, prepend state context line. For 'full' — run `handleSnapshot(opts, bm)`, prepend state context line, append full snapshot. For 'off' — return result unchanged.\n\nImport `handleSnapshot` from `../snapshot`. Use `bm.getLastSnapshotOpts()` defaulting to `['-i']` for snapshot options. If delta mode has no baseline (getLastSnapshot returns null), fall back to full mode. `finalizeWriteContext` must wrap all snapshot/delta work in try/catch — context capture failures must never break the write command response (preserve the existing 'Don't let context capture failures break the command' pattern from server.ts and mcp.ts).",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "prepareWriteContext('off', ...) returns a capture that causes finalizeWriteContext to return result unchanged",
+        "finalizeWriteContext in delta mode calls handleSnapshot and formatAriaDelta, appending delta to result",
+        "Edge case: delta mode with no baseline (null getLastSnapshot) falls back to full mode"
+      ],
+      "filesToModify": ["src/action-context.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/action-context.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Remove prepareWriteContext and finalizeWriteContext functions",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Wire context levels into server.ts command pipeline",
+      "description": "Refactor `src/server.ts` to use context levels instead of boolean. Change `RequestOptions.contextEnabled: boolean` to `RequestOptions.contextLevel: ContextLevel`. Parse `X-Browse-Context` header: '1' or 'state' → 'state', 'delta' → 'delta', 'full' → 'full', absent → 'off'. Resolve effective level: per-request header overrides `session.contextLevel`. Replace the inline before/after capturePageState + buildContextDelta logic in the WRITE_COMMANDS branch with `prepareWriteContext()` before and `finalizeWriteContext()` after. Update the `set context` detection (line ~338) to read levels from result. Update profileSession creation to use `contextLevel: 'off'`. Remove the deprecated `contextEnabled` field from Session usage and `RequestOptions` (completing the migration started in TASK-001). Import ContextLevel from types.ts.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001", "TASK-003"],
+      "acceptanceCriteria": [
+        "X-Browse-Context: delta header causes write commands to return ARIA diff with refs after the action result",
+        "X-Browse-Context: 1 header continues to work (backward compatible, state-only context)",
+        "Read and meta commands are not affected by any context level (zero overhead)"
+      ],
+      "filesToModify": ["src/server.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/server.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Revert server.ts to use contextEnabled boolean",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Wire context levels into MCP server",
+      "description": "Refactor `src/mcp.ts` to use the shared `prepareWriteContext()` / `finalizeWriteContext()` functions instead of the inline capturePageState + buildContextDelta logic. MCP currently always runs state-level context for write commands. Add a module-level `mcpContextLevel: ContextLevel` variable (default: 'state') that can be changed via the `set context` command. When a write command runs: call `prepareWriteContext(mcpContextLevel, bm, buffers)` before, `finalizeWriteContext(capture, bm, buffers, result, command)` after. Detect `set context` in the write result to update `mcpContextLevel`.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-003"],
+      "acceptanceCriteria": [
+        "MCP write commands append ARIA delta when mcpContextLevel is 'delta'",
+        "MCP read and meta commands have zero context overhead regardless of level",
+        "Edge case: set context full via MCP changes subsequent write responses to include full snapshot"
+      ],
+      "filesToModify": ["src/mcp.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/mcp.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Revert mcp.ts to inline context logic",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Update --context CLI flag to accept levels",
+      "description": "Modify `src/cli.ts` context flag parsing (line ~653-660). Currently `--context` is boolean. Change to accept optional value: `--context` (no value) → 'state' (backward compat), `--context delta` → 'delta', `--context full` → 'full'. The value is the next arg if it matches state/delta/full, otherwise default to 'state'. Set `X-Browse-Context` header to the string value instead of '1'. Update `cliFlags.context` from boolean to string. Update help text to show: `--context [state|delta|full]  Enable action context (state=changes only, delta=ARIA diff, full=complete snapshot)`. Also support env var: `BROWSE_CONTEXT=delta`.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-004"],
+      "acceptanceCriteria": [
+        "--context without value sets X-Browse-Context: state header (backward compat with existing --context behavior)",
+        "--context delta sets X-Browse-Context: delta header",
+        "Edge case: --context followed by a command name (not a level) defaults to state, does not consume the command as the level"
+      ],
+      "filesToModify": ["src/cli.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/cli.ts"],
+      "validateCommand": "npx tsx src/cli.ts --help | grep context",
+      "rollbackPlan": "Revert cli.ts context flag to boolean",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Extend set context command for levels",
+      "description": "Update `src/commands/write.ts` case 'context' (line ~680-688) to accept: `set context off|on|state|delta|full`. 'on' maps to 'state' for backward compat. 'off' maps to 'off'. Return descriptive message for each level. Update the detection in `src/server.ts` (line ~338-340) to parse the level from the result string and set `session.contextLevel` accordingly. The current code checks `args[1]?.toLowerCase() === 'on'` — extend to parse all valid levels.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-004"],
+      "acceptanceCriteria": [
+        "set context delta returns 'Context level set to delta — write commands will include ARIA snapshot diff'",
+        "set context on returns backward-compatible message and sets level to 'state'",
+        "Edge case: set context (no value) returns current context level"
+      ],
+      "filesToModify": ["src/commands/write.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts", "src/server.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Revert write.ts and server.ts set context changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Integration tests for snapshot context",
+      "description": "Create `test/action-context.test.ts` with integration tests for all context levels. Use the existing test setup pattern (BrowserManager + test server from test/setup.ts or test/test-server.ts). Tests need HTML fixtures that produce DOM changes on click (e.g., a button that adds/removes elements).\n\nTest cases:\n1. Delta mode: goto page → snapshot -i → click button that adds element → verify response includes [snapshot-delta] with + line having @ref\n2. Full mode: click → verify response includes [snapshot] with complete ARIA tree and valid refs\n3. State mode: click → verify response includes [context] line only (no ARIA)\n4. No-change action: fill input → verify empty delta (no [snapshot-delta] section)\n5. No baseline: first write with delta → verify falls back to full\n6. Ref validity: use @ref from delta output in subsequent click → verify it works\n7. Backward compat: X-Browse-Context: 1 → state-only behavior\n\nCreate a test fixture `test/fixtures/dynamic.html` with a button that adds/removes DOM elements on click.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-004"],
+      "acceptanceCriteria": [
+        "Test: click in delta mode produces [snapshot-delta] output with + @eN lines for added elements",
+        "Test: fill in delta mode produces no snapshot-delta section (nothing changed in DOM)",
+        "Test: refs from delta output resolve to valid elements for subsequent commands"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/action-context.test.ts", "test/fixtures/dynamic.html"],
+      "writeScope": ["test/action-context.test.ts", "test/fixtures/dynamic.html"],
+      "validateCommand": "npm test test/action-context.test.ts",
+      "rollbackPlan": "Delete test files",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-009",
+      "title": "MCP integration tests for snapshot context",
+      "description": "Add a test section to `test/mcp.test.ts` verifying context levels work through MCP. Test that write commands return ARIA delta when context level is set to delta. Test that read/meta commands never include context. Test that set context full changes subsequent responses.",
+      "type": "test",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": ["TASK-005"],
+      "acceptanceCriteria": [
+        "Test: MCP write command returns ARIA diff when context is delta",
+        "Test: MCP browse_snapshot does NOT include context (meta command)",
+        "Edge case: MCP context-enriched result works correctly with JSON wrapping"
+      ],
+      "filesToModify": ["test/mcp.test.ts"],
+      "filesToCreate": [],
+      "writeScope": ["test/mcp.test.ts"],
+      "validateCommand": "npm test test/mcp.test.ts",
+      "rollbackPlan": "Remove added test section from mcp.test.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-010",
+      "title": "Update MCP tool descriptions for context levels",
+      "description": "Update write command tool descriptions in `src/mcp-tools.ts` to mention that responses can include ARIA snapshot deltas or full snapshots when context level is set. Update `browse_click` description to mention: 'When context is set to delta/full, response includes ARIA snapshot changes with clickable @refs.' Keep descriptions under 300 chars. Do not modify read command descriptions.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P3",
+      "dependsOn": ["TASK-005"],
+      "acceptanceCriteria": [
+        "browse_click description mentions delta/full context levels and @refs",
+        "No read or meta command descriptions are modified",
+        "Edge case: all descriptions stay under 300 characters"
+      ],
+      "filesToModify": ["src/mcp-tools.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/mcp-tools.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert description changes in mcp-tools.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 10,
+    "layerCount": 4,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002"] },
+      { "layer": 1, "tasks": ["TASK-003"] },
+      { "layer": 2, "tasks": ["TASK-004", "TASK-005"] },
+      { "layer": 3, "tasks": ["TASK-006", "TASK-007", "TASK-008", "TASK-009", "TASK-010"] }
+    ],
+    "criticalPath": ["TASK-001", "TASK-003", "TASK-004", "TASK-008"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-001", "TASK-002"],
+    "TASK-004": ["TASK-001", "TASK-003"],
+    "TASK-005": ["TASK-003"],
+    "TASK-006": ["TASK-004"],
+    "TASK-007": ["TASK-004"],
+    "TASK-008": ["TASK-004"],
+    "TASK-009": ["TASK-005"],
+    "TASK-010": ["TASK-005"]
+  }
+}
