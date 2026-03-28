@@ -6,7 +6,7 @@
   "scopeChallenge": "All 8 previous plans shipped. Current: ~23.5K src lines, 103 commands, v1.5.0. Ruled out: Lighthouse (perf-audit better), AI selectors (non-deterministic), visual regression service (screenshot-diff exists), browser cloud (partnered), full test framework (generates Playwright tests instead).",
   "roadmapShape": [
     "v1.5-v1.7 deepen the existing browser CLI/MCP product with network inspection, assertions, export, visual diagnostics, accessibility checks, and lower-round-trip agent ergonomics.",
-    "v2.0 adds macOS app automation as a second runtime behind the same session/dispatch surface; browser behavior must remain unchanged.",
+    "v2.0 adds native app automation as a second runtime behind the same session/dispatch surface: macOS first, then Android, then iOS simulator, all behind one browse command model; browser behavior must remain unchanged.",
     "v2.1 adds thin orchestration helpers (flow, retry, watch) over existing commands rather than a competing full test framework.",
     "v2.2 adds SDK mode plus checked-in project files for detections, audit rules, saved flows, and config; npm plugins are explicitly out of scope."
   ],
@@ -196,13 +196,45 @@
       "mitigation": "Introduce shared session-target abstraction and require browser-regression coverage while app sessions are active."
     },
     {
-      "risk": "Future iOS or Android targets force a second command or MCP surface",
+      "risk": "Future Android or iOS targets force a second command or MCP surface",
       "affectedTasks": [
         "TASK-031",
         "TASK-033",
-        "TASK-034"
+        "TASK-034",
+        "TASK-055",
+        "TASK-056"
       ],
-      "mitigation": "Keep one command model and validate future adapters through the app-runtime contract harness before adding mobile-specific transports."
+      "mitigation": "Keep one command model and validate mobile adapters through the shared app-runtime contract harness plus multi-platform target-selection tests before adding any new transport surface."
+    },
+    {
+      "risk": "Android driver boot or adb device selection is flaky",
+      "affectedTasks": [
+        "TASK-051",
+        "TASK-052",
+        "TASK-055",
+        "TASK-056"
+      ],
+      "mitigation": "Keep Android emulator-first, require exact serial override, own port-forward cleanup in the adapter, and cover boot and ambiguity failures in mocked and gated emulator tests."
+    },
+    {
+      "risk": "iOS simulator runner boot is slow or Xcode tooling drifts",
+      "affectedTasks": [
+        "TASK-053",
+        "TASK-054",
+        "TASK-055",
+        "TASK-056"
+      ],
+      "mitigation": "Keep iOS simulator-only, split simulator control from the UI runner, poll runner health explicitly, and make browse doctor --platform ios print concrete remediation for Xcode and runtime issues."
+    },
+    {
+      "risk": "Mobile adapters drift from shared app semantics",
+      "affectedTasks": [
+        "TASK-052",
+        "TASK-054",
+        "TASK-055",
+        "TASK-056"
+      ],
+      "mitigation": "Reuse the shared app-runtime contract harness and assert the same ref, snapshot, capability-gating, and error-shape behavior across macOS, Android, and iOS adapters."
     },
     {
       "risk": "Swift bridge packaging drifts from shipped npm artifact",
@@ -469,6 +501,41 @@
     {
       "codepath": "Browser sessions remain stable while app sessions are active",
       "coveringTask": "TASK-034",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Android driver protocol (tree/action/set-value/type/press/screenshot/state)",
+      "coveringTask": "TASK-056",
+      "testType": "contract"
+    },
+    {
+      "codepath": "Android host normalization + refs",
+      "coveringTask": "TASK-056",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Android device selection + adb bootstrap failures",
+      "coveringTask": "TASK-056",
+      "testType": "contract"
+    },
+    {
+      "codepath": "iOS simulator runner protocol (tree/action/set-value/type/press/screenshot/state)",
+      "coveringTask": "TASK-056",
+      "testType": "contract"
+    },
+    {
+      "codepath": "iOS host normalization + refs",
+      "coveringTask": "TASK-056",
+      "testType": "integration"
+    },
+    {
+      "codepath": "iOS simulator selection + runner boot failures",
+      "coveringTask": "TASK-056",
+      "testType": "contract"
+    },
+    {
+      "codepath": "Unified multi-platform app target selection + doctor",
+      "coveringTask": "TASK-056",
       "testType": "integration"
     },
     {
@@ -1549,6 +1616,195 @@
       "review": "claude"
     },
     {
+      "id": "TASK-051",
+      "title": "Android driver workspace + on-device instrumentation protocol",
+      "description": "Create browse-android as a Kotlin/Gradle workspace that packages a browse-owned instrumentation driver for Android emulators. Follow the good lesson from Maestro's Android stack — host orchestration plus on-device runtime — but keep the browse app-runtime contract canonical. The on-device service speaks a narrow transport (tree, action, set-value, type, press, screenshot, state) and never emits browse refs or CLI or MCP formatting.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-034"
+      ],
+      "acceptanceCriteria": [
+        "browse-android builds driver artifacts reproducibly for local development and CI",
+        "Host can start the driver on a booted emulator through adb shell am instrument plus port-forwarding",
+        "Driver exposes typed RPC endpoints for tree, action, set-value, type, press, screenshot, and state",
+        "Raw tree nodes include stable node paths plus role, class, text, content-desc, bounds, enabled, focused, selected, editable, checkable, clickable, and children",
+        "Driver output contains no browse refs, no CLI formatting, and no platform-specific human strings beyond errors",
+        "Missing adb, no booted emulator, multiple candidate devices, or missing target app fail with explicit remediation",
+        "Scope is emulator-first; real-device-specific behavior is not required in this roadmap window"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "browse-android/settings.gradle.kts",
+        "browse-android/app/build.gradle.kts",
+        "browse-android/app/src/androidTest/java/io/ulpi/browse/driver/BrowseDriverService.kt",
+        "browse-android/app/src/androidTest/java/io/ulpi/browse/driver/ViewHierarchy.kt",
+        "src/app/android/protocol.ts"
+      ],
+      "agent": "android-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-052",
+      "title": "Android host adapter + app-runtime integration",
+      "description": "Create the host-side Android adapter that installs or starts the driver, resolves emulator plus package, normalizes the raw hierarchy into browse-owned app nodes, assigns refs host-side, and plugs into the existing src/app runtime path. snapshot, text, tap, fill, type, press, screenshot, and state must behave like other app targets and route through the same executor and session flow.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-051",
+        "TASK-034"
+      ],
+      "acceptanceCriteria": [
+        "browse --platform android --device emulator-5554 --app com.example.demo snapshot -i resolves emulator plus app and returns a browse-style snapshot with host-assigned refs",
+        "tap, fill, type, press, screenshot, state, and text reuse the shared app-target command surface; no new Android-only command names are introduced",
+        "Device selection supports exact serial and single-booted-emulator auto-resolution; ambiguity fails clearly",
+        "App selection supports exact package name and deterministic error on missing package",
+        "Host adapter manages adb port-forward lifecycle and driver boot and teardown without leaking global state",
+        "Stale mobile node paths fail with the same refresh guidance used by macOS app refs",
+        "Android adapter reuses the app-runtime contract harness from TASK-034 rather than inventing Android-only semantics"
+      ],
+      "filesToModify": [
+        "src/app/index.ts",
+        "src/app/normalize.ts",
+        "src/session/target-factory.ts"
+      ],
+      "filesToCreate": [
+        "src/app/android/bridge.ts",
+        "src/app/android/manager.ts"
+      ],
+      "agent": "android-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-053",
+      "title": "iOS simulator runner workspace + controller split",
+      "description": "Create browse-ios-runner as an Xcode runner workspace for iOS Simulator and define the browse-owned split between simulator controller and UI runner. Learn from Maestro's XCTest pattern, but keep the browse contract canonical and simulator-first: simctl and Xcode manage lifecycle, the runner exposes tree, action, set-value, type, press, screenshot, and state, and browse owns refs, formatting, and command semantics.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-034"
+      ],
+      "acceptanceCriteria": [
+        "Runner boots on a selected simulator through xcodebuild test-without-building or an equivalent reproducible invocation",
+        "Host can poll runner health before issuing commands",
+        "Simulator lifecycle (boot, install, launch, permissions) is separate from UI-runner RPCs",
+        "Runner exposes typed endpoints for tree, action, set-value, type, press, screenshot, and state with raw node paths and node attributes",
+        "Missing Xcode CLI tools, missing runtime, no booted simulator, multiple matching simulators, or missing app all fail clearly",
+        "Scope is iOS Simulator only; real devices are explicitly out of scope"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "browse-ios-runner/BrowseRunner.xcodeproj/project.pbxproj",
+        "browse-ios-runner/BrowseRunnerUITests/BrowseDriverServer.swift",
+        "browse-ios-runner/BrowseRunnerUITests/BrowseRunnerUITests.swift",
+        "src/app/ios/protocol.ts"
+      ],
+      "agent": "ios-macos-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-054",
+      "title": "iOS simulator host adapter + app-runtime integration",
+      "description": "Create the host-side iOS simulator adapter that uses simctl for simulator lifecycle and a separate runner client for UI tree, actions, screenshot, and state. The adapter normalizes the raw simulator hierarchy into the browse-owned app contract and reuses the same command surface and executor or session flow as macOS and Android app targets.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-053",
+        "TASK-034"
+      ],
+      "acceptanceCriteria": [
+        "browse --platform ios --device iPhone 16 --app com.example.demo snapshot -i resolves simulator plus app and returns a browse-style snapshot with host-assigned refs",
+        "Host adapter uses simctl for simulator lifecycle and a separate runner client for tree, actions, and state",
+        "snapshot, text, tap, fill, type, press, screenshot, and state reuse the shared app-target semantics; no iOS-only command surface is introduced",
+        "Simulator selection supports exact UDID and exact name or runtime matching; ambiguity fails clearly",
+        "Runner startup timeout surfaces clear recovery steps",
+        "iOS adapter passes the shared app-runtime contract harness from TASK-034"
+      ],
+      "filesToModify": [
+        "src/app/index.ts",
+        "src/session/target-factory.ts"
+      ],
+      "filesToCreate": [
+        "src/app/ios/bridge.ts",
+        "src/app/ios/controller.ts",
+        "src/app/ios/manager.ts"
+      ],
+      "agent": "ios-macos-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-055",
+      "title": "Unified mobile target selection + doctor integration",
+      "description": "Extend the existing app-target selection into explicit multi-platform selection: --platform macos|android|ios, optional --device, shared config or session or server or MCP transport fields, centralized capability gating, and doctor checks. Mobile remains one browse surface, not a second family of commands or tools.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-052",
+        "TASK-054"
+      ],
+      "acceptanceCriteria": [
+        "--platform plus --app plus optional --device flow through CLI, HTTP, MCP, config, and session state consistently",
+        "Existing app-target commands work across macOS, Android, and iOS with one definition surface",
+        "browse doctor --platform android checks adb, emulator or device visibility, and driver artifacts",
+        "browse doctor --platform ios checks Xcode CLI tools, simulator runtime, and runner artifacts",
+        "Central capability gating rejects unsupported commands once, not per-platform handlers",
+        "No duplicated browse_android_* or browse_ios_* MCP namespace is introduced",
+        "Packaging or bootstrap logic for Android and iOS runtime artifacts is isolated inside src/app/*, not scattered through transports"
+      ],
+      "filesToModify": [
+        "src/cli.ts",
+        "src/server.ts",
+        "src/mcp/tools/index.ts",
+        "src/session/manager.ts",
+        "src/session/target-factory.ts",
+        "src/automation/registry.ts",
+        "src/automation/command.ts",
+        "src/types.ts",
+        "src/config.ts",
+        "src/app/index.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-056",
+      "title": "Mobile contract coverage + emulator/simulator integration tests",
+      "description": "Extend the shared app-runtime contract harness to Android and iOS adapters, then add gated emulator or simulator integration tests. The goal is not just mobile works; the goal is to prove mobile targets preserve the same browse semantics, error shapes, and command surface as browser and macOS targets.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-052",
+        "TASK-054",
+        "TASK-055"
+      ],
+      "acceptanceCriteria": [
+        "Mocked Android and iOS adapters both pass the shared app-runtime contract tests for tree, action, set-value, type, press, screenshot, and state",
+        "Android emulator integration tests cover snapshot, text, tap, and fill, and skip cleanly when adb or an emulator is unavailable",
+        "iOS simulator integration tests cover snapshot, text, tap, and fill, and skip cleanly when Xcode or Simulator is unavailable",
+        "Device or simulator ambiguity, missing app, stale ref, runner boot timeout, and setup errors are tested with explicit messages",
+        "Browser and macOS app sessions remain stable while mobile sessions are active",
+        "Test coverage proves mobile additions did not create a second command or MCP surface"
+      ],
+      "filesToModify": [
+        "test/app-runtime-contract.test.ts"
+      ],
+      "filesToCreate": [
+        "test/app-android.test.ts",
+        "test/app-ios.test.ts",
+        "test/mobile-runtime-contract.test.ts",
+        "test/mobile-doctor.test.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
       "id": "TASK-035",
       "title": "Flow YAML parser",
       "description": "Create src/flow-parser.ts. Parses flow YAML into FlowStep[]. Validates commands and uses an explicit YAML parser dependency with line or column errors.",
@@ -1975,6 +2231,29 @@
       "TASK-031",
       "TASK-032",
       "TASK-033"
+    ],
+    "TASK-051": [
+      "TASK-034"
+    ],
+    "TASK-052": [
+      "TASK-051",
+      "TASK-034"
+    ],
+    "TASK-053": [
+      "TASK-034"
+    ],
+    "TASK-054": [
+      "TASK-053",
+      "TASK-034"
+    ],
+    "TASK-055": [
+      "TASK-052",
+      "TASK-054"
+    ],
+    "TASK-056": [
+      "TASK-052",
+      "TASK-054",
+      "TASK-055"
     ],
     "TASK-035": [],
     "TASK-036": [

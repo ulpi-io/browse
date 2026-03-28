@@ -641,8 +641,8 @@ registry.registerAll([
     argDecode: () => [],
   } }),
   m('record',           'Record/export interactions',                       { usage: 'start|stop|status|export', safeToRetry: true, skipRecording: true, mcp: {
-    description: 'Record a sequence of browse commands for later replay. Start recording, execute commands, then stop and export as browse chain JSON or Playwright script.',
-    inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Record operation.', enum: ['start', 'stop', 'status', 'export'] }, format: { type: 'string', description: 'Export format (used with "export").', enum: ['browse', 'replay'] }, path: { type: 'string', description: 'File path to save export (used with "export", optional — prints to stdout if omitted).' } }, required: ['action'] },
+    description: 'Record a sequence of browse commands for later replay. Start recording, execute commands, then stop and export as browse chain JSON, Chrome DevTools Recorder replay JSON, or Playwright Test script. The "playwright" format generates a complete @playwright/test file with proper assertions (expect commands become toHaveURL/toBeVisible/toBeHidden).',
+    inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Record operation.', enum: ['start', 'stop', 'status', 'export'] }, format: { type: 'string', description: 'Export format (used with "export"). "browse" = chain JSON, "replay" = Chrome DevTools Recorder, "playwright" = Playwright Test script.', enum: ['browse', 'replay', 'playwright'] }, path: { type: 'string', description: 'File path to save export (used with "export", optional — prints to stdout if omitted).' } }, required: ['action'] },
     argDecode: (p) => {
       const args = [String(p.action)];
       if (p.action === 'export') {
