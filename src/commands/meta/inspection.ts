@@ -689,6 +689,22 @@ export async function handleInspectionCommand(
       );
     }
 
+    case 'visual': {
+      const jsonMode = args.includes('--json');
+      const { captureVisualState, formatVisualReport } = await import('../../visual');
+      const page = bm.getPage();
+      const report = await captureVisualState(page);
+      return formatVisualReport(report, jsonMode);
+    }
+
+    case 'a11y-audit': {
+      const jsonMode = args.includes('--json');
+      const { runA11yAudit, formatA11yReport } = await import('../../a11y');
+      const page = bm.getPage();
+      const report = await runA11yAudit(page);
+      return formatA11yReport(report, jsonMode);
+    }
+
     default:
       throw new Error(`Unknown inspection command: ${command}`);
   }

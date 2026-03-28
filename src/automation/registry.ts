@@ -143,6 +143,11 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { clear: { type: 'boolean', description: 'Clear error entries from the buffer.' } } },
     argDecode: (p) => p.clear ? ['--clear'] : [],
   } }),
+  r('layout',         'Computed layout properties for an element',          { usage: '<sel>', safeToRetry: true, mcp: {
+    description: 'Get computed layout properties for an element and its positioning ancestors: display, position, z-index, box dimensions, margin, padding, overflow, font, color+background with contrast ratio. Supports @ref selectors.',
+    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the element.' } }, required: ['selector'] },
+    argDecode: (p) => [String(p.selector)],
+  } }),
   r('request',        'Inspect a single network entry in detail',          { usage: '<index|url-pattern>', safeToRetry: true, mcp: {
     description: 'Inspect a single network entry with full details: headers, bodies, timing. Search by buffer index (numeric) or URL pattern match (most recent match). Requires --network-bodies for body content.',
     inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Buffer index (e.g. "3") or URL pattern (e.g. "/api/cart").' } }, required: ['query'] },
@@ -774,6 +779,16 @@ registry.registerAll([
       if (p.verbose) args.push('--verbose');
       return args;
     },
+  } }),
+  m('visual',           'Visual layout analysis + anomaly detection',       { safeToRetry: true, mcp: {
+    description: 'Analyze the visual layout of the current page. Detects landmarks (header, nav, main, footer), contrast failures, element overlap, horizontal overflow, viewport bleed, and clipped content. Returns a structured report with viewport info, landmark tree, and issue list with severity.',
+    inputSchema: { type: 'object', properties: { json: { type: 'boolean', description: 'Return raw JSON instead of formatted text.' } } },
+    argDecode: (p) => p.json ? ['--json'] : [],
+  } }),
+  m('a11y-audit',       'WCAG 2.1 AA accessibility audit',                 { safeToRetry: true, mcp: {
+    description: 'Run an automated WCAG 2.1 AA accessibility audit. Checks: contrast ratios, missing alt text, inputs without labels, heading hierarchy, touch target sizes, generic link text, missing lang attribute. Returns score (0-100) + categorized findings.',
+    inputSchema: { type: 'object', properties: { json: { type: 'boolean', description: 'Return raw JSON instead of formatted text.' } } },
+    argDecode: (p) => p.json ? ['--json'] : [],
   } }),
 ]);
 

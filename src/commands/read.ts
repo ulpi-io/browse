@@ -406,6 +406,44 @@ export async function handleReadCommand(
       return lines.join('\n');
     }
 
+    case 'layout': {
+      const selector = args[0];
+      if (!selector) throw new Error('Usage: browse layout <selector>');
+      const resolved = bm.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
+      const props = await locator.evaluate((el: Element) => {
+        const s = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        const result: Record<string, string> = {
+          display: s.display,
+          position: s.position,
+          'z-index': s.zIndex,
+          box: `${Math.round(rect.width)}x${Math.round(rect.height)} at (${Math.round(rect.x)},${Math.round(rect.y)})`,
+          margin: s.margin,
+          padding: s.padding,
+          overflow: `${s.overflowX} / ${s.overflowY}`,
+          font: `${s.fontSize} ${s.fontWeight} ${s.fontFamily.split(',')[0]}`,
+          color: s.color,
+          background: s.backgroundColor,
+        };
+        if (s.display === 'none') result.note = 'hidden (display: none)';
+        // Walk positioning ancestors
+        const ancestors: string[] = [];
+        let parent = el.parentElement;
+        while (parent && parent !== document.documentElement) {
+          const ps = getComputedStyle(parent);
+          if (ps.position !== 'static') {
+            const pr = parent.getBoundingClientRect();
+            ancestors.push(`${parent.tagName.toLowerCase()}${parent.id ? '#' + parent.id : ''} (${ps.position}, z:${ps.zIndex}, ${Math.round(pr.width)}x${Math.round(pr.height)})`);
+          }
+          parent = parent.parentElement;
+        }
+        if (ancestors.length > 0) result.ancestors = ancestors.join(' → ');
+        return result;
+      });
+      return Object.entries(props).map(([k, v]) => `${k}: ${v}`).join('\n');
+    }
+
     case 'devices': {
       const filter = args.join(' ').toLowerCase();
       const all = listDevices();
