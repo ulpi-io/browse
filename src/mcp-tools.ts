@@ -237,7 +237,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 
   {
     name: 'browse_goto',
-    description: 'Navigate to a URL. Waits for DOMContentLoaded. Returns the HTTP status code. This is the primary way to open web pages. When context is active, appends a [context] line showing URL change, title change, and any new console errors.',
+    description: 'Navigate to a URL. Waits for DOMContentLoaded. Returns the HTTP status code. This is the primary way to open web pages. May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -248,22 +248,22 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_back',
-    description: 'Navigate back in browser history (like clicking the back button). Returns the new URL.',
+    description: 'Navigate back in browser history (like clicking the back button). Returns the new URL. May include a [context] line showing state changes after the action.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'browse_forward',
-    description: 'Navigate forward in browser history (like clicking the forward button). Returns the new URL.',
+    description: 'Navigate forward in browser history (like clicking the forward button). Returns the new URL. May include a [context] line showing state changes after the action.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'browse_reload',
-    description: 'Reload the current page. Waits for DOMContentLoaded. Returns the current URL.',
+    description: 'Reload the current page. Waits for DOMContentLoaded. Returns the current URL. May include a [context] line showing state changes after the action.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'browse_click',
-    description: 'Click an element on the page. Supports CSS selectors and @ref identifiers from snapshot. Waits for the element to be actionable, then clicks it. Use browse_snapshot first to find element refs. May include a [context] line showing state changes (e.g., navigation, dialog) after the click.',
+    description: 'Click an element on the page. Supports CSS selectors and @ref identifiers from snapshot. When context is set to delta/full, response includes ARIA snapshot changes with clickable @refs.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -274,7 +274,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_dblclick',
-    description: 'Double-click an element. Use for elements that require double-click activation (text selection, list items, etc.).',
+    description: 'Double-click an element. Use for elements that require double-click activation (text selection, list items, etc.). May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -309,7 +309,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_hover',
-    description: 'Hover over an element. Triggers mouseover/mouseenter events. Use to reveal tooltips, dropdown menus, or hover-activated content.',
+    description: 'Hover over an element. Triggers mouseover/mouseenter events. Use to reveal tooltips, dropdown menus, or hover-activated content. May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -353,7 +353,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_type',
-    description: 'Type text via the keyboard into the currently focused element. Does NOT clear existing content (unlike fill). Use for character-by-character input, e.g. search boxes with autocomplete.',
+    description: 'Type text via the keyboard into the focused element. Does NOT clear existing content (unlike fill). Use for search boxes with autocomplete. May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -364,7 +364,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_press',
-    description: 'Press a single key on the keyboard. Use for Enter, Tab, Escape, ArrowDown, etc. Supports key combinations like "Control+A", "Shift+Tab".',
+    description: 'Press a single key on the keyboard. Use for Enter, Tab, Escape, ArrowDown, etc. Supports key combinations like "Control+A". May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -517,7 +517,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_drag',
-    description: 'Drag an element from source to target. Both support CSS selectors and @refs.',
+    description: 'Drag an element from source to target. Both support CSS selectors and @refs. May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -576,7 +576,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_rightclick',
-    description: 'Right-click (context click) an element. Use to trigger context menus.',
+    description: 'Right-click (context click) an element. Use to trigger context menus. May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -587,7 +587,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_tap',
-    description: 'Tap an element (touch event). Requires a touch-enabled context — use browse_emulate with a mobile device first. Use instead of click for mobile testing.',
+    description: 'Tap an element (touch event). Requires a touch-enabled context — use browse_emulate with a mobile device first. May include a [context] line showing state changes after the action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -598,7 +598,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_swipe',
-    description: 'Perform a swipe gesture from the center of the viewport. Dispatches touch events. Use for mobile carousels, pull-to-refresh, or swipe-to-dismiss.',
+    description: 'Perform a swipe gesture from the center of the viewport. Dispatches touch events. Use for carousels, pull-to-refresh, or swipe-to-dismiss. May include a [context] line showing state changes.',
     inputSchema: {
       type: 'object',
       properties: {
