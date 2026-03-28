@@ -502,6 +502,7 @@ async function start() {
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),
+      contextEnabled: false,
     };
 
     console.log(`[browse] Profile mode: "${profileName}" (${profileDir})`);

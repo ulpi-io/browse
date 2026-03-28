@@ -32,6 +32,7 @@ export interface Session {
   outputDir: string;
   lastActivity: number;
   createdAt: number;
+  contextEnabled: boolean;
 }
 
 export class SessionManager {
@@ -136,6 +137,7 @@ export class SessionManager {
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),
+      contextEnabled: false,
     };
     this.sessions.set(sessionId, session);
     console.log(`[browse] Session "${sessionId}" created`);
