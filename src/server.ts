@@ -18,7 +18,8 @@ import { handleMetaCommand } from './commands/meta';
 import { PolicyChecker } from './policy';
 import { DEFAULTS } from './constants';
 import { type LogEntry, type NetworkEntry } from './buffers';
-import { capturePageState, buildContextDelta, formatContextLine } from './action-context';
+import { prepareWriteContext, finalizeWriteContext } from './action-context';
+import type { ContextLevel } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -221,7 +222,7 @@ interface RequestOptions {
   jsonMode: boolean;
   contentBoundaries: boolean;
   maxOutput: number;
-  contextEnabled: boolean;
+  contextLevel: ContextLevel;
 }
 
 /**
@@ -309,35 +310,27 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
   try {
     let result: string;
-    let contextLine = '';
 
     if (READ_COMMANDS.has(command)) {
       result = await handleReadCommand(command, args, session.manager, session.buffers);
     } else if (WRITE_COMMANDS.has(command)) {
-      // Capture page state before write command (only if context enabled)
-      const contextEnabled = session.contextEnabled || opts.contextEnabled;
-      const before = contextEnabled
-        ? await capturePageState(session.manager.getPage(), session.manager, session.buffers).catch(() => null)
-        : null;
+      // Resolve effective context level: per-request header overrides session-level
+      const effectiveLevel: ContextLevel = opts.contextLevel !== 'off' ? opts.contextLevel : session.contextLevel;
+
+      const capture = await prepareWriteContext(effectiveLevel, session.manager, session.buffers);
 
       result = await handleWriteCommand(command, args, session.manager, session.domainFilter);
 
-      // Capture after state — context line stored separately so truncation doesn't eat it
-      if (before) {
-        try {
-          const after = await capturePageState(session.manager.getPage(), session.manager, session.buffers);
-          const delta = buildContextDelta(before, after);
-          if (delta) {
-            contextLine = '\n' + formatContextLine(delta, command);
-          }
-        } catch {
-          // Don't let context capture failures break the command
-        }
-      }
+      // Enrich result with context (state line, ARIA delta, or full snapshot)
+      result = await finalizeWriteContext(capture, session.manager, session.buffers, result, command);
 
-      // Detect set context toggle and update session
+      // Detect set context command and update session level
       if (command === 'set' && args[0] === 'context') {
-        session.contextEnabled = args[1]?.toLowerCase() === 'on';
+        const val = args[1]?.toLowerCase();
+        session.contextLevel = val === 'on' || val === 'state' ? 'state'
+          : val === 'delta' ? 'delta'
+          : val === 'full' ? 'full'
+          : 'off';
       }
     } else if (META_COMMANDS.has(command)) {
       result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager ?? undefined, session);
@@ -378,14 +371,9 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       session.recording.push(step);
     }
 
-    // Apply max-output truncation (before context append, so context is never cut)
+    // Apply max-output truncation (context is already appended by finalizeWriteContext)
     if (opts.maxOutput > 0 && result.length > opts.maxOutput) {
       result = result.slice(0, opts.maxOutput) + `\n... (truncated at ${opts.maxOutput} chars)`;
-    }
-
-    // Append action context line after truncation (write commands only)
-    if (contextLine) {
-      result += contextLine;
     }
 
     // Apply content boundaries for page-content commands
@@ -653,11 +641,16 @@ async function start() {
           }
         }
 
+        const ctxHeader = req.headers.get('x-browse-context');
+        const contextLevel: ContextLevel = ctxHeader === '1' || ctxHeader === 'state' ? 'state'
+          : ctxHeader === 'delta' ? 'delta'
+          : ctxHeader === 'full' ? 'full'
+          : 'off';
         const opts: RequestOptions = {
           jsonMode: req.headers.get('x-browse-json') === '1',
           contentBoundaries: req.headers.get('x-browse-boundaries') === '1',
           maxOutput: parseInt(req.headers.get('x-browse-max-output') || '0', 10) || 0,
-          contextEnabled: req.headers.get('x-browse-context') === '1',
+          contextLevel,
         };
         return handleCommand(body, session, opts);
       }
