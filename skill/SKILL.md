@@ -53,7 +53,7 @@ To avoid being prompted on every browse command, tell the user they can pre-allo
 - The browser persists between calls — cookies, tabs, and state carry over.
 - The server auto-starts on first command. No manual setup needed.
 - Use `--session <id>` for parallel agent isolation. Each session gets its own tabs, refs, cookies.
-- Use `--context` to see what changed after each write command (URL, title, tabs, dialogs, errors).
+- Use `--context` for state changes, `--context delta` for ARIA diff with refs, `--context full` for complete snapshot with refs after write commands.
 - Use `--json` for structured output (`{success, data, command}`).
 - Use `--content-boundaries` for prompt injection defense when reading untrusted pages.
 - Use `--allowed-domains domain1,domain2` to restrict navigation to trusted sites.

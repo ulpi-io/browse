@@ -694,7 +694,7 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 |------|-------------|
 | `--session <id>` | Named session (isolates tabs, refs, cookies) |
 | `--profile <name>` | Persistent browser profile (own Chromium, full state) |
-| `--context` | Append `[context]` state delta to write command responses |
+| `--context [state\|delta\|full]` | Action context: `state` = page changes, `delta` = ARIA diff with refs, `full` = complete snapshot with refs |
 | `--json` | Wrap output as `{success, data, command}` |
 | `--content-boundaries` | Wrap page content in nonce-delimited markers |
 | `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
@@ -718,7 +718,7 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 | `BROWSE_TIMEOUT` | (none) | Override all command timeouts (ms) |
 | `BROWSE_LOCAL_DIR` | `.browse/` or `/tmp` | State/log/screenshot directory |
 | `BROWSE_JSON` | (none) | Set to `1` for JSON output mode |
-| `BROWSE_CONTEXT` | (none) | Set to `1` for action context on write commands |
+| `BROWSE_CONTEXT` | (none) | Set to `1`/`state`/`delta`/`full` for action context levels |
 | `BROWSE_CONTENT_BOUNDARIES` | (none) | Set to `1` for nonce-delimited output |
 | `BROWSE_ALLOWED_DOMAINS` | (none) | Comma-separated domain allowlist |
 | `BROWSE_MAX_OUTPUT` | (none) | Truncate output to N characters |

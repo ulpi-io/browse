@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.5.0
+
+**Snapshot context** — ARIA delta and full snapshot after write commands:
+
+- `--context delta` appends ARIA diff with refs: `[snapshot-delta] +2 -1 =12` + added/removed elements
+- `--context full` appends complete ARIA snapshot with fresh refs — eliminates snapshot→action→snapshot round-trip
+- `--context state` (or `--context` with no value) retains existing behavior (page state changes only)
+- `browse set context off|state|delta|full` — per-session level toggle
+- `BROWSE_CONTEXT=delta|full` env var, `X-Browse-Context: delta|full` header
+- MCP: `browse_set` tool now supports `context` subcommand for level switching
+- Refs from delta/full output are immediately usable for the next action
+- Falls back to full when no baseline snapshot exists (first write in delta mode)
+- 20 new tests (14 integration + 6 MCP)
+
 ## v1.4.5
 
 **Action context** — enriched write command responses that show what changed:
