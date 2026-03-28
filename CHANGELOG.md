@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.5
+
+**Action context** — enriched write command responses that show what changed:
+
+- `--context` CLI flag, `BROWSE_CONTEXT=1` env var, or `browse.json` config to opt in
+- `browse set context on/off` — per-session toggle at runtime
+- `X-Browse-Context: 1` header for HTTP server
+- Always-on in MCP mode (agents always benefit from context)
+- Write commands append a compact `[context]` line: `[context] → /checkout | title: "Order Summary" | errors: +2`
+- Reports: URL change (pathname only), title change, dialog appeared/dismissed, tab count change, console errors
+- O(1) state capture via running counters on SessionBuffers
+- Zero overhead when disabled
+- 11 new tests (8 integration + 3 MCP)
+
 ## v1.4.4
 
 **Audit persistence and comparison** — save audit reports for later comparison and regression detection:

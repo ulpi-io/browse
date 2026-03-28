@@ -37,6 +37,7 @@ src/snapshot.ts            ARIA snapshot with @ref system
 src/constants.ts           Default config values
 src/config.ts              Project config loader (browse.json)
 src/types.ts               Shared TypeScript interfaces
+src/action-context.ts      Action context: page state capture + delta formatting
 src/auth-vault.ts          AES-256-GCM encrypted credential storage
 src/domain-filter.ts       Domain allowlist (HTTP + WebSocket/EventSource/sendBeacon)
 src/har.ts                 HAR 1.2 export from network buffer
@@ -89,6 +90,7 @@ CLI [--session <id>] → Server (node:http) → SessionManager → BrowserManage
 
 ## Development Rules
 
+- **No destructive git.** NEVER run `git reset --hard`, `git checkout .`, `git clean -f`, or any command that destroys uncommitted work. If branches diverge, use `git pull --rebase` or ask the user. Uncommitted files may contain in-progress work.
 - **No shortcuts.** When you find a bug, stop and fix it. Don't patch around it, don't defer it.
 - **No fake reviews.** Find real bugs or say it's clean. Never list non-issues as findings.
 - **Automagic for customers.** The tool must self-heal. Zombie servers, port conflicts, stale state — all handled automatically. If you need `pkill` or `rm` before testing, that's a bug.
@@ -105,7 +107,10 @@ CLI [--session <id>] → Server (node:http) → SessionManager → BrowserManage
 - Read commands are safe to retry; write commands are NOT retried after transport failure
 - The `chain` command duplicates command sets — keep in sync with server.ts
 - `SessionBuffers` class holds per-session buffers; legacy global exports in buffers.ts for backward compat
+- `SessionBuffers` has O(1) running counters (`consoleErrorCount`, `networkPendingCount`) for action context
 - Ring buffers cap at 50K entries (BUFFER_HIGH_WATER_MARK)
+- Action context: opt-in `[context]` line appended to write command responses showing state delta (URL, title, tabs, dialogs, errors)
+- Context activation: `--context` CLI flag, `X-Browse-Context: 1` header, `browse set context on/off`, always-on in MCP mode
 - Device emulation recreates the entire browser context (Playwright limitation)
 - State files live in `.browse/` (auto-gitignored) or `/tmp` as fallback
 - Port range: 9400-10400 (1001 ports for multi-process isolation)

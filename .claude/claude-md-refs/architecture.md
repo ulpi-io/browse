@@ -53,6 +53,10 @@ src/server.ts
   |     +-- src/buffers.ts
   |     +-- src/domain-filter.ts
   |     +-- src/sanitize.ts
+  +-- src/action-context.ts
+  |     +-- src/browser-manager.ts
+  |     +-- src/buffers.ts
+  |     +-- src/types.ts
   +-- src/policy.ts
   +-- src/commands/read.ts
   |     +-- src/browser-manager.ts
@@ -184,6 +188,29 @@ DomainFilter class:
 Blocks: file://, javascript://, non-matching HTTP domains
 Allows: about:blank, data:, blob:, matching domains
 Wildcard: *.example.com matches example.com AND any subdomain
+```
+
+## Action Context
+
+```
+Write command execution with context enabled:
+
+1. capturePageState(page, bm, buffers) → PageState (before)
+2. handleWriteCommand(command, args, bm, domainFilter)
+3. capturePageState(page, bm, buffers) → PageState (after)
+4. buildContextDelta(before, after) → ContextDelta | null
+5. formatContextLine(delta, command) → "[context] → /path | title: ..."
+6. Append to result (after truncation, before boundaries/JSON wrapping)
+
+Activation (any of):
+  - CLI: --context flag or BROWSE_CONTEXT=1 or browse.json { context: true }
+  - HTTP: X-Browse-Context: 1 header
+  - Session: browse set context on/off
+  - MCP: always enabled for write commands
+
+PageState captures: url, title, tabCount, dialog, consoleErrorCount, networkPendingCount
+ContextDelta reports: urlChanged, titleChanged, dialogAppeared/Dismissed, tabsChanged, consoleErrors
+SessionBuffers O(1) counters: consoleErrorCount, networkPendingCount (no buffer scans)
 ```
 
 ## HAR Recording

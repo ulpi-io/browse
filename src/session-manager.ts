@@ -13,6 +13,7 @@ import { DomainFilter } from './domain-filter';
 import { sanitizeName } from './sanitize';
 import { saveSessionState, loadSessionState, hasPersistedState } from './session-persist';
 import { resolveEncryptionKey } from './encryption';
+import type { ContextLevel } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -33,6 +34,7 @@ export interface Session {
   lastActivity: number;
   createdAt: number;
   contextEnabled: boolean;
+  contextLevel: ContextLevel;
 }
 
 export class SessionManager {
@@ -138,6 +140,7 @@ export class SessionManager {
       lastActivity: Date.now(),
       createdAt: Date.now(),
       contextEnabled: false,
+      contextLevel: 'off',
     };
     this.sessions.set(sessionId, session);
     console.log(`[browse] Session "${sessionId}" created`);

@@ -12,7 +12,8 @@
 | `src/snapshot.ts` | Accessibility tree snapshot with @ref selection |
 | `src/constants.ts` | Default config values (ports, timeouts, buffer sizes) |
 | `src/config.ts` | Project config loader (browse.json from project root) |
-| `src/types.ts` | Shared TypeScript interfaces (CommandContext, CommandResult) |
+| `src/types.ts` | Shared TypeScript interfaces (CommandContext, CommandResult, PageState, ContextDelta) |
+| `src/action-context.ts` | Action context: page state capture, delta computation, formatting |
 | `src/auth-vault.ts` | AES-256-GCM encrypted credential storage + auto-login |
 | `src/domain-filter.ts` | Domain allowlist (HTTP routes + WebSocket/EventSource/sendBeacon) |
 | `src/har.ts` | HAR 1.2 export from network buffer entries |
@@ -53,6 +54,9 @@
 | `resolveDevice` | browser-manager.ts | function | Resolve device name to descriptor (aliases, custom, built-in, fuzzy) |
 | `listDevices` | browser-manager.ts | function | List available device names with optional filter |
 | `DEFAULTS` | constants.ts | object | Port range, timeouts, buffer sizes |
+| `capturePageState` | action-context.ts | async function | Capture page state (URL, title, tabs, dialog, counters) |
+| `buildContextDelta` | action-context.ts | function | Diff two PageState snapshots, return ContextDelta or null |
+| `formatContextLine` | action-context.ts | function | Format ContextDelta as `[context] -> /path \| title: "..."` |
 
 ## Exported Classes
 
@@ -74,11 +78,13 @@
 | `DeviceDescriptor` | browser-manager.ts | `{ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch }` |
 | `CommandContext` | types.ts | `{ manager, command, args }` |
 | `CommandResult` | types.ts | `{ output, hint? }` |
+| `PageState` | types.ts | `{ url, title, tabCount, dialog, consoleErrorCount, networkPendingCount, timestamp }` |
+| `ContextDelta` | types.ts | `{ urlChanged?, titleChanged?, dialogAppeared?, dialogDismissed?, tabsChanged?, consoleErrors?, navigated? }` |
 | `HarRecording` | har.ts | `{ startTime, active }` |
 | `DecodedImage` | png-compare.ts | `{ width, height, data: Buffer }` (RGBA pixels) |
 | `CompareResult` | png-compare.ts | `{ totalPixels, diffPixels, mismatchPct, passed }` |
 | `BrowseConfig` | config.ts | `{ session?, json?, contentBoundaries?, allowedDomains?, ... }` |
-| `Session` | session-manager.ts | `{ id, manager, buffers, domainFilter, outputDir, lastActivity, createdAt }` |
+| `Session` | session-manager.ts | `{ id, manager, buffers, domainFilter, outputDir, lastActivity, createdAt, contextEnabled }` |
 | `CredentialInfo` | auth-vault.ts | `{ name, url, username, hasPassword, createdAt }` |
 | `PolicyResult` | policy.ts | `'allow' \| 'deny' \| 'confirm'` |
 
@@ -212,6 +218,7 @@
 | `BROWSE_POLICY` | browse-policy.json | Path to action policy file |
 | `BROWSE_CONFIRM_ACTIONS` | -- | Comma-separated commands requiring confirmation |
 | `BROWSE_AUTH_PASSWORD` | -- | Password for auth save (alternative to --password-stdin) |
+| `BROWSE_CONTEXT` | 0 | Enable action context (state delta on write commands) |
 | `__BROWSE_SERVER_MODE` | -- | Internal: compiled binary self-spawns in server mode |
 
 ## Import Patterns
@@ -227,6 +234,7 @@ import { SessionBuffers, consoleBuffer, networkBuffer, addConsoleEntry, addNetwo
 import { DomainFilter } from './domain-filter';
 import { PolicyChecker } from './policy';
 import { AuthVault } from './auth-vault';
+import { capturePageState, buildContextDelta, formatContextLine } from './action-context';
 import { decodePNG, compareScreenshots } from './png-compare';
 import { formatAsHar } from './har';
 import { sanitizeName } from './sanitize';

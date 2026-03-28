@@ -32,3 +32,15 @@ export interface ContextDelta {
   consoleErrors?: number;    // new errors since last capture
   navigated?: boolean;       // URL changed (convenience flag)
 }
+
+// ─── Snapshot Context Types ───────────────────────────────────
+
+/** Context level for write command enrichment */
+export type ContextLevel = 'off' | 'state' | 'delta' | 'full';
+
+/** Capture state held between prepare and finalize phases of write context */
+export interface WriteContextCapture {
+  level: ContextLevel;
+  beforeState: PageState | null;
+  beforeSnapshot: string | null;  // baseline ARIA text for delta mode
+}
