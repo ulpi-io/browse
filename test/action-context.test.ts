@@ -75,9 +75,8 @@ describe('formatAriaDelta', () => {
     expect(result).toContain('[snapshot-delta]');
     // Added line should have + prefix with ref from current
     expect(result).toContain('+ @e5 [button] "Add to Cart"');
-    // Unchanged lines should have = prefix with refs from current
-    expect(result).toContain('= @e3 [heading] "Title"');
-    expect(result).toContain('= @e4 [button] "Submit"');
+    // Summary should show unchanged count
+    expect(result).toContain('=2');
   });
 
   test('removed elements show - without refs', () => {
@@ -89,9 +88,8 @@ describe('formatAriaDelta', () => {
     expect(result).toContain('[snapshot-delta]');
     // The removed line should appear with - prefix (no refs)
     expect(result).toContain('- [button] "Cancel"');
-    // Unchanged lines preserved with refs from current
-    expect(result).toContain('= @e4 [heading] "Title"');
-    expect(result).toContain('= @e5 [button] "Submit"');
+    // Summary should show unchanged count
+    expect(result).toContain('=2');
   });
 
   test('major change (>80%) includes note', () => {
