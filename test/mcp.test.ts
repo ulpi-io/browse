@@ -237,4 +237,73 @@ describe('MCP Server', () => {
     expect(providerTool).toBeTruthy();
     expect(providerTool.description).toContain('cloud');
   });
+
+  describe('Action Context in MCP', () => {
+    test('write command includes context line on navigation', async () => {
+      // First navigate somewhere
+      const gotoId = nextId();
+      sendMessage({
+        jsonrpc: '2.0',
+        id: gotoId,
+        method: 'tools/call',
+        params: { name: 'browse_goto', arguments: { url: baseUrl + '/basic.html' } },
+      });
+      const gotoResp = await waitForResponse(gotoId);
+      expect(gotoResp.result).toBeDefined();
+
+      // Now navigate to a different page — should include context delta
+      const navId = nextId();
+      sendMessage({
+        jsonrpc: '2.0',
+        id: navId,
+        method: 'tools/call',
+        params: { name: 'browse_goto', arguments: { url: baseUrl + '/forms.html' } },
+      });
+      const navResp = await waitForResponse(navId);
+      expect(navResp.result).toBeDefined();
+      const text = navResp.result.content[0].text;
+      expect(text).toContain('[context]');
+      expect(text).toContain('/forms.html');
+    });
+
+    test('read command does not include context line', async () => {
+      const readId = nextId();
+      sendMessage({
+        jsonrpc: '2.0',
+        id: readId,
+        method: 'tools/call',
+        params: { name: 'browse_text', arguments: {} },
+      });
+      const readResp = await waitForResponse(readId);
+      expect(readResp.result).toBeDefined();
+      const text = readResp.result.content[0].text;
+      expect(text).not.toContain('[context]');
+    });
+
+    test('write command without state change has no context line', async () => {
+      // Click something that doesn't cause navigation or title change
+      // First go to forms page
+      const gotoId = nextId();
+      sendMessage({
+        jsonrpc: '2.0',
+        id: gotoId,
+        method: 'tools/call',
+        params: { name: 'browse_goto', arguments: { url: baseUrl + '/forms.html' } },
+      });
+      await waitForResponse(gotoId);
+
+      // Fill a text field — no URL/title change expected
+      const fillId = nextId();
+      sendMessage({
+        jsonrpc: '2.0',
+        id: fillId,
+        method: 'tools/call',
+        params: { name: 'browse_fill', arguments: { selector: '#name', value: 'test' } },
+      });
+      const fillResp = await waitForResponse(fillId);
+      expect(fillResp.result).toBeDefined();
+      const text = fillResp.result.content[0].text;
+      expect(text).not.toContain('[context]');
+    });
+  });
 });

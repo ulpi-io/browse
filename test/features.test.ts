@@ -22,6 +22,7 @@ import { AuthVault } from '../src/auth-vault';
 import { formatAsHar } from '../src/har';
 import { loadConfig } from '../src/config';
 import { decodePNG, compareScreenshots, encodePNG, generateDiffImage } from '../src/png-compare';
+import { capturePageState, buildContextDelta, formatContextLine } from '../src/action-context';
 import { sanitizeName } from '../src/sanitize';
 import { findInstalledBrowsers, CookieImportError } from '../src/cookie-import';
 import { discoverChrome } from '../src/chrome-discover';
@@ -2230,5 +2231,94 @@ describe('Chrome discovery', () => {
     if (result && process.platform === 'linux') {
       expect(result).toContain('google-chrome');
     }
+  });
+});
+
+// ─── Action Context ─────────────────────────────────────────────
+
+describe('Action Context', () => {
+  const buffers = new SessionBuffers();
+
+  test('capturePageState returns current page state', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const state = await capturePageState(bm.getPage(), bm, buffers);
+    expect(state.url).toContain('/basic.html');
+    expect(state.title).toBe('Test Page - Basic');
+    expect(state.tabCount).toBeGreaterThanOrEqual(1);
+    expect(state.dialog).toBeNull();
+    expect(state.timestamp).toBeGreaterThan(0);
+  });
+
+  test('buildContextDelta detects URL change', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const before = await capturePageState(bm.getPage(), bm, buffers);
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    const after = await capturePageState(bm.getPage(), bm, buffers);
+    const delta = buildContextDelta(before, after);
+    expect(delta).not.toBeNull();
+    expect(delta!.navigated).toBe(true);
+    expect(delta!.urlChanged).toContain('/forms.html');
+    expect(delta!.titleChanged).toBe('Test Page - Forms');
+  });
+
+  test('buildContextDelta returns null when nothing changed', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const before = await capturePageState(bm.getPage(), bm, buffers);
+    // Capture again without any action — should be identical
+    const after = await capturePageState(bm.getPage(), bm, buffers);
+    const delta = buildContextDelta(before, after);
+    expect(delta).toBeNull();
+  });
+
+  test('formatContextLine produces human-readable output', () => {
+    const delta = {
+      urlChanged: '/checkout',
+      titleChanged: 'Order Summary',
+      navigated: true,
+      consoleErrors: 2,
+    };
+    const line = formatContextLine(delta, 'click');
+    expect(line).toContain('[context]');
+    expect(line).toContain('-> /checkout');
+    expect(line).toContain('title: "Order Summary"');
+    expect(line).toContain('errors: +2');
+  });
+
+  test('buildContextDelta detects title change only', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const before = await capturePageState(bm.getPage(), bm, buffers);
+    // Change just the title via JS
+    await bm.getPage().evaluate(() => { document.title = 'Changed Title'; });
+    const after = await capturePageState(bm.getPage(), bm, buffers);
+    const delta = buildContextDelta(before, after);
+    expect(delta).not.toBeNull();
+    expect(delta!.titleChanged).toBe('Changed Title');
+    expect(delta!.navigated).toBeUndefined();
+  });
+
+  test('context delta detects tab count change', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const before = await capturePageState(bm.getPage(), bm, buffers);
+    // Open a new tab
+    await handleMetaCommand('newtab', [baseUrl + '/forms.html'], bm, async () => {});
+    const after = await capturePageState(bm.getPage(), bm, buffers);
+    const delta = buildContextDelta(before, after);
+    expect(delta).not.toBeNull();
+    expect(delta!.tabsChanged).toBeGreaterThan(before.tabCount);
+    // Clean up — close the extra tab
+    await handleMetaCommand('closetab', [], bm, async () => {});
+  });
+
+  test('formatContextLine handles dialog appeared', () => {
+    const delta = { dialogAppeared: { type: 'alert', message: 'Hello!' } };
+    const line = formatContextLine(delta, 'click');
+    expect(line).toContain('[context]');
+    expect(line).toContain('dialog: [alert] "Hello!"');
+  });
+
+  test('formatContextLine handles dialog dismissed', () => {
+    const delta = { dialogDismissed: true as const };
+    const line = formatContextLine(delta, 'dialog-accept');
+    expect(line).toContain('dialog dismissed');
   });
 });

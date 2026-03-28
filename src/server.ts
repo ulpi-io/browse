@@ -333,6 +333,11 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
           // Don't let context capture failures break the command
         }
       }
+
+      // Detect set context toggle and update session
+      if (command === 'set' && args[0] === 'context') {
+        session.contextEnabled = args[1]?.toLowerCase() === 'on';
+      }
     } else if (META_COMMANDS.has(command)) {
       result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager ?? undefined, session);
     } else {
