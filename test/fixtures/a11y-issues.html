@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- NOTE: intentionally missing lang attribute to trigger missing-lang finding -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>A11y Issues Test Fixture</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+
+    /* Small touch target — button smaller than 44x44px */
+    .small-btn {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      font-size: 10px;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <!-- Image without alt attribute -->
+  <img src="logo.png" id="logo-no-alt">
+
+  <!-- Input without any label -->
+  <input type="text" id="unlabeled-input" placeholder="Type here">
+
+  <!-- Heading hierarchy skip: h1 → h3 (skips h2) -->
+  <h1>Main Heading</h1>
+  <h3>Sub-Sub Heading (skips h2)</h3>
+
+  <!-- Small touch target button (<44px) -->
+  <button class="small-btn" id="tiny-btn">X</button>
+
+  <!-- Link with generic text -->
+  <a href="https://example.com">click here</a>
+</body>
+</html>

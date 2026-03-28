@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>A11y Clean Test Fixture</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    /* Buttons large enough to pass touch target check (>= 44x44px) */
+    button {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 10px 16px;
+    }
+    a {
+      display: inline-block;
+      min-height: 44px;
+      line-height: 44px;
+      padding: 0 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <!-- Descriptive link text, large enough for touch target -->
+      <a href="/about">About Us</a>
+      <a href="/contact">Contact</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Welcome</h1>
+    <h2>Features</h2>
+    <h3>Details</h3>
+
+    <img src="logo.png" alt="Company logo">
+
+    <form>
+      <label for="name-input">Your name</label>
+      <input type="text" id="name-input" name="name">
+
+      <label for="email-input">Email address</label>
+      <input type="email" id="email-input" name="email">
+
+      <button type="submit">Submit</button>
+    </form>
+  </main>
+  <footer>Footer content</footer>
+</body>
+</html>

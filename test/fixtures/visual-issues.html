@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Visual Issues Test Fixture</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #ffffff;
+      font-family: sans-serif;
+      /* Ensure viewport is large enough for bleed element to register */
+      min-height: 400px;
+    }
+
+    /* ── Low contrast: light gray text on white background ── */
+    .low-contrast {
+      color: #cccccc;
+      background: #ffffff;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+
+    /* ── Overlapping absolutely-positioned elements ── */
+    .overlap-container {
+      position: relative;
+      width: 300px;
+      height: 120px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+    }
+    .overlap-a {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 200px;
+      height: 80px;
+      background: #e0e0ff;
+      /* z-index intentionally equal to overlap-b to trigger detection */
+      z-index: 2;
+    }
+    .overlap-b {
+      position: absolute;
+      top: 30px;
+      left: 60px;
+      width: 200px;
+      height: 80px;
+      background: #ffe0e0;
+      z-index: 2;
+    }
+
+    /* ── Horizontal overflow: content wider than container ── */
+    .overflow-container {
+      width: 200px;
+      overflow: visible;   /* NOT auto/scroll — should be flagged */
+      border: 1px solid #999;
+      margin-bottom: 20px;
+      white-space: nowrap;
+    }
+    .overflow-inner {
+      width: 600px;
+      background: #ffd;
+      padding: 8px;
+    }
+
+    /* ── Viewport bleed: element extending past viewport width ── */
+    .bleed-element {
+      position: absolute;
+      top: 350px;
+      left: 0;
+      /* width exceeds typical 1280px viewport */
+      width: 2000px;
+      height: 40px;
+      background: #fcc;
+    }
+  </style>
+</head>
+<body>
+  <!-- Low contrast text -->
+  <p class="low-contrast" id="low-contrast-text">This text has very low contrast against the white background.</p>
+
+  <!-- Overlapping elements -->
+  <div class="overlap-container" id="overlap-container">
+    <div class="overlap-a" id="overlap-a">Box A</div>
+    <div class="overlap-b" id="overlap-b">Box B</div>
+  </div>
+
+  <!-- Horizontal overflow -->
+  <div class="overflow-container" id="overflow-container">
+    <div class="overflow-inner" id="overflow-inner">This content is much wider than its container and should trigger overflow detection.</div>
+  </div>
+
+  <!-- Viewport bleed -->
+  <div class="bleed-element" id="bleed-element">This element bleeds past the viewport width.</div>
+</body>
+</html>
