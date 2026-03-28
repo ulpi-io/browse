@@ -306,4 +306,72 @@ describe('MCP Server', () => {
       expect(text).not.toContain('[context]');
     });
   });
+
+  describe('Snapshot Context Levels in MCP', () => {
+    test('set context delta changes MCP context level', async () => {
+      const result = await callTool('browse_set', { subcommand: 'context', value: 'delta' });
+      expect(result.content[0].text).toContain('delta');
+      expect(result.isError).toBeFalsy();
+    });
+
+    test('write command in delta mode includes snapshot-delta after DOM change', async () => {
+      // Navigate to dynamic fixture and take initial snapshot
+      await callTool('browse_goto', { url: baseUrl + '/dynamic.html' });
+      await callTool('browse_snapshot', { interactive: true });
+
+      // Click "Add Item" button — adds a new button to the DOM
+      const result = await callTool('browse_click', { selector: 'button:has-text("Add Item")' });
+      const text = result.content[0].text;
+
+      // Should include snapshot delta (context line only appears when page state changes)
+      expect(text).toContain('[snapshot-delta]');
+      // Delta should show added elements with refs
+      expect(text).toMatch(/\+ @e\d+/);
+    });
+
+    test('set context full returns full snapshot after write', async () => {
+      await callTool('browse_set', { subcommand: 'context', value: 'full' });
+      await callTool('browse_goto', { url: baseUrl + '/basic.html' });
+
+      // Click a link — should return full snapshot
+      const snap = await callTool('browse_snapshot', { interactive: true });
+      const refMatch = snap.content[0].text.match(/@e\d+/);
+      expect(refMatch).toBeTruthy();
+
+      const result = await callTool('browse_click', { selector: refMatch![0] });
+      const text = result.content[0].text;
+      expect(text).toContain('[snapshot]');
+      expect(text).toMatch(/@e\d+/);
+    });
+
+    test('read command never includes snapshot context', async () => {
+      // Context is still 'full' from previous test
+      const result = await callTool('browse_text');
+      const text = result.content[0].text;
+      expect(text).not.toContain('[snapshot-delta]');
+      expect(text).not.toContain('[snapshot]');
+    });
+
+    test('browse_snapshot (meta) does not include context', async () => {
+      // Navigate to a page with content first
+      await callTool('browse_goto', { url: baseUrl + '/basic.html' });
+      const result = await callTool('browse_snapshot', { interactive: true });
+      const text = result.content[0].text;
+      // Snapshot is a meta command — should NOT have [context] or [snapshot-delta]
+      expect(text).not.toContain('[context]');
+      expect(text).not.toContain('[snapshot-delta]');
+    });
+
+    test('set context state restores default behavior', async () => {
+      await callTool('browse_set', { subcommand: 'context', value: 'state' });
+      await callTool('browse_goto', { url: baseUrl + '/basic.html' });
+
+      // Navigate — should only have [context] line, no snapshot
+      const result = await callTool('browse_goto', { url: baseUrl + '/forms.html' });
+      const text = result.content[0].text;
+      expect(text).toContain('[context]');
+      expect(text).not.toContain('[snapshot-delta]');
+      expect(text).not.toContain('[snapshot]');
+    });
+  });
 });

@@ -649,14 +649,15 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'browse_set',
-    description: 'Configure browser settings: geolocation coordinates or color scheme (dark/light mode).',
+    description: 'Configure browser settings: geolocation, color scheme, or context level (state/delta/full).',
     inputSchema: {
       type: 'object',
       properties: {
-        subcommand: { type: 'string', description: 'Setting to configure.', enum: ['geo', 'media'] },
+        subcommand: { type: 'string', description: 'Setting to configure.', enum: ['geo', 'media', 'context'] },
         lat: { type: 'number', description: 'Latitude for geolocation (required for "geo").' },
         lng: { type: 'number', description: 'Longitude for geolocation (required for "geo").' },
         scheme: { type: 'string', description: 'Color scheme for media (required for "media").', enum: ['dark', 'light', 'no-preference'] },
+        value: { type: 'string', description: 'Context level (required for "context").', enum: ['off', 'state', 'delta', 'full'] },
       },
       required: ['subcommand'],
     },
@@ -1374,6 +1375,8 @@ export function mapToolCallToCommand(
         args.push(String(params.lat), String(params.lng));
       } else if (sub === 'media') {
         args.push(String(params.scheme));
+      } else if (sub === 'context') {
+        if (params.value) args.push(String(params.value));
       }
       return { command: 'set', args };
     }
