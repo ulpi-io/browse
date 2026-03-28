@@ -87,3 +87,44 @@ export function createBrowserTargetFactory(browser: Browser): SessionTargetFacto
     },
   };
 }
+
+/**
+ * Create an app-backed target factory for native app automation (macOS first).
+ * The factory resolves the app by name, spawns the bridge, and creates AppManager instances.
+ */
+export function createAppTargetFactory(appName: string): SessionTargetFactory {
+  return {
+    async create(buffers: SessionBuffers): Promise<CreatedTarget> {
+      const { ensureMacOSBridge, createMacOSBridge } = await import('../app/macos/bridge');
+      const { AppManager } = await import('../app/manager');
+      const bridgePath = await ensureMacOSBridge();
+
+      // Resolve PID from app name
+      const { execSync } = await import('child_process');
+      let pid: number;
+      try {
+        const output = execSync(`pgrep -x "${appName}"`, { encoding: 'utf-8' }).trim();
+        const pids = output.split('\n').filter(Boolean).map(Number);
+        if (pids.length === 0) throw new Error(`App '${appName}' is not running`);
+        if (pids.length > 1) throw new Error(`Multiple processes match '${appName}': PIDs ${pids.join(', ')}. Use a more specific name.`);
+        pid = pids[0];
+      } catch (err: any) {
+        if (err.message.includes('is not running') || err.message.includes('Multiple')) throw err;
+        throw new Error(`App '${appName}' is not running`);
+      }
+
+      const bridge = createMacOSBridge(bridgePath, pid);
+      const manager = new AppManager(bridge, appName);
+
+      return {
+        target: manager,
+        getContext: () => null,
+        setDomainFilter: () => {},
+        setInitScript: () => {},
+        getTabList: () => [],
+        getPageById: () => undefined,
+        getTabCount: () => 0,
+      };
+    },
+  };
+}
