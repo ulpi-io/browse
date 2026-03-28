@@ -3,13 +3,16 @@
  * and produces a compact delta showing what changed.
  *
  * Pure functions, no side effects, no logging.
+ * prepareWriteContext / finalizeWriteContext orchestrate the full
+ * before/after lifecycle for write commands at any context level.
  */
 
 import * as Diff from 'diff';
 import type { Page } from 'playwright';
-import type { PageState, ContextDelta } from './types';
+import type { PageState, ContextDelta, ContextLevel, WriteContextCapture } from './types';
 import type { BrowserManager } from './browser-manager';
 import type { SessionBuffers } from './buffers';
+import { handleSnapshot } from './snapshot';
 
 /**
  * Capture a snapshot of the current page state.
@@ -245,4 +248,114 @@ export function formatAriaDelta(baseline: string | null | undefined, current: st
   }
 
   return `${summary}\n${diffLines.join('\n')}`;
+}
+
+// ─── Write Context Orchestrator ───────────────────────────────
+
+/**
+ * Capture page state before a write command executes.
+ *
+ * The returned `WriteContextCapture` is passed to `finalizeWriteContext`
+ * after the write command completes.
+ *
+ * - `'off'`: no capture, no overhead
+ * - `'state'`: capture PageState only (URL, title, dialog, etc.)
+ * - `'delta'`: capture PageState + store baseline snapshot text
+ * - `'full'`: capture PageState (snapshot taken in finalize phase)
+ */
+export async function prepareWriteContext(
+  level: ContextLevel,
+  bm: BrowserManager,
+  buffers: SessionBuffers,
+): Promise<WriteContextCapture> {
+  if (level === 'off') {
+    return { level: 'off', beforeState: null, beforeSnapshot: null };
+  }
+
+  // All non-off levels need page state
+  let beforeState: PageState | null = null;
+  try {
+    beforeState = await capturePageState(bm.getPage(), bm, buffers);
+  } catch {
+    // Page may be closed or navigating — proceed with null state
+  }
+
+  if (level === 'state') {
+    return { level: 'state', beforeState, beforeSnapshot: null };
+  }
+
+  if (level === 'delta') {
+    // Store the last snapshot as baseline for diffing after the write
+    const beforeSnapshot = bm.getLastSnapshot();
+    return { level: 'delta', beforeState, beforeSnapshot };
+  }
+
+  // level === 'full'
+  return { level: 'full', beforeState, beforeSnapshot: null };
+}
+
+/**
+ * Enrich write command result with context based on the capture level.
+ *
+ * - `'off'`: return result unchanged
+ * - `'state'`: append `[context]` line with state delta (URL, title, etc.)
+ * - `'delta'`: append state context line + ARIA snapshot delta with refs
+ * - `'full'`: append state context line + full ARIA snapshot with refs
+ *
+ * **Error safety:** All snapshot/delta work is wrapped in try/catch.
+ * Context capture failures never break the write command response.
+ * If anything fails, the original result is returned unchanged.
+ */
+export async function finalizeWriteContext(
+  capture: WriteContextCapture,
+  bm: BrowserManager,
+  buffers: SessionBuffers,
+  result: string,
+  command: string,
+): Promise<string> {
+  if (capture.level === 'off') {
+    return result;
+  }
+
+  try {
+    // State context line (shared by all non-off levels)
+    let contextLine = '';
+    if (capture.beforeState) {
+      const afterState = await capturePageState(bm.getPage(), bm, buffers);
+      const delta = buildContextDelta(capture.beforeState, afterState);
+      if (delta) {
+        contextLine = '\n' + formatContextLine(delta, command);
+      }
+    }
+
+    if (capture.level === 'state') {
+      return contextLine ? result + contextLine : result;
+    }
+
+    // delta and full modes need a fresh snapshot
+    const snapshotOpts = bm.getLastSnapshotOpts();
+    const snapshotArgs = snapshotOpts.length > 0 ? snapshotOpts : ['-i'];
+
+    // Determine effective level: delta with no baseline falls back to full
+    const effectiveLevel = (capture.level === 'delta' && capture.beforeSnapshot != null)
+      ? 'delta'
+      : 'full';
+
+    const newSnapshot = await handleSnapshot(snapshotArgs, bm);
+
+    if (effectiveLevel === 'delta') {
+      const ariaDelta = formatAriaDelta(capture.beforeSnapshot, newSnapshot);
+      if (ariaDelta) {
+        return result + contextLine + '\n' + ariaDelta;
+      }
+      // No ARIA changes — just return with state context line
+      return contextLine ? result + contextLine : result;
+    }
+
+    // effectiveLevel === 'full'
+    return result + contextLine + '\n[snapshot]\n' + newSnapshot;
+  } catch {
+    // Don't let context capture failures break the command
+    return result;
+  }
 }
