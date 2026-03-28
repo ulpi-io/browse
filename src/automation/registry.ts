@@ -841,10 +841,39 @@ registry.registerAll([
 
   // ─── Workflow Commands (v2.1) ─────────────────────────────────
 
-  m('flow',              'Execute a YAML flow file step-by-step',           { usage: '<file.yaml>', mcp: {
-    description: 'Execute a YAML flow file containing a sequence of browse commands. Each step is executed in order. On failure, execution stops and reports which step failed. Returns a summary of passed/failed steps.',
-    inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Path to a YAML flow file containing browse commands.' } }, required: ['file'] },
-    argDecode: (p) => [String(p.file)],
+  m('flow',              'Execute, save, run, or list YAML flows',          { usage: '<file.yaml> | save <name> | run <name> | list', mcp: {
+    description: [
+      'Manage and execute YAML flow files containing sequences of browse commands.',
+      '',
+      'Subcommands:',
+      '  flow <file.yaml>   — Execute a flow file from disk',
+      '  flow save <name>   — Save the current recording as a named flow in .browse/flows/<name>.yaml',
+      '  flow run <name>    — Execute a previously saved flow by name',
+      '  flow list          — List all saved flows in .browse/flows/',
+      '',
+      'Each step in a flow is executed in order. On failure, execution stops and reports the failed step.',
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subcommand: {
+          type: 'string',
+          description: 'Subcommand: omit (or set to the file path) to run a file, "save" to save recording, "run" to execute saved flow, "list" to show saved flows.',
+          enum: ['file', 'save', 'run', 'list'],
+        },
+        file: { type: 'string', description: 'Path to a YAML flow file (used when subcommand is "file" / omitted).' },
+        name: { type: 'string', description: 'Flow name for save/run subcommands (alphanumeric, hyphens, underscores).' },
+      },
+    },
+    argDecode: (p) => {
+      if (!p.subcommand || p.subcommand === 'file') {
+        if (!p.file) throw new Error('file is required when subcommand is not save/run/list');
+        return [String(p.file)];
+      }
+      if (p.subcommand === 'list') return ['list'];
+      if (!p.name) throw new Error('name is required for flow save/run');
+      return [String(p.subcommand), String(p.name)];
+    },
   } }),
   m('retry',             'Retry command with backoff until condition met',  { usage: '"<cmd>" --until <cond> [--max N] [--backoff]', mcp: {
     description: 'Retry a browse command until a condition is satisfied. Supports exponential backoff (100ms, 200ms, 400ms...). The condition uses the same syntax as browse_expect (--url, --text, --visible, --hidden, --count). Useful for dismissing transient overlays, waiting for async updates, or polling for state changes.',
@@ -996,6 +1025,7 @@ export function generateHelp(): string {
   lines.push('Options:');
   lines.push('  --session <id>           Named session (isolates tabs, refs, cookies)');
   lines.push('  --profile <name>         Persistent browser profile (own Chromium, full state persistence)');
+  lines.push('  --app <name>             Target a native application (macOS, uses Accessibility API)');
   lines.push('  --json                   Wrap output as {success, data, command}');
   lines.push('  --content-boundaries     Wrap page content in nonce-delimited markers');
   lines.push('  --context [state|delta|full]  Action context (state=changes, delta=ARIA diff, full=snapshot)');

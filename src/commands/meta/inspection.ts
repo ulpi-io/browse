@@ -332,6 +332,16 @@ export async function handleInspectionCommand(
         if (fingerprint.thirdParty.length > 10) lines.push(`  ... and ${fingerprint.thirdParty.length - 10} more`);
       }
 
+      // Custom detections section
+      if (fingerprint.custom && fingerprint.custom.length > 0) {
+        lines.push('');
+        lines.push('Custom Detections:');
+        for (const custom of fingerprint.custom) {
+          const version = custom.version ? ` ${custom.version}` : '';
+          lines.push(`  ${custom.category.padEnd(18)} ${custom.name}${version} [custom]`);
+        }
+      }
+
       return lines.join('\n');
     }
 

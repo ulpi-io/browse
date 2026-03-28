@@ -412,3 +412,193 @@ export async function finalizeWriteContext(
     return result;
   }
 }
+
+// ─── App Action Context ─────────────────────────────────────────
+//
+// Parallel to the browser action context, but for native app targets.
+// Uses AppManager.getState() for lightweight state probes.
+
+import type { AutomationTarget } from './target';
+import type { AppState } from '../app/types';
+
+/** App-specific state captured before/after write commands */
+export interface AppContextDelta {
+  windowTitleChanged?: string;
+  focusChanged?: boolean;
+  elementCountChanged?: number;
+  windowCountChanged?: number;
+}
+
+/**
+ * Capture the state of a native app before a write command.
+ * Uses the AppManager.getState() lightweight probe.
+ */
+export async function captureAppState(target: AutomationTarget): Promise<AppState | null> {
+  try {
+    // Only AppManager has getState() — check targetType
+    if (target.targetType !== 'app') return null;
+    const manager = target as import('../app/manager').AppManager;
+    return await manager.getState();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare before/after app state and return only what changed.
+ * Returns null if nothing changed.
+ */
+export function buildAppContextDelta(
+  before: AppState,
+  after: AppState,
+): AppContextDelta | null {
+  const delta: AppContextDelta = {};
+
+  if (after.windowTitle !== before.windowTitle) {
+    delta.windowTitleChanged = after.windowTitle;
+  }
+
+  const beforeFocusKey = before.focusedPath ? before.focusedPath.join('.') : '';
+  const afterFocusKey = after.focusedPath ? after.focusedPath.join('.') : '';
+  if (afterFocusKey !== beforeFocusKey) {
+    delta.focusChanged = true;
+  }
+
+  if (after.elementCount !== before.elementCount) {
+    delta.elementCountChanged = after.elementCount;
+  }
+
+  if (after.windowCount !== before.windowCount) {
+    delta.windowCountChanged = after.windowCount;
+  }
+
+  if (Object.keys(delta).length === 0) return null;
+  return delta;
+}
+
+/**
+ * Format an app context delta as a single-line human-readable string.
+ */
+export function formatAppContextLine(delta: AppContextDelta, _command: string): string {
+  const parts: string[] = [];
+
+  if (delta.windowTitleChanged != null) {
+    parts.push(`title: "${delta.windowTitleChanged}"`);
+  }
+  if (delta.focusChanged) {
+    parts.push('focus changed');
+  }
+  if (delta.elementCountChanged != null) {
+    parts.push(`elements: ${delta.elementCountChanged}`);
+  }
+  if (delta.windowCountChanged != null) {
+    parts.push(`windows: ${delta.windowCountChanged}`);
+  }
+
+  return `[context] ${parts.join(' | ')}`;
+}
+
+/**
+ * Prepare write context capture for app targets.
+ */
+export async function prepareAppWriteContext(
+  level: ContextLevel,
+  target: AutomationTarget,
+): Promise<WriteContextCapture> {
+  if (level === 'off') {
+    return { level: 'off', beforeState: null, beforeSnapshot: null };
+  }
+
+  // For app targets, we store app state as a serialized PageState-compatible shape
+  let beforeState: PageState | null = null;
+  try {
+    const appState = await captureAppState(target);
+    if (appState) {
+      beforeState = {
+        url: `app://${appState.appName}`,
+        title: appState.windowTitle,
+        tabCount: appState.windowCount,
+        dialog: null,
+        consoleErrorCount: 0,
+        networkPendingCount: 0,
+        timestamp: Date.now(),
+        settled: appState.settled ?? true,
+      };
+    }
+  } catch {
+    // Non-critical
+  }
+
+  if (level === 'state') {
+    return { level: 'state', beforeState, beforeSnapshot: null };
+  }
+
+  // delta mode: get current snapshot as baseline
+  if (level === 'delta' && target.targetType === 'app') {
+    const manager = target as import('../app/manager').AppManager;
+    const beforeSnapshot = manager.getLastSnapshot();
+    return { level: 'delta', beforeState, beforeSnapshot };
+  }
+
+  return { level: level as ContextLevel, beforeState, beforeSnapshot: null };
+}
+
+/**
+ * Finalize write context for app targets.
+ * Appends context delta and optional snapshot info to the command result.
+ */
+export async function finalizeAppWriteContext(
+  capture: WriteContextCapture,
+  target: AutomationTarget,
+  result: string,
+  command: string,
+): Promise<string> {
+  if (capture.level === 'off') return result;
+
+  try {
+    let contextLine = '';
+    if (capture.beforeState) {
+      const afterAppState = await captureAppState(target);
+      if (afterAppState) {
+        const afterState: PageState = {
+          url: `app://${afterAppState.appName}`,
+          title: afterAppState.windowTitle,
+          tabCount: afterAppState.windowCount,
+          dialog: null,
+          consoleErrorCount: 0,
+          networkPendingCount: 0,
+          timestamp: Date.now(),
+          settled: afterAppState.settled ?? true,
+        };
+        const delta = buildContextDelta(capture.beforeState, afterState);
+        const effectiveDelta = delta ?? {};
+        contextLine = '\n' + formatContextLine(effectiveDelta, command, afterState);
+      }
+    }
+
+    if (capture.level === 'state') {
+      return contextLine ? result + contextLine : result;
+    }
+
+    // delta and full modes: take a fresh app snapshot
+    if (target.targetType === 'app') {
+      const manager = target as import('../app/manager').AppManager;
+      const newSnapshot = await manager.snapshot(true);
+
+      if (capture.level === 'delta' && capture.beforeSnapshot != null) {
+        const ariaDelta = formatAriaDelta(capture.beforeSnapshot, newSnapshot);
+        if (ariaDelta) {
+          return result + contextLine + '\n' + ariaDelta;
+        }
+        return contextLine ? result + contextLine : result;
+      }
+
+      // full mode
+      return result + contextLine + '\n[snapshot]\n' + newSnapshot;
+    }
+
+    return contextLine ? result + contextLine : result;
+  } catch {
+    return result;
+  }
+}

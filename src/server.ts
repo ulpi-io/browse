@@ -16,7 +16,7 @@ import type { BrowserTarget } from './browser/target';
 import { PolicyChecker } from './security/policy';
 import { DEFAULTS } from './constants';
 import { type LogEntry, type NetworkEntry } from './network/buffers';
-import { prepareWriteContext, finalizeWriteContext } from './automation/action-context';
+import { prepareWriteContext, finalizeWriteContext, prepareAppWriteContext, finalizeAppWriteContext } from './automation/action-context';
 import { executeCommand } from './automation/executor';
 import type { ContextLevel, WriteContextCapture } from './types';
 import * as fs from 'fs';
@@ -141,10 +141,22 @@ const policyChecker = new PolicyChecker();
 
 /**
  * Narrow the session's AutomationTarget to BrowserTarget.
- * All sessions are browser-backed until v2.0 app automation.
+ * Returns null if the session targets a non-browser automation backend.
+ */
+function trySessionBt(session: Session): BrowserTarget | null {
+  if (session.manager.targetType === 'browser') {
+    return session.manager as BrowserTarget;
+  }
+  return null;
+}
+
+/**
+ * Narrow the session's AutomationTarget to BrowserTarget (throws if not browser).
  */
 function sessionBt(session: Session): BrowserTarget {
-  return session.manager as BrowserTarget;
+  const bt = trySessionBt(session);
+  if (!bt) throw new Error('This operation requires a browser session');
+  return bt;
 }
 
 import { registry, rewriteError as registryRewriteError } from './automation/registry';
@@ -232,7 +244,8 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
     });
   }
 
-  const bt = sessionBt(session);
+  const bt = trySessionBt(session);
+  const target = session.manager;
   const effectiveLevel: ContextLevel = opts.contextLevel !== 'off' ? opts.contextLevel : session.contextLevel;
 
   try {
@@ -241,7 +254,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
     const { output, spec } = await executeCommand(command, args, {
       context: {
         args,
-        target: bt,
+        target,
         buffers: session.buffers,
         domainFilter: session.domainFilter,
         session,
@@ -250,9 +263,13 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
       },
       lifecycle: {
         before: [async (event) => {
-          // Write context capture (before execution)
-          if (event.category === 'write') {
+          // Write context capture (before execution) — browser targets only
+          if (event.category === 'write' && bt) {
             writeCapture = await prepareWriteContext(effectiveLevel, bt, session.buffers);
+          }
+          // App write context capture
+          if (event.category === 'write' && !bt) {
+            writeCapture = await prepareAppWriteContext(effectiveLevel, target);
           }
         }],
         after: [async (event) => {
@@ -260,8 +277,11 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
           // Write context finalization (after execution)
           if (event.category === 'write') {
-            if (writeCapture) {
+            if (writeCapture && bt) {
               result = await finalizeWriteContext(writeCapture, bt, session.buffers, result, event.command);
+              writeCapture = null;
+            } else if (writeCapture && !bt) {
+              result = await finalizeAppWriteContext(writeCapture, target, result, event.command);
               writeCapture = null;
             }
 
@@ -288,14 +308,14 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
             }
           }
 
-          // Reset failure counter on success
-          bt.resetFailures();
+          // Reset failure counter on success (browser targets only)
+          if (bt) bt.resetFailures();
 
           // Record step if recording is active
           if (session.recording && !event.spec?.skipRecording) {
             const step: RecordedStep = { command: event.command, args: [...event.args], timestamp: Date.now() };
             const refArgs = [...event.args].filter((a: string) => a.startsWith('@e'));
-            if (refArgs.length > 0) {
+            if (refArgs.length > 0 && bt) {
               const { resolveRefSelectors } = await import('./export/record');
               const resolved: Record<string, string[]> = {};
               for (const ref of refArgs) {
@@ -314,10 +334,12 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
           return result;
         }],
         onError: [async (event) => {
-          bt.incrementFailures();
+          if (bt) bt.incrementFailures();
           let friendlyError = rewriteError(event.error.message);
-          const hint = bt.getFailureHint();
-          if (hint) friendlyError += '\n' + hint;
+          if (bt) {
+            const hint = bt.getFailureHint();
+            if (hint) friendlyError += '\n' + hint;
+          }
           return friendlyError;
         }],
       },
@@ -333,7 +355,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
     // Apply content boundaries for page-content commands
     if (opts.contentBoundaries && spec.pageContent) {
-      const origin = bt.getCurrentUrl();
+      const origin = target.getCurrentLocation();
       result = `--- BROWSE_CONTENT nonce=${BOUNDARY_NONCE} origin=${origin} ---\n${result}\n--- END_BROWSE_CONTENT nonce=${BOUNDARY_NONCE} ---`;
     }
 
@@ -566,21 +588,34 @@ async function start() {
         const body = await req.json();
 
         // Resolve session: profile mode uses the single persistent session,
-        // normal mode uses SessionManager with session multiplexing
+        // normal mode uses SessionManager with session multiplexing.
+        // If X-Browse-App is set, use an app-targeted session (prefixed "app:<name>").
         let session: Session;
         if (profileSession) {
           session = profileSession;
           session.lastActivity = Date.now();
         } else {
-          const sessionId = req.headers.get('x-browse-session') || 'default';
+          const appName = req.headers.get('x-browse-app');
+          let sessionId: string;
+          if (appName) {
+            sessionId = `app:${appName}`;
+            // Lazily register an app target factory for this app session
+            if (!sessionManager!.hasAppFactory(sessionId)) {
+              const { createAppTargetFactory } = await import('./session/target-factory');
+              sessionManager!.setAppFactory(sessionId, createAppTargetFactory(appName));
+            }
+          } else {
+            sessionId = req.headers.get('x-browse-session') || 'default';
+          }
           const allowedDomains = req.headers.get('x-browse-allowed-domains') || undefined;
           session = await sessionManager!.getOrCreate(sessionId, allowedDomains);
         }
 
-        // Load state file (cookies) if requested via --state flag
+        // Load state file (cookies) if requested via --state flag (browser sessions only)
         const stateFilePath = req.headers.get('x-browse-state');
         if (stateFilePath) {
-          const context = sessionBt(session).getContext();
+          const sessionBt_ = trySessionBt(session);
+          const context = sessionBt_?.getContext();
           if (context) {
             try {
               const stateData = JSON.parse(fs.readFileSync(stateFilePath, 'utf-8'));
@@ -595,11 +630,11 @@ async function start() {
           }
         }
 
-        // Enable network body capture if requested (first command only per session)
+        // Enable network body capture if requested (browser sessions only)
         if (req.headers.get('x-browse-network-bodies') === '1') {
-          const bt = sessionBt(session);
-          if (!bt.getCaptureNetworkBodies()) {
-            bt.setCaptureNetworkBodies(true);
+          const sessionBt_ = trySessionBt(session);
+          if (sessionBt_ && !sessionBt_.getCaptureNetworkBodies()) {
+            sessionBt_.setCaptureNetworkBodies(true);
           }
         }
 

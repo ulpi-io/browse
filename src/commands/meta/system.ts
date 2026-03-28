@@ -119,6 +119,20 @@ export async function handleSystemCommand(
         lines.push(`Playwright: NOT INSTALLED — run "bun install playwright"`);
       }
       lines.push(`Server: running (you're connected)`);
+
+      // App automation bridge check
+      if (process.platform === 'darwin') {
+        try {
+          const { ensureMacOSBridge } = await import('../../app/macos/bridge');
+          const bridgePath = await ensureMacOSBridge();
+          lines.push(`App bridge: ${bridgePath}`);
+        } catch {
+          lines.push(`App bridge: NOT FOUND — build browse-ax or run: cd browse-ax && swift build -c release`);
+        }
+      } else {
+        lines.push(`App automation: not available (macOS only)`);
+      }
+
       return lines.join('\n');
     }
 

@@ -16,6 +16,18 @@ export interface BrowseConfig {
   device?: string;
   context?: boolean;
   networkBodies?: boolean;
+  /** Default session ID — overrides BROWSE_SESSION env var */
+  defaultSession?: string;
+  /** Default context level ('off' | 'on' | 'full') */
+  defaultContext?: string;
+  /** Flow files to execute automatically on server startup */
+  startupFlows?: string[];
+  /** Extra directories to search for .browse/detections/*.json files */
+  detectionPaths?: string[];
+  /** Extra directories to search for rule files */
+  rulePaths?: string[];
+  /** Extra directories to search for flow YAML files */
+  flowPaths?: string[];
 }
 
 /**

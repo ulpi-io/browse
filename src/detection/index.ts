@@ -12,12 +12,146 @@ import { detectSaaS } from './saas';
 import type { DetectedSaaS } from './saas';
 import { detectInfrastructure } from './infrastructure';
 import type { InfrastructureReport } from './infrastructure';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ─── Re-export all public types from submodules ─────────────────────────
 
 export type { DetectedFramework, PerfHint, FrameworkCategory } from './frameworks';
 export type { DetectedSaaS, SaaSCategory, PlatformApp } from './saas';
 export type { InfrastructureReport } from './infrastructure';
+
+// ─── Custom detection signatures (TASK-043) ──────────────────────────────
+
+/**
+ * Format of a custom detection signature JSON file.
+ * Files are loaded from .browse/detections/*.json at detection time.
+ *
+ * Example:
+ *   { "version": 1, "name": "MyFramework", "detect": "window.__MY_FRAMEWORK",
+ *     "versionExpr": "window.__MY_FRAMEWORK.version", "category": "js-framework" }
+ */
+export interface CustomDetectionSignature {
+  /** Schema version — must be 1 */
+  version: 1;
+  /** Human-readable framework/library name */
+  name: string;
+  /** JS expression evaluated via page.evaluate to check if the framework is present (truthy = detected) */
+  detect: string;
+  /** JS expression evaluated via page.evaluate to get the version string (null/undefined = unknown) */
+  versionExpr?: string;
+  /** Category label (shown alongside [custom]) */
+  category?: string;
+}
+
+export interface CustomDetectedEntry {
+  name: string;
+  version: string | null;
+  category: string;
+  label: '[custom]';
+}
+
+/**
+ * Load custom detection signatures from .browse/detections/*.json.
+ * Malformed JSON files emit a warning to stderr and are skipped.
+ */
+function loadCustomSignatures(localDir: string): CustomDetectionSignature[] {
+  const detectionDir = path.join(localDir, 'detections');
+  if (!fs.existsSync(detectionDir)) return [];
+
+  const sigs: CustomDetectionSignature[] = [];
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(detectionDir).filter(f => f.endsWith('.json'));
+  } catch {
+    return [];
+  }
+
+  for (const entry of entries) {
+    const filePath = path.join(detectionDir, entry);
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        parsed == null ||
+        typeof parsed !== 'object' ||
+        (parsed as any).version !== 1 ||
+        typeof (parsed as any).name !== 'string' ||
+        typeof (parsed as any).detect !== 'string'
+      ) {
+        process.stderr.write(
+          `[browse] Warning: custom detection "${entry}" is malformed (missing required fields: version=1, name, detect). Skipping.\n`
+        );
+        continue;
+      }
+      sigs.push(parsed as CustomDetectionSignature);
+    } catch (err: any) {
+      process.stderr.write(
+        `[browse] Warning: could not parse custom detection "${entry}": ${err.message}. Skipping.\n`
+      );
+    }
+  }
+
+  return sigs;
+}
+
+/**
+ * Run custom detection signatures against the page.
+ * Each signature's `detect` expression is evaluated; on truthy result
+ * the framework is recorded with an optional `version` expression lookup.
+ */
+async function detectCustom(
+  page: Page,
+  signatures: CustomDetectionSignature[],
+): Promise<CustomDetectedEntry[]> {
+  if (signatures.length === 0) return [];
+
+  const results: CustomDetectedEntry[] = [];
+
+  for (const sig of signatures) {
+    try {
+      const detected = await page.evaluate((expr) => {
+        try {
+          // eslint-disable-next-line no-new-func
+          return Boolean(new Function(`return (${expr})`)());
+        } catch {
+          return false;
+        }
+      }, sig.detect);
+
+      if (!detected) continue;
+
+      let version: string | null = null;
+      if (sig.versionExpr) {
+        try {
+          const raw = await page.evaluate((expr) => {
+            try {
+              // eslint-disable-next-line no-new-func
+              const val = new Function(`return (${expr})`)();
+              return val != null ? String(val) : null;
+            } catch {
+              return null;
+            }
+          }, sig.versionExpr);
+          version = raw ?? null;
+        } catch {
+          version = null;
+        }
+      }
+
+      results.push({
+        name: sig.name,
+        version,
+        category: sig.category ?? 'custom',
+        label: '[custom]',
+      });
+    } catch {
+      // Individual signature failure should not break overall detection
+    }
+  }
+
+  return results;
+}
 
 // ─── Combined types ─────────────────────────────────────────────────────
 
@@ -33,6 +167,7 @@ export interface StackFingerprint {
   saas: DetectedSaaS[];
   infrastructure: InfrastructureReport;
   thirdParty: ThirdPartyEntry[];
+  custom: CustomDetectedEntry[];
 }
 
 // ─── Known third-party domain classification ────────────────────────────
@@ -225,18 +360,30 @@ function classifyDomain(hostname: string): ThirdPartyEntry['category'] {
  * Run all detection modules in parallel and combine into a single
  * StackFingerprint. Accepts optional network entries for SaaS
  * detection and third-party inventory.
+ *
+ * @param page         The Playwright page to inspect
+ * @param networkEntries  Network entries for SaaS + third-party inventory
+ * @param localDir     Directory containing the .browse/detections/ folder
+ *                     (defaults to BROWSE_LOCAL_DIR env var or '/tmp')
  */
 export async function detectStack(
   page: Page,
   networkEntries?: NetworkEntry[],
+  localDir?: string,
 ): Promise<StackFingerprint> {
-  const [frameworks, saas, infrastructure] = await Promise.all([
+  const resolvedLocalDir = localDir ?? process.env.BROWSE_LOCAL_DIR ?? '/tmp';
+
+  // Load custom signatures before running parallel detectors (sync, cheap)
+  const customSignatures = loadCustomSignatures(resolvedLocalDir);
+
+  const [frameworks, saas, infrastructure, custom] = await Promise.all([
     detectFrameworks(page),
     detectSaaS(page, networkEntries),
     detectInfrastructure(page),
+    detectCustom(page, customSignatures),
   ]);
 
   const thirdParty = buildThirdPartyInventory(page, networkEntries ?? []);
 
-  return { frameworks, saas, infrastructure, thirdParty };
+  return { frameworks, saas, infrastructure, thirdParty, custom };
 }

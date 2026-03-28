@@ -44,6 +44,8 @@ export class SessionManager {
   /** Factory-created target accessors for setup operations that need target-specific methods */
   private targets = new Map<string, CreatedTarget>();
   private factory: SessionTargetFactory;
+  /** Per-session factory overrides (e.g. app:TextEdit uses AppTargetFactory) */
+  private appFactories = new Map<string, SessionTargetFactory>();
   private localDir: string;
   private encryptionKey: Buffer | undefined;
   private reuseContext: boolean;
@@ -60,8 +62,24 @@ export class SessionManager {
   }
 
   /**
+   * Register an alternative target factory for a specific session ID.
+   * Used by the server to direct app:* sessions to the app target factory.
+   */
+  setAppFactory(sessionId: string, factory: SessionTargetFactory): void {
+    this.appFactories.set(sessionId, factory);
+  }
+
+  /**
+   * Check if an app factory is registered for a session ID.
+   */
+  hasAppFactory(sessionId: string): boolean {
+    return this.appFactories.has(sessionId);
+  }
+
+  /**
    * Get an existing session or create a new one.
    * Creating a session uses the target factory to provision a new automation target.
+   * If an app factory is registered for this session ID, it takes precedence.
    */
   async getOrCreate(sessionId: string, allowedDomains?: string): Promise<Session> {
     let session = this.sessions.get(sessionId);
@@ -106,7 +124,8 @@ export class SessionManager {
     fs.mkdirSync(outputDir, { recursive: true });
 
     const buffers = new SessionBuffers();
-    const ct = await this.factory.create(buffers, this.reuseContext && this.sessions.size === 0);
+    const effectiveFactory = this.appFactories.get(sessionId) ?? this.factory;
+    const ct = await effectiveFactory.create(buffers, this.reuseContext && this.sessions.size === 0);
 
     // Apply domain filter if allowed domains are specified
     let domainFilter: DomainFilter | null = null;

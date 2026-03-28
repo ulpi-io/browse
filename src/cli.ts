@@ -466,6 +466,9 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
   if (cliFlags.networkBodies) {
     headers['X-Browse-Network-Bodies'] = '1';
   }
+  if (cliFlags.app) {
+    headers['X-Browse-App'] = cliFlags.app;
+  }
 
   try {
     const resp = await fetch(`http://127.0.0.1:${state.port}/command`, {

@@ -4,12 +4,45 @@
  * TASK-036: flow   — Execute a YAML flow file step-by-step
  * TASK-037: retry  — Retry a command with backoff until a condition is met
  * TASK-038: watch  — Watch for DOM changes and execute a callback command
+ * TASK-041: flow save/run/list — Saved flows in .browse/flows/
  */
 
 import type { BrowserTarget } from '../../browser/target';
 import type { Session } from '../../session/manager';
 import type { SessionManager } from '../../session/manager';
 import * as fs from 'fs';
+import * as path from 'path';
+
+// ─── Saved Flows Directory ────────────────────────────────────────
+
+const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
+
+/** Returns the .browse/flows/ directory path, creating it if needed */
+function getFlowsDir(): string {
+  const dir = path.join(LOCAL_DIR, 'flows');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Validate a flow name — reject names with path traversal characters.
+ * Names may only contain alphanumeric chars, hyphens, underscores, and dots
+ * (but not ".." and must not contain "/" or path separators).
+ */
+function validateFlowName(name: string): void {
+  if (!name || name.trim() === '') {
+    throw new Error('Flow name cannot be empty');
+  }
+  if (name.includes('/') || name.includes('\\')) {
+    throw new Error(`Invalid flow name "${name}": path separators are not allowed`);
+  }
+  if (name === '..' || name.includes('..')) {
+    throw new Error(`Invalid flow name "${name}": ".." is not allowed`);
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    throw new Error(`Invalid flow name "${name}": only alphanumeric characters, hyphens, underscores, and dots are allowed`);
+  }
+}
 
 export async function handleFlowsCommand(
   command: string,
@@ -21,10 +54,149 @@ export async function handleFlowsCommand(
 ): Promise<string> {
   switch (command) {
 
-    // ─── TASK-036: flow ──────────────────────────────────────────
+    // ─── TASK-036 + TASK-041: flow ────────────────────────────────
     case 'flow': {
-      const filePath = args[0];
-      if (!filePath) throw new Error('Usage: browse flow <file.yaml>');
+      const subOrFile = args[0];
+      if (!subOrFile) {
+        throw new Error(
+          'Usage:\n' +
+          '  browse flow <file.yaml>          — execute a flow file\n' +
+          '  browse flow save <name>          — save current recording as a named flow\n' +
+          '  browse flow run <name>           — execute a saved flow by name\n' +
+          '  browse flow list                 — list saved flows'
+        );
+      }
+
+      // ── TASK-041: flow save <name> ─────────────────────────────
+      if (subOrFile === 'save') {
+        const name = args[1];
+        if (!name) throw new Error('Usage: browse flow save <name>');
+        validateFlowName(name);
+
+        if (!currentSession) throw new Error('flow save requires a session context');
+
+        // Use active recording or last stopped recording
+        const steps = currentSession.recording || (currentSession as any)._lastRecording;
+        if (!steps || steps.length === 0) {
+          throw new Error(
+            'No recording to save. Run "browse record start", execute commands, then "browse flow save <name>".'
+          );
+        }
+
+        // Serialize steps to YAML using the yaml package
+        const YAML = await import('yaml');
+        const yamlSteps = steps.map((step: { command: string; args: string[] }) => {
+          const { command: cmd, args: stepArgs } = step;
+          if (stepArgs.length === 0) {
+            return { [cmd]: null };
+          } else if (stepArgs.length === 1) {
+            return { [cmd]: stepArgs[0] };
+          } else {
+            return { [cmd]: stepArgs };
+          }
+        });
+
+        const yamlContent = YAML.stringify(yamlSteps);
+        const flowPath = path.join(getFlowsDir(), `${name}.yaml`);
+        fs.writeFileSync(flowPath, yamlContent, 'utf-8');
+
+        return `Flow saved: ${flowPath} (${steps.length} steps)`;
+      }
+
+      // ── TASK-041: flow run <name> ──────────────────────────────
+      if (subOrFile === 'run') {
+        const name = args[1];
+        if (!name) throw new Error('Usage: browse flow run <name>');
+        validateFlowName(name);
+
+        const flowPath = path.join(getFlowsDir(), `${name}.yaml`);
+        let content: string;
+        try {
+          content = fs.readFileSync(flowPath, 'utf-8');
+        } catch (err: any) {
+          if (err.code === 'ENOENT') {
+            throw new Error(`Saved flow not found: "${name}" (looked at ${flowPath})`);
+          }
+          throw new Error(`Cannot read flow "${name}": ${err.message}`);
+        }
+
+        // Delegate to the normal flow execution path by re-entering with a temp file path
+        // But we already have content, so parse and run directly (avoids temp files)
+        const { parseFlowYaml } = await import('../../flow-parser');
+        const steps = parseFlowYaml(content);
+
+        const { handleReadCommand } = await import('../read');
+        const { handleWriteCommand } = await import('../write');
+        const { registry } = await import('../../automation/registry');
+
+        const results: string[] = [];
+        let passed = 0;
+        const total = steps.length;
+
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          const stepLabel = `${i + 1}/${total}`;
+          const cmdDisplay = step.args.length > 0
+            ? `${step.command} ${step.args.join(' ')}`
+            : step.command;
+
+          try {
+            const spec = registry.get(step.command);
+            if (!spec) throw new Error(`Unknown command: ${step.command}`);
+
+            let result: string;
+            if (spec.category === 'write') {
+              result = await handleWriteCommand(step.command, step.args, bm, currentSession?.domainFilter);
+            } else if (spec.category === 'read') {
+              result = await handleReadCommand(step.command, step.args, bm, currentSession?.buffers);
+            } else {
+              const { handleMetaCommand } = await import('./index');
+              result = await handleMetaCommand(step.command, step.args, bm, shutdown, sessionManager, currentSession);
+            }
+
+            passed++;
+            results.push(`✓ [${stepLabel}] ${cmdDisplay}`);
+          } catch (err: any) {
+            results.push(`✗ [${stepLabel}] ${cmdDisplay} — FAIL: ${err.message}`);
+            results.push('');
+            results.push(`Flow failed at step ${i + 1}/${total}`);
+            return results.join('\n');
+          }
+        }
+
+        results.push('');
+        results.push(`Flow complete: ${passed}/${total} steps passed`);
+        return results.join('\n');
+      }
+
+      // ── TASK-041: flow list ────────────────────────────────────
+      if (subOrFile === 'list') {
+        const flowsDir = path.join(LOCAL_DIR, 'flows');
+        if (!fs.existsSync(flowsDir)) {
+          return 'No saved flows (directory does not exist yet)';
+        }
+
+        const entries = fs.readdirSync(flowsDir)
+          .filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
+          .sort();
+
+        if (entries.length === 0) {
+          return 'No saved flows';
+        }
+
+        const lines: string[] = [`Saved flows (${flowsDir}):`];
+        for (const entry of entries) {
+          const name = entry.replace(/\.(yaml|yml)$/, '');
+          const fullPath = path.join(flowsDir, entry);
+          const stat = fs.statSync(fullPath);
+          const mtime = new Date(stat.mtimeMs).toISOString().replace('T', ' ').slice(0, 19);
+          lines.push(`  ${name}  (${mtime})`);
+        }
+        return lines.join('\n');
+      }
+
+      // ── Original TASK-036 path: treat args[0] as a file path ──
+      const filePath = subOrFile;
 
       let content: string;
       try {
@@ -199,9 +371,7 @@ export async function handleFlowsCommand(
         });
 
         // Store observer reference for cleanup
-        info.observer = observer;
-        const info = (window as any)[watchId];
-        info.observer = observer;
+        (window as any)[watchId].observer = observer;
       }, { selector, watchId });
 
       // Poll for change flag
