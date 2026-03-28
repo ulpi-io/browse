@@ -16,7 +16,8 @@ import { handleReadCommand } from './commands/read';
 import { handleWriteCommand } from './commands/write';
 import { handleMetaCommand } from './commands/meta';
 import { getToolDefinitions, mapToolCallToCommand } from './mcp-tools';
-import { capturePageState, buildContextDelta, formatContextLine } from './action-context';
+import { prepareWriteContext, finalizeWriteContext } from './action-context';
+import type { ContextLevel } from './types';
 
 /**
  * Start the MCP server.
@@ -26,6 +27,9 @@ import { capturePageState, buildContextDelta, formatContextLine } from './action
  *
  * @param jsonMode - When true, wraps results as { success, data, command } JSON.
  */
+/** MCP-level context level — default to 'state' (always-on for MCP write commands). */
+let mcpContextLevel: ContextLevel = 'state';
+
 export async function startMcpServer(jsonMode: boolean): Promise<void> {
   // ─── Browser Setup ──────────────────────────────────────────────
   const { getRuntime } = await import('./runtime');
@@ -76,22 +80,18 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
       if (READ_COMMANDS.has(command)) {
         result = await handleReadCommand(command, args, bm, buffers);
       } else if (WRITE_COMMANDS.has(command)) {
-        // Capture page state before write command
-        const before = await capturePageState(bm.getPage(), bm, buffers).catch(() => null);
-
+        const capture = await prepareWriteContext(mcpContextLevel, bm, buffers);
         result = await handleWriteCommand(command, args, bm);
+        result = await finalizeWriteContext(capture, bm, buffers, result, command);
 
-        // Capture after state and append context delta
-        if (before) {
-          try {
-            const after = await capturePageState(bm.getPage(), bm, buffers);
-            const delta = buildContextDelta(before, after);
-            if (delta) {
-              result += '\n' + formatContextLine(delta, command);
-            }
-          } catch {
-            // Don't let context capture failures break the command
-          }
+        // Detect `set context` command to update MCP context level
+        if (command === 'set' && args[0] === 'context') {
+          const val = args[1]?.toLowerCase();
+          mcpContextLevel = val === 'on' || val === 'state' ? 'state'
+            : val === 'delta' ? 'delta'
+            : val === 'full' ? 'full'
+            : val === 'off' ? 'off'
+            : mcpContextLevel;
         }
       } else if (META_COMMANDS.has(command)) {
         result = await handleMetaCommand(
