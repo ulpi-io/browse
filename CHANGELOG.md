@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.5.1
+
+**Domain architecture closeout** — final pre-roadmap structural refactor:
+
+- 9 domain directories: `automation/`, `browser/`, `commands/meta/`, `engine/`, `export/`, `mcp/`, `network/`, `security/`, `session/`
+- `AutomationTarget` interface + `BrowserTarget` (48-method capability interface)
+- `SessionTargetFactory` decouples session creation from `BrowserManager`
+- `CommandDefinition` with `execute()` — registry owns both metadata and dispatch
+- `executeCommand()` is the sole execution path for HTTP and MCP transports
+- CLI help generated from registry metadata (no hand-maintained inventory)
+- MCP tool definitions and arg decoding derived from registry (no switch, no static arrays)
+- `src/mcp/index.ts` is the canonical MCP public module
+- Anti-drift guard scripts (`check-architecture-drift.mjs`, `check-legacy-imports.mjs`)
+- 530 tests, 31 architecture tests, `tsc --noEmit` clean
+- Roadmap file paths synced to canonical domain structure
+- All 99 CLI commands verified end-to-end against mumzworld.com
+
 ## v1.5.0
 
 **Snapshot context** — ARIA delta and full snapshot after write commands:
