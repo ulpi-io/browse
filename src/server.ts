@@ -18,6 +18,7 @@ import { handleMetaCommand } from './commands/meta';
 import { PolicyChecker } from './policy';
 import { DEFAULTS } from './constants';
 import { type LogEntry, type NetworkEntry } from './buffers';
+import { capturePageState, buildContextDelta, formatContextLine } from './action-context';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -220,6 +221,7 @@ interface RequestOptions {
   jsonMode: boolean;
   contentBoundaries: boolean;
   maxOutput: number;
+  contextEnabled: boolean;
 }
 
 /**
@@ -311,7 +313,26 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
     if (READ_COMMANDS.has(command)) {
       result = await handleReadCommand(command, args, session.manager, session.buffers);
     } else if (WRITE_COMMANDS.has(command)) {
+      // Capture page state before write command (only if context enabled)
+      const contextEnabled = session.contextEnabled || opts.contextEnabled;
+      const before = contextEnabled
+        ? await capturePageState(session.manager.getPage(), session.manager, session.buffers)
+        : null;
+
       result = await handleWriteCommand(command, args, session.manager, session.domainFilter);
+
+      // Capture after state and append context delta
+      if (before) {
+        try {
+          const after = await capturePageState(session.manager.getPage(), session.manager, session.buffers);
+          const delta = buildContextDelta(before, after);
+          if (delta) {
+            result += '\n' + formatContextLine(delta, command);
+          }
+        } catch {
+          // Don't let context capture failures break the command
+        }
+      }
     } else if (META_COMMANDS.has(command)) {
       result = await handleMetaCommand(command, args, session.manager, shutdown, sessionManager ?? undefined, session);
     } else {
@@ -624,6 +645,7 @@ async function start() {
           jsonMode: req.headers.get('x-browse-json') === '1',
           contentBoundaries: req.headers.get('x-browse-boundaries') === '1',
           maxOutput: parseInt(req.headers.get('x-browse-max-output') || '0', 10) || 0,
+          contextEnabled: req.headers.get('x-browse-context') === '1',
         };
         return handleCommand(body, session, opts);
       }
