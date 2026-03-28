@@ -36,7 +36,7 @@ const cliFlags = {
   profile: '' as string,
   provider: '' as string,
   runtime: '' as string,
-  context: false,
+  context: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -459,7 +459,7 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
     headers['X-Browse-Max-Output'] = String(cliFlags.maxOutput);
   }
   if (cliFlags.context) {
-    headers['X-Browse-Context'] = '1';
+    headers['X-Browse-Context'] = cliFlags.context;
   }
 
   try {
@@ -650,14 +650,28 @@ export async function main() {
   }
   contentBoundaries = contentBoundaries || process.env.BROWSE_CONTENT_BOUNDARIES === '1' || config.contentBoundaries === true;
 
-  // Extract --context flag (only before command)
-  let contextMode = false;
+  // Extract --context flag (only before command) — accepts optional level: state|delta|full
+  let contextMode = '';
   const ctxIdx = args.indexOf('--context');
   if (ctxIdx !== -1 && ctxIdx < findCommandIndex(args)) {
-    contextMode = true;
-    args.splice(ctxIdx, 1);
+    // Check if next arg is a valid level
+    const nextArg = args[ctxIdx + 1];
+    if (nextArg === 'state' || nextArg === 'delta' || nextArg === 'full') {
+      contextMode = nextArg;
+      args.splice(ctxIdx, 2); // remove flag + value
+    } else {
+      contextMode = 'state';
+      args.splice(ctxIdx, 1); // remove flag only
+    }
   }
-  contextMode = contextMode || process.env.BROWSE_CONTEXT === '1' || config.context === true;
+  // Env var support: BROWSE_CONTEXT=1|true -> 'state', BROWSE_CONTEXT=delta|full -> that value
+  const envContext = process.env.BROWSE_CONTEXT;
+  if (!contextMode && envContext) {
+    contextMode = envContext === '1' || envContext === 'true' ? 'state' : envContext;
+  }
+  if (!contextMode && config.context === true) {
+    contextMode = 'state';
+  }
 
   // Extract --allowed-domains flag (only before command)
   let allowedDomains: string | undefined;
@@ -915,7 +929,7 @@ Options:
   --profile <name>         Persistent browser profile (own Chromium, full state persistence)
   --json                   Wrap output as {success, data, command}
   --content-boundaries     Wrap page content in nonce-delimited markers
-  --context                Enable action context (shows what changed after write commands)
+  --context [state|delta|full]  Action context (state=changes, delta=ARIA diff, full=snapshot)
   --allowed-domains <d,d>  Block navigation/resources outside allowlist
   --headed                 Run browser in headed (visible) mode
   --chrome                 Launch system Chrome (uses your profile, cookies, extensions)
