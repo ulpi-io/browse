@@ -810,24 +810,34 @@ Create HTML fixtures with known visual issues and accessibility problems. Write 
 
 ---
 
-### v2.0 — Beyond the Browser (App Automation)
+### v2.0 — Beyond the Browser (Native App Automation, macOS first)
+
+This version extends browse from "browser automation" into "UI automation with one interaction model." The product goal is not to bolt on a separate desktop-testing tool. The goal is to let an agent use the same browse primitives against native apps that it already uses against web pages: inspect structure, get refs, act on elements, read resulting state, and route everything through the same executor, session, MCP, and CLI surfaces.
+
+The architecture choice is deliberate: learn from Maestro's runtime split, but do not copy its product shape. Browse owns the user-facing model. Platform runtimes stay behind a narrow adapter boundary.
+- host-side session/orchestration stays inside browse
+- each platform provides a target-local runtime/controller
+- browse normalizes tree/action/state into refs, snapshots, action-context, MCP, and CLI output
+
+`v2.0` ships `macOS` first because it is the most believable first-party native target. Future `iOS` and `Android` support should plug into the same app-runtime contract with runner-based transports where needed, but browse must keep one command model, one registry, and one transport surface. No second DSL. No duplicated `browse_app_*` namespace. No mobile-specific fork of the product.
 
 ---
 
-### TASK-025: Swift AX bridge — tree retrieval
+### TASK-025: App runtime contract + macOS AX tree bridge
 
-Create `browse-ax/` Swift package with a CLI binary that reads the accessibility tree of any running macOS application. Accepts PID via `--pid`, outputs JSON tree via stdout. Each node: role, label, value, frame (x, y, width, height), children, actionNames.
+Create `src/app/types.ts` with the normalized app-node / app-state contract browse will own, and create `browse-ax/` as a Swift CLI that reads the accessibility tree of a running macOS application by PID. The bridge stays narrow: raw JSON tree in, raw JSON tree out. Browse owns ref assignment, snapshot formatting, and command semantics.
 
-**Files:** `browse-ax/Package.swift` (new), `browse-ax/Sources/main.swift` (new)
+**Files:** `browse-ax/Package.swift` (new), `browse-ax/Sources/main.swift` (new), `src/app/types.ts` (new)
 
 **Type:** feature
 **Effort:** L
 
 **Acceptance Criteria:**
-- [ ] `browse-ax --pid <pid> tree` outputs JSON array of AXUIElement nodes
-- [ ] Each node has: role, label (AXTitle/AXDescription), value (AXValue), frame, children, actions
+- [ ] `browse-ax --pid <pid> tree` outputs JSON tree for the target app/window
+- [ ] Each node includes stable `path` plus role, label, value, frame, enabled, focused, selected, editable, actions, children
+- [ ] Bridge output contains no browse `@refs` and no CLI formatting
+- [ ] Supports deterministic frontmost-window targeting for the PID
 - [ ] Tree depth limited to 30 levels (prevent infinite recursion on malformed trees)
-- [ ] Handles applications without accessibility tree (returns empty array)
 - [ ] Edge case: app is not running → exit with clear error "No process with PID N"
 - [ ] Edge case: no accessibility permission → exit with "Grant Accessibility permission in System Settings"
 
@@ -837,9 +847,9 @@ Create `browse-ax/` Swift package with a CLI binary that reads the accessibility
 
 ---
 
-### TASK-026: Swift AX bridge — action execution
+### TASK-026: macOS AX bridge — action execution + value mutation
 
-Add `browse-ax --pid <pid> action <element-path> <action-name>` command. Element path is a JSON array of child indices (e.g., `[0, 2, 1]` = first window → third child → second child). Action names: AXPress, AXConfirm, AXCancel, AXRaise, AXShowMenu.
+Add `browse-ax --pid <pid> action <node-path> <action-name>` and `browse-ax --pid <pid> set-value <node-path> <value>`. Node path is a JSON array of child indices. The bridge operates only on node paths, never on browse refs.
 
 **Files:** `browse-ax/Sources/main.swift`
 
@@ -848,11 +858,13 @@ Add `browse-ax --pid <pid> action <element-path> <action-name>` command. Element
 
 **Acceptance Criteria:**
 - [ ] `action [0,2,1] AXPress` performs press action on resolved element
+- [ ] `set-value [0,1,3] "test@example.com"` sets AXValue on editable controls
 - [ ] Returns JSON `{ "success": true }` on success
 - [ ] Returns JSON `{ "success": false, "error": "Action not supported" }` on unsupported action
 - [ ] Element path resolution walks tree by child indices
 - [ ] Edge case: path out of bounds → clear error with available children count
 - [ ] Edge case: element no longer exists (stale path) → "Element not found at path"
+- [ ] Edge case: target element is not editable → "Element is not editable"
 
 **Agent:** ios-macos-senior-engineer
 **Review:** claude
@@ -861,9 +873,9 @@ Add `browse-ax --pid <pid> action <element-path> <action-name>` command. Element
 
 ---
 
-### TASK-027: Swift AX bridge — set value + screenshot
+### TASK-027: macOS AX bridge — focused input, screenshot, and state probe
 
-Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fields. Add focused-element keyboard input commands (`type`, `press`) and `browse-ax --pid <pid> screenshot <path>` for capturing the app's window as PNG.
+Add focused-element keyboard input commands (`type`, `press`), `browse-ax --pid <pid> screenshot <path>` for capturing the target window as PNG, and a lightweight `state` command for action-context / readiness (`windowTitle`, `focusedPath`, `elementCount`, `windowCount`, optional static/screen-stable hint).
 
 **Files:** `browse-ax/Sources/main.swift`
 
@@ -871,13 +883,13 @@ Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fi
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `set-value [0,1,3] "test@example.com"` sets AXValue on the target element
 - [ ] `type "hello"` sends text input to the currently focused element
 - [ ] `press Enter` sends a key event to the focused element
 - [ ] Returns success/failure JSON
 - [ ] `screenshot /tmp/app.png` captures the frontmost window of the target PID as PNG
 - [ ] Uses CGWindowListCreateImage for window capture (no full-screen capture)
-- [ ] Edge case: text field is not editable → "Element is not editable (AXEnabled: false)"
+- [ ] `state` returns at least: windowTitle, focusedPath, elementCount, windowCount, appName
+- [ ] If a static/screen-stable hint is cheaply available, `state` includes it; otherwise the field is omitted without failure
 - [ ] Edge case: no focused element for `type` / `press` → clear error instead of silent drop
 - [ ] Edge case: app window is minimized → "Window is minimized. Restore it first."
 
@@ -888,11 +900,11 @@ Add `browse-ax --pid <pid> set-value <element-path> <value>` for filling text fi
 
 ---
 
-### TASK-028: Build system for Swift binary
+### TASK-028: Build system + runtime resolution for macOS bridge
 
-Configure build process: produce distributable macOS bridge artifacts, include them in the npm package (or lazily download them), and resolve the correct binary at runtime. Add `postinstall` script or lazy-download pattern (like react-devtools hook download).
+Configure build process: produce distributable macOS bridge artifacts, include them in the npm package (or lazily download them), and resolve the correct binary at runtime behind a macOS-specific module. Keep bootstrap and runtime resolution isolated from CLI/server transport code.
 
-**Files:** `browse-ax/Package.swift`, `package.json`, `scripts/build-all.sh`, `src/app-bridge.ts` (new)
+**Files:** `browse-ax/Package.swift`, `package.json`, `scripts/build-all.sh`, `src/app/macos/bridge.ts` (new), `src/app/index.ts` (new)
 
 **Type:** infra
 **Effort:** M
@@ -900,10 +912,11 @@ Configure build process: produce distributable macOS bridge artifacts, include t
 **Acceptance Criteria:**
 - [ ] Build pipeline produces arm64 and x86_64 bridge artifacts and packages either a universal binary (`lipo`) or an explicit per-arch runtime selection strategy
 - [ ] Binary included in npm package (or lazy-downloaded to `.browse/bin/browse-ax` on first use)
-- [ ] `app-bridge.ts` exports `ensureBridge(): Promise<string>` that returns path to binary (download if needed)
+- [ ] `src/app/macos/bridge.ts` exports `ensureMacOSBridge(): Promise<string>` that returns path to binary (download if needed)
 - [ ] Works on macOS arm64 and x86_64
 - [ ] `npm pack` verification proves the shipped tarball contains the expected bridge artifact metadata or lazy-download bootstrap files
 - [ ] Edge case: non-macOS platform → throws "App automation requires macOS (uses Accessibility API)"
+- [ ] Bridge bootstrap is isolated to the app domain, not scattered across CLI/server code
 
 **Agent:** ios-macos-senior-engineer
 **Review:** none
@@ -912,23 +925,24 @@ Configure build process: produce distributable macOS bridge artifacts, include t
 
 ---
 
-### TASK-029: AppManager class — connect, snapshot, text
+### TASK-029: App domain runtime — normalize tree, snapshot, text
 
-Create `src/app-manager.ts` with AppManager class. Spawns browse-ax binary, communicates via JSON over stdin/stdout. Implements `connect(appName)`, `snapshot(opts)` (with @ref assignment), and `text()`.
+Create the app domain runtime that spawns `browse-ax`, normalizes raw AX output into browse-owned node/state structures, assigns refs host-side, and implements `connect(appName)`, `snapshot(opts)`, and `text()`.
 
-**Files:** `src/app-manager.ts` (new)
+**Files:** `src/app/normalize.ts` (new), `src/app/manager.ts` (new), `src/app/index.ts`
 
 **Type:** feature
 **Effort:** L
 
 **Acceptance Criteria:**
-- [ ] `connect("Simulator")` finds PID by app name (via `pgrep`), spawns browse-ax
+- [ ] `connect("Simulator")` resolves the target app by exact app name or bundle id and spawns `browse-ax`
+- [ ] Ambiguous matches fail with explicit choices instead of guessing
 - [ ] `snapshot({ interactive: true })` returns text with @refs (same format as web snapshot)
-- [ ] @refs assigned by role+label matching (same numbering scheme as web)
-- [ ] `text()` extracts all AXValue and AXTitle strings as visible text
+- [ ] @refs are assigned host-side from normalized node paths, not by the bridge
+- [ ] `text()` extracts visible AXTitle / AXValue / label strings as visible text
 - [ ] Ref map stored for later tap/fill resolution
 - [ ] Edge case: app not running → "App 'Simulator' is not running"
-- [ ] Edge case: multiple windows → uses frontmost window
+- [ ] Edge case: frontmost-window selection is deterministic and documented
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
@@ -937,22 +951,24 @@ Create `src/app-manager.ts` with AppManager class. Spawns browse-ax binary, comm
 
 ---
 
-### TASK-030: AppManager class — tap, fill, type, press
+### TASK-030: App domain runtime — tap, fill, type, press, screenshot
 
-Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)` → AXSetValue, `type(text)` → keyboard input, `press(key)` → key event.
+Add interaction methods to the app runtime: `tap(ref)` → bridge action, `fill(ref, value)` → bridge set-value, `type(text)` / `press(key)` → focused input, `screenshot()` → bridge screenshot.
 
-**Files:** `src/app-manager.ts`
+**Files:** `src/app/manager.ts`
 
 **Type:** feature
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `tap(@e3)` resolves ref to element path, performs AXPress
-- [ ] `fill(@e2, "test")` resolves ref, sets AXValue
-- [ ] `type("hello")` sends keyboard events character by character
-- [ ] `press("Enter")` sends key event
+- [ ] `tap(@e3)` resolves ref to node path, performs bridge action
+- [ ] `fill(@e2, "test")` resolves ref, performs bridge set-value
+- [ ] `type("hello")` sends keyboard input through the focused-element command
+- [ ] `press("Enter")` sends key event through the focused-element command
+- [ ] `screenshot()` captures the active target window through the bridge
 - [ ] Each method returns confirmation string (same format as web commands)
 - [ ] Edge case: stale ref → "Ref @e3 not found. Run 'snapshot' to refresh."
+- [ ] Edge case: unsupported action on target element → clear error from the bridge/runtime
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** none
@@ -961,25 +977,26 @@ Add interaction methods to AppManager: `tap(ref)` → AXPress, `fill(ref, value)
 
 ---
 
-### TASK-031: App command dispatcher and --app CLI flag
+### TASK-031: Unified target selection + capability gating
 
-Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to AppManager. Add `--app <name>` flag to CLI and server routing, and introduce a shared session-target abstraction so browser and app sessions route through the same top-level dispatch model without web regressions.
+Integrate app targets through the existing registry / executor / session architecture. Add `--app <name>` as target selection, not as a second dispatcher surface. Keep the same commands across browser and app targets and reject unsupported capabilities centrally.
 
-**Files:** `src/commands/app.ts` (new), `src/cli.ts`, `src/server.ts`, `src/session/manager.ts`, `automation/registry.ts`, `src/types.ts`
+**Files:** `src/cli.ts`, `src/server.ts`, `src/session/target-factory.ts`, `src/session/manager.ts`, `src/automation/registry.ts`, `src/automation/command.ts`, `src/types.ts`, `src/app/manager.ts`
 
 **Type:** feature
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `browse --app "Simulator" snapshot -i` routes to AppManager.snapshot
-- [ ] `browse --app "Simulator" tap @e3` routes to AppManager.tap
+- [ ] `browse --app "Simulator" snapshot -i` routes through the same executor used by browser commands
+- [ ] `browse --app "Simulator" tap @e3` routes through the same executor used by browser commands
 - [ ] Shared session-target abstraction cleanly separates browser sessions from app sessions while preserving existing browser dispatch behavior
-- [ ] Supported commands: snapshot, text, tap, fill, type, press, screenshot, expect, wait
-- [ ] Unsupported commands (html, css, js, etc.) → clear error "Command 'html' not available for apps. Use 'text' or 'snapshot' instead."
+- [ ] Supported app-target commands: snapshot, text, tap, fill, type, press, screenshot
+- [ ] Unsupported commands (html, css, js, etc.) → clear error "Command 'html' not available for app targets. Use 'text' or 'snapshot' instead."
 - [ ] `--app` flag stored in `cliFlags.app`, sent as `X-Browse-App` header
-- [ ] Server creates AppManager (alongside or instead of BrowserManager) when app header present
+- [ ] App targets are created through `SessionTargetFactory`, not ad hoc in transport code
 - [ ] Unsupported-command gating happens centrally before command execution, not ad hoc in scattered handlers
 - [ ] Edge case: `--app` and `--session` work together (isolated app sessions)
+- [ ] The app-target contract is shaped so future iOS/Android runtimes can plug in without changing CLI or MCP semantics
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
@@ -988,11 +1005,11 @@ Create `src/commands/app.ts` with `handleAppCommand()` that routes commands to A
 
 ---
 
-### TASK-032: Action context for app commands
+### TASK-032: Action context + readiness for app targets
 
-Wire action context (before/after state capture + delta) into app commands. State = current screen title, focused element, element count. Delta = screen changed, focus changed, element count changed.
+Wire action context into app commands using lightweight before/after `state` probes from the bridge/runtime. State = current screen title, focused element, element count, optional static/screen-stable signal. Delta = screen changed, focus changed, element count changed, readiness changed.
 
-**Files:** `src/app-manager.ts`, `src/automation/action-context.ts`
+**Files:** `src/app/manager.ts`, `src/automation/action-context.ts`, `src/app/types.ts`
 
 **Type:** feature
 **Effort:** M
@@ -1000,9 +1017,11 @@ Wire action context (before/after state capture + delta) into app commands. Stat
 **Acceptance Criteria:**
 - [ ] After `tap @e3`, context line shows screen change: `[context] screen: "Login" | focus: @e4`
 - [ ] After `fill @e2 "text"`, context line shows value set (or nothing if no screen change)
-- [ ] State captured via browse-ax tree query (lightweight — just root window title + focused element)
+- [ ] State captured via lightweight bridge/runtime probe rather than full snapshot formatting
+- [ ] When available, context includes `settled: true|false` for app-target writes
 - [ ] Empty context line when nothing changes (same as web behavior)
 - [ ] Edge case: app crash between before/after → context gracefully skipped
+- [ ] Edge case: static/screen-stable hint unavailable → context still works without the readiness field
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** none
@@ -1011,19 +1030,19 @@ Wire action context (before/after state capture + delta) into app commands. Stat
 
 ---
 
-### TASK-033: MCP tools + CLI help for app commands
+### TASK-033: CLI, MCP, and doctor integration for app targets
 
-Register app-specific MCP tools, update CLI help with --app usage, and extend `doctor` to validate bridge availability plus Accessibility permission guidance.
+Update help, MCP, and `doctor` to support app targets on the same command surface. Do not create a second `browse_app_*` namespace. Existing tools/commands must accept target selection and route through the same definitions.
 
-**Files:** `mcp/tools/index.ts`, `src/cli.ts`, `src/commands/meta/index.ts`
+**Files:** `src/mcp/tools/index.ts`, `src/cli.ts`, `src/commands/meta/index.ts`, `src/automation/registry.ts`
 
 **Type:** chore
 **Effort:** S
 
 **Acceptance Criteria:**
-- [ ] `browse_app_snapshot`, `browse_app_tap`, `browse_app_fill`, `browse_app_text` MCP tools
-- [ ] Each tool has `app` param (app name) + command-specific params
-- [ ] CLI help shows `--app <name>` in Options section with description
+- [ ] Existing MCP tools can target apps through session state or explicit target-selection params
+- [ ] No duplicated `browse_app_*` MCP inventory is introduced
+- [ ] CLI help shows `--app <name>` in Options section with description and macOS-only note
 - [ ] `browse doctor` checks: browse-ax binary present, Accessibility permission granted
 - [ ] `browse doctor` shows explicit next-step instructions when the bridge or permission is missing
 - [ ] Edge case: non-macOS → doctor reports "App automation not available (macOS only)"
@@ -1035,11 +1054,11 @@ Register app-specific MCP tools, update CLI help with --app usage, and extend `d
 
 ---
 
-### TASK-034: Integration tests for app automation
+### TASK-034: Integration tests + future mobile runtime contract harness
 
-Test AppManager with mocked bridge-protocol tests plus a gated real macOS integration target (TextEdit or a test Electron app). Verify snapshot, tap, fill, action context, unsupported-command handling, and browser/app session isolation.
+Test the app runtime with mocked bridge-protocol tests plus a gated real macOS integration target (TextEdit or a test Electron app). Also define a runtime-contract harness so future Android/iOS adapters can reuse the same host-side normalization, refs, actions, and context semantics without changing browse commands.
 
-**Files:** `test/app.test.ts` (new), `test/app-manager.test.ts` (new)
+**Files:** `test/app.test.ts` (new), `test/app-manager.test.ts` (new), `test/app-runtime-contract.test.ts` (new)
 
 **Type:** test
 **Effort:** M
@@ -1049,11 +1068,11 @@ Test AppManager with mocked bridge-protocol tests plus a gated real macOS integr
 - [ ] Test: text on TextEdit returns window content
 - [ ] Test: fill on TextEdit text field sets value
 - [ ] Test: action context reports changes after interaction
-- [ ] Unit/contract test: mocked bridge returns permission denied / app-not-running / stale-ref failures with the documented messages
+- [ ] Unit/contract test: mocked bridge returns permission denied / app-not-running / stale-ref / ambiguous-app failures with the documented messages
 - [ ] Test: unsupported app command is rejected centrally with the documented guidance
 - [ ] Test: browser session behavior is unchanged while an app session is active
-- [ ] Test: stale ref after window change → clear error
-- [ ] Skip: tests skip on non-macOS platforms (CI compatibility)
+- [ ] Test: runtime-contract harness covers `tree`, `action`, `set-value`, `type`, `press`, `screenshot`, and `state`
+- [ ] Skip: real-macOS tests skip on non-macOS platforms (CI compatibility)
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
@@ -1362,7 +1381,9 @@ Expand `browse.json` into the project-local control plane for the agent toolkit.
 | WCAG contrast calculation wrong on gradients/images | TASK-019, TASK-024 | Skip contrast check when background is gradient or image. Document limitation and test the skip path explicitly. |
 | macOS Accessibility permission UX is confusing | TASK-025, TASK-033 | `browse doctor` checks permission and prints step-by-step remediation with System Settings guidance. |
 | User denies or can't find AX permission grant | TASK-025, TASK-031, TASK-034 | `browse --app` fails fast with "Accessibility permission required". Mocked bridge tests and doctor output verify the recovery path. |
+| Raw AX node paths become stale after window changes | TASK-029, TASK-030, TASK-034 | Keep refs host-side, resolve bridge actions through normalized node paths, and fail with explicit stale-ref guidance instead of reusing invalid paths. |
 | Runtime split breaks existing browser sessions | TASK-031, TASK-034 | Introduce shared session-target abstraction and require browser-regression coverage while app sessions are active. |
+| Future iOS/Android targets force a second command or MCP surface | TASK-031, TASK-033, TASK-034 | Keep one command model and validate future adapters through the app-runtime contract harness before adding mobile-specific transports. |
 | Swift bridge packaging drifts from shipped npm artifact | TASK-028 | Verify bridge asset presence through `npm pack`, not only local source builds. |
 | Flow YAML syntax errors confuse agents | TASK-035, TASK-039 | Use explicit YAML parser dependency with line/column errors. Cover malformed YAML, duplicate keys, and unknown commands in parser tests. |
 | Custom rules become a second plugin system via arbitrary code execution | TASK-040, TASK-044 | Keep rule files declarative JSON only. Reject JS/eval-based rule shapes in schema validation and cover malformed/unknown rule types in contract tests. |
@@ -1408,11 +1429,12 @@ Expand `browse.json` into the project-local control plane for the agent toolkit.
 | a11y-audit scoring | TASK-024 | integration |
 | a11y-audit findings (alt, label, heading, touch target, generic link, missing lang) | TASK-024 | integration |
 | a11y focus-order warning | TASK-024 | integration |
-| AX bridge tree retrieval | TASK-034 | integration |
-| AX bridge tap/fill/type/press actions | TASK-034 | integration |
-| App snapshot with @refs | TASK-034 | integration |
-| App action context | TASK-034 | integration |
-| App mocked bridge failures (permission denied, stale ref, app missing) | TASK-034 | contract |
+| AX bridge + normalized tree retrieval | TASK-034 | integration |
+| App ref resolution + bridge action / set-value | TASK-034 | integration |
+| App snapshot with host-assigned @refs | TASK-034 | integration |
+| App action context + readiness | TASK-034 | integration |
+| App mocked bridge failures (permission denied, stale ref, app missing, ambiguous app) | TASK-034 | contract |
+| App runtime contract harness (`tree/action/set-value/type/press/screenshot/state`) | TASK-034 | contract |
 | Browser sessions remain stable while app sessions are active | TASK-034 | integration |
 | Flow parser malformed YAML / duplicate keys / unknown commands | TASK-039 | unit |
 | Flow execution (pass) | TASK-039 | integration |

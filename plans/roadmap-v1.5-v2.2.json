@@ -179,12 +179,30 @@
       "mitigation": "browse --app fails fast with accessibility guidance. Mocked bridge tests and doctor output verify the recovery path."
     },
     {
+      "risk": "Raw AX node paths become stale after window changes",
+      "affectedTasks": [
+        "TASK-029",
+        "TASK-030",
+        "TASK-034"
+      ],
+      "mitigation": "Keep refs host-side, resolve bridge actions through normalized node paths, and fail with explicit stale-ref guidance instead of reusing invalid paths."
+    },
+    {
       "risk": "Runtime split breaks existing browser sessions",
       "affectedTasks": [
         "TASK-031",
         "TASK-034"
       ],
       "mitigation": "Introduce shared session-target abstraction and require browser-regression coverage while app sessions are active."
+    },
+    {
+      "risk": "Future iOS or Android targets force a second command or MCP surface",
+      "affectedTasks": [
+        "TASK-031",
+        "TASK-033",
+        "TASK-034"
+      ],
+      "mitigation": "Keep one command model and validate future adapters through the app-runtime contract harness before adding mobile-specific transports."
     },
     {
       "risk": "Swift bridge packaging drifts from shipped npm artifact",
@@ -419,27 +437,32 @@
       "testType": "integration"
     },
     {
-      "codepath": "AX bridge tree retrieval",
+      "codepath": "AX bridge + normalized tree retrieval",
       "coveringTask": "TASK-034",
       "testType": "integration"
     },
     {
-      "codepath": "AX bridge tap/fill/type/press actions",
+      "codepath": "App ref resolution + bridge action / set-value",
       "coveringTask": "TASK-034",
       "testType": "integration"
     },
     {
-      "codepath": "App snapshot with @refs",
+      "codepath": "App snapshot with host-assigned @refs",
       "coveringTask": "TASK-034",
       "testType": "integration"
     },
     {
-      "codepath": "App action context",
+      "codepath": "App action context + readiness",
       "coveringTask": "TASK-034",
       "testType": "integration"
     },
     {
-      "codepath": "App mocked bridge failures (permission denied, stale ref, app missing)",
+      "codepath": "App mocked bridge failures (permission denied, stale ref, app missing, ambiguous app)",
+      "coveringTask": "TASK-034",
+      "testType": "contract"
+    },
+    {
+      "codepath": "App runtime contract harness (`tree/action/set-value/type/press/screenshot/state`)",
       "coveringTask": "TASK-034",
       "testType": "contract"
     },
@@ -1249,30 +1272,33 @@
     },
     {
       "id": "TASK-025",
-      "title": "Swift AX bridge — tree retrieval",
-      "description": "Create browse-ax Swift CLI that reads AX tree of any macOS app by PID. Output JSON.",
+      "title": "App runtime contract + macOS AX tree bridge",
+      "description": "Create the browse-owned app node and state contract in src/app/types.ts, and create browse-ax as a Swift CLI that reads a running macOS app's accessibility tree by PID/window. The bridge stays narrow and raw; browse owns refs, formatting, and command semantics.",
       "type": "feature",
       "effort": "L",
       "priority": "P0",
       "dependsOn": [],
       "acceptanceCriteria": [
-        "Tree output as JSON",
-        "Each node: role, label, value, frame, children, actions",
-        "Depth limit 30",
-        "Clear error on missing PID/permission"
+        "browse-ax --pid <pid> tree outputs JSON tree for the target app or window",
+        "Each node includes stable path plus role, label, value, frame, enabled, focused, selected, editable, actions, and children",
+        "Bridge output contains no browse refs and no CLI formatting",
+        "Frontmost-window targeting for the PID is deterministic",
+        "Tree depth limited to 30",
+        "Clear error on missing PID or permission"
       ],
       "filesToModify": [],
       "filesToCreate": [
         "browse-ax/Package.swift",
-        "browse-ax/Sources/main.swift"
+        "browse-ax/Sources/main.swift",
+        "src/app/types.ts"
       ],
       "agent": "ios-macos-senior-engineer",
       "review": "claude"
     },
     {
       "id": "TASK-026",
-      "title": "Swift AX bridge — action execution",
-      "description": "Add action command: browse-ax --pid N action <path> <action>. Performs AXPress, AXConfirm, etc.",
+      "title": "macOS AX bridge — action execution + value mutation",
+      "description": "Add action and set-value commands to browse-ax. The bridge operates on node paths, never on browse refs.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -1280,10 +1306,12 @@
         "TASK-025"
       ],
       "acceptanceCriteria": [
-        "AXPress works",
-        "Returns success/failure JSON",
+        "action [path] AXPress works",
+        "set-value [path] text works for editable controls",
+        "Returns success or failure JSON",
         "Clear error on unsupported action",
-        "Stale path error"
+        "Clear stale-path error",
+        "Clear non-editable error"
       ],
       "filesToModify": [
         "browse-ax/Sources/main.swift"
@@ -1294,8 +1322,8 @@
     },
     {
       "id": "TASK-027",
-      "title": "Swift AX bridge — set value + keyboard + screenshot",
-      "description": "Add set-value, type, press, and screenshot commands to browse-ax.",
+      "title": "macOS AX bridge — focused input, screenshot, and state probe",
+      "description": "Add type, press, screenshot, and lightweight state commands to browse-ax for focused input, window capture, and app action-context readiness.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -1303,12 +1331,12 @@
         "TASK-025"
       ],
       "acceptanceCriteria": [
-        "set-value sets AXValue",
         "type sends text input to focused element",
         "press sends key event to focused element",
-        "screenshot captures window as PNG",
-        "Clear error when no focused element exists for type/press",
-        "Clear errors for non-editable/minimized"
+        "screenshot captures the target window as PNG",
+        "state returns windowTitle, focusedPath, elementCount, windowCount, and appName",
+        "Optional static or screen-stable hint is included when cheaply available",
+        "Clear error when no focused element exists or the window is minimized"
       ],
       "filesToModify": [
         "browse-ax/Sources/main.swift"
@@ -1319,8 +1347,8 @@
     },
     {
       "id": "TASK-028",
-      "title": "Build system for Swift binary",
-      "description": "Produce distributable macOS bridge artifacts, ship them in npm or lazy-download them, and resolve the correct binary at runtime.",
+      "title": "Build system + runtime resolution for macOS bridge",
+      "description": "Produce distributable macOS bridge artifacts, ship them in npm or lazy-download them, and resolve the correct binary at runtime behind a macOS-specific app module.",
       "type": "infra",
       "effort": "M",
       "priority": "P1",
@@ -1329,24 +1357,27 @@
       ],
       "acceptanceCriteria": [
         "Build pipeline produces arm64 and x86_64 artifacts and packages either a universal binary or explicit per-arch runtime selection",
-        "app-bridge.ts ensureBridge() returns path",
+        "src/app/macos/bridge.ts exports ensureMacOSBridge() and returns the resolved binary path",
         "npm pack verification proves bridge artifact bootstrap files are present in the shipped tarball",
-        "Non-macOS throws clear error"
+        "Non-macOS throws clear error",
+        "Bridge bootstrap is isolated to the app domain"
       ],
       "filesToModify": [
+        "browse-ax/Package.swift",
         "package.json",
         "scripts/build-all.sh"
       ],
       "filesToCreate": [
-        "src/app-bridge.ts"
+        "src/app/macos/bridge.ts",
+        "src/app/index.ts"
       ],
       "agent": "ios-macos-senior-engineer",
       "review": "none"
     },
     {
       "id": "TASK-029",
-      "title": "AppManager — connect, snapshot, text",
-      "description": "Create src/app-manager.ts. Spawns browse-ax, implements connect/snapshot (with @refs)/text.",
+      "title": "App domain runtime — normalize tree, snapshot, text",
+      "description": "Create the app domain runtime that spawns browse-ax, normalizes raw AX output into browse-owned node and state structures, assigns refs host-side, and implements connect, snapshot, and text.",
       "type": "feature",
       "effort": "L",
       "priority": "P1",
@@ -1355,22 +1386,27 @@
         "TASK-028"
       ],
       "acceptanceCriteria": [
-        "connect finds PID by name",
-        "snapshot returns text with @refs",
-        "text extracts all visible text",
-        "App not running error"
+        "connect resolves the target app by exact app name or bundle id",
+        "Ambiguous app matches fail with explicit choices instead of guessing",
+        "snapshot returns text with refs in the same format as web snapshot",
+        "Refs are assigned host-side from normalized node paths",
+        "text extracts visible title, value, and label strings",
+        "App not running error is clear and deterministic"
       ],
-      "filesToModify": [],
+      "filesToModify": [
+        "src/app/index.ts"
+      ],
       "filesToCreate": [
-        "src/app-manager.ts"
+        "src/app/normalize.ts",
+        "src/app/manager.ts"
       ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"
     },
     {
       "id": "TASK-030",
-      "title": "AppManager — tap, fill, type, press",
-      "description": "Add interaction methods to AppManager using browse-ax action/set-value/type/press commands.",
+      "title": "App domain runtime — tap, fill, type, press, screenshot",
+      "description": "Add interaction methods to the app runtime using bridge action, set-value, focused input, and screenshot commands.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -1378,14 +1414,15 @@
         "TASK-029"
       ],
       "acceptanceCriteria": [
-        "tap resolves ref + AXPress",
-        "fill resolves ref + AXSetValue",
-        "type sends keyboard events",
-        "press sends key event",
-        "Stale ref error"
+        "tap resolves ref to node path and invokes bridge action",
+        "fill resolves ref to node path and invokes bridge set-value",
+        "type sends focused keyboard input",
+        "press sends focused key event",
+        "screenshot returns the target window PNG",
+        "Stale ref error is clear and tells the user to refresh snapshot"
       ],
       "filesToModify": [
-        "src/app-manager.ts"
+        "src/app/manager.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -1393,8 +1430,8 @@
     },
     {
       "id": "TASK-031",
-      "title": "App command dispatcher + --app flag",
-      "description": "Create commands/app.ts, add --app flag to CLI, route app commands in server, and introduce a shared session-target abstraction so browser and app sessions share top-level dispatch safely.",
+      "title": "Unified target selection + capability gating",
+      "description": "Integrate app targets through the existing registry, executor, and session architecture. Add --app as target selection, not as a second dispatcher surface, and gate unsupported capabilities centrally.",
       "type": "feature",
       "effort": "M",
       "priority": "P1",
@@ -1403,30 +1440,32 @@
         "TASK-030"
       ],
       "acceptanceCriteria": [
-        "--app Simulator snapshot -i works",
-        "--app Simulator tap @e3 works",
+        "--app Simulator snapshot -i works through the same executor as browser commands",
+        "--app Simulator tap @e3 works through the same executor as browser commands",
         "Shared session-target abstraction preserves existing browser dispatch while enabling app sessions",
-        "Unsupported commands → clear error",
-        "Unsupported command gating happens centrally before execution",
-        "--app + --session work together"
+        "Supported app-target commands are snapshot, text, tap, fill, type, press, and screenshot",
+        "Unsupported commands are rejected centrally with clear guidance",
+        "--app plus --session work together",
+        "The app-target contract leaves room for future iOS or Android runtimes without changing CLI or MCP semantics"
       ],
       "filesToModify": [
         "src/cli.ts",
         "src/server.ts",
+        "src/session/target-factory.ts",
         "src/session/manager.ts",
         "src/automation/registry.ts",
-        "src/types.ts"
+        "src/automation/command.ts",
+        "src/types.ts",
+        "src/app/manager.ts"
       ],
-      "filesToCreate": [
-        "src/commands/app.ts"
-      ],
+      "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"
     },
     {
       "id": "TASK-032",
-      "title": "Action context for app commands",
-      "description": "Wire before/after state capture into app commands. State = screen title + focused element.",
+      "title": "Action context + readiness for app targets",
+      "description": "Wire before and after state capture into app commands using lightweight bridge or runtime state probes. Include best-effort readiness when a static or screen-stable hint is available.",
       "type": "feature",
       "effort": "M",
       "priority": "P2",
@@ -1436,12 +1475,16 @@
       ],
       "acceptanceCriteria": [
         "Context line after tap shows screen change",
+        "Context line after fill shows focus or state change when present",
+        "State is captured via lightweight probe rather than full snapshot formatting",
+        "When available, context includes settled true or false for app-target writes",
         "Empty context when nothing changes",
         "App crash gracefully skipped"
       ],
       "filesToModify": [
-        "src/app-manager.ts",
-        "src/automation/action-context.ts"
+        "src/app/manager.ts",
+        "src/automation/action-context.ts",
+        "src/app/types.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -1449,8 +1492,8 @@
     },
     {
       "id": "TASK-033",
-      "title": "MCP tools + CLI help for app commands",
-      "description": "Register app MCP tools, update CLI help, and extend doctor to validate bridge availability plus Accessibility guidance.",
+      "title": "CLI, MCP, and doctor integration for app targets",
+      "description": "Update help, MCP, and doctor to support app targets on the same command surface. Do not create a separate browse_app tool namespace.",
       "type": "chore",
       "effort": "S",
       "priority": "P2",
@@ -1458,15 +1501,17 @@
         "TASK-031"
       ],
       "acceptanceCriteria": [
-        "App MCP tools defined",
-        "CLI help shows --app",
-        "Doctor checks browse-ax + AX permission",
+        "Existing MCP tools can target apps through session state or explicit target-selection params",
+        "No duplicated browse_app MCP inventory is introduced",
+        "CLI help shows --app and the macOS-only note",
+        "Doctor checks browse-ax and accessibility permission",
         "Doctor prints explicit remediation steps when bridge or permission is missing"
       ],
       "filesToModify": [
         "src/mcp/tools/index.ts",
         "src/cli.ts",
-        "src/commands/meta/index.ts"
+        "src/commands/meta/index.ts",
+        "src/automation/registry.ts"
       ],
       "filesToCreate": [],
       "agent": "nodejs-cli-senior-engineer",
@@ -1474,8 +1519,8 @@
     },
     {
       "id": "TASK-034",
-      "title": "Integration tests for app automation",
-      "description": "Test AppManager with mocked bridge-contract tests plus gated real macOS integration. Verify snapshot, tap, fill, context, unsupported-command handling, and browser/app session isolation.",
+      "title": "Integration tests + future mobile runtime contract harness",
+      "description": "Test the app runtime with mocked bridge contracts plus gated real macOS integration. Also define a runtime-contract harness so future Android or iOS adapters can reuse the same host-side normalization, refs, actions, and context semantics.",
       "type": "test",
       "effort": "M",
       "priority": "P2",
@@ -1485,18 +1530,20 @@
         "TASK-033"
       ],
       "acceptanceCriteria": [
-        "Snapshot returns tree with @refs",
+        "Snapshot returns tree with refs",
         "Fill sets value",
         "Context reports changes",
-        "Mocked bridge failures cover permission denied, app missing, and stale ref",
+        "Mocked bridge failures cover permission denied, app missing, stale ref, and ambiguous app",
         "Unsupported app command rejection tested",
         "Browser session behavior remains stable while app session is active",
-        "Skips on non-macOS"
+        "Runtime contract harness covers tree, action, set-value, type, press, screenshot, and state",
+        "Skips real macOS integration on non-macOS"
       ],
       "filesToModify": [],
       "filesToCreate": [
         "test/app.test.ts",
-        "test/app-manager.test.ts"
+        "test/app-manager.test.ts",
+        "test/app-runtime-contract.test.ts"
       ],
       "agent": "nodejs-cli-senior-engineer",
       "review": "claude"

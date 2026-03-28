@@ -15,6 +15,32 @@ export async function startTestServer(port: number = 0): Promise<{ server: http.
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', `http://127.0.0.1`);
 
+    // POST /api/echo — returns request body as JSON response
+    if (url.pathname === '/api/echo' && req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf-8');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ echo: body, method: req.method }));
+      });
+      return;
+    }
+
+    // GET /api/data — returns known JSON payload
+    if (url.pathname === '/api/data') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ items: [1, 2, 3], total: 3 }));
+      return;
+    }
+
+    // GET /api/binary — returns binary response
+    if (url.pathname === '/api/binary') {
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+      res.end(Buffer.from([0x00, 0x01, 0x02, 0x03]));
+      return;
+    }
+
     // Special route: downloadable file with Content-Disposition
     if (url.pathname === '/download/test.txt') {
       res.writeHead(200, {
