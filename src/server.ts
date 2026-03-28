@@ -324,7 +324,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
 
     // Apply content boundaries for page-content commands
     if (opts.contentBoundaries && spec.pageContent) {
-      const origin = bm.getCurrentUrl();
+      const origin = bt.getCurrentUrl();
       result = `--- BROWSE_CONTENT nonce=${BOUNDARY_NONCE} origin=${origin} ---\n${result}\n--- END_BROWSE_CONTENT nonce=${BOUNDARY_NONCE} ---`;
     }
 

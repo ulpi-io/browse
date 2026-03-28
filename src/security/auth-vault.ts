@@ -10,7 +10,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { BrowserManager } from '../browser/manager';
+import type { BrowserTarget } from '../browser/target';
 import { DEFAULTS } from '../constants';
 import { resolveEncryptionKey, encrypt, decrypt } from '../session/encryption';
 import { sanitizeName } from './sanitize';
@@ -86,7 +86,7 @@ export class AuthVault {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   }
 
-  async login(name: string, bm: BrowserManager): Promise<string> {
+  async login(name: string, bm: BrowserTarget): Promise<string> {
     const cred = this.load(name);
     const password = decrypt(cred.data, cred.iv, cred.authTag, this.encryptionKey);
     const page = bm.getPage();

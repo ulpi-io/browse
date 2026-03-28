@@ -75,6 +75,7 @@ export interface BrowserTarget extends AutomationTarget {
   // ─── Snapshot ───────────────────────────────────────────
   getLastSnapshot(): string | null;
   getLastSnapshotOpts(): string[];
+  setLastSnapshot(text: string, opts?: string[]): void;
 
   // ─── HAR recording ──────────────────────────────────────
   startHarRecording(): void;
@@ -92,4 +93,13 @@ export interface BrowserTarget extends AutomationTarget {
   // ─── Session handoff ────────────────────────────────────
   handoff(message: string, useChromium?: boolean): Promise<string>;
   resume(): Promise<string>;
+
+  // ─── React DevTools ─────────────────────────────────────
+  getReactDevToolsEnabled(): boolean;
+  setReactDevToolsEnabled(enabled: boolean): void;
+
+  // ─── Failure tracking ──────────────────────────────────
+  resetFailures(): void;
+  incrementFailures(): void;
+  getFailureHint(): string | null;
 }

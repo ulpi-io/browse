@@ -19,7 +19,7 @@
  */
 
 import type { Page, Frame, FrameLocator, Locator } from 'playwright';
-import type { BrowserManager } from './manager';
+import type { BrowserTarget } from './target';
 
 // Roles considered "interactive" for the -i flag
 const INTERACTIVE_ROLES = new Set([
@@ -329,7 +329,7 @@ async function findCursorInteractiveElements(
  */
 export async function handleSnapshot(
   args: string[],
-  bm: BrowserManager
+  bm: BrowserTarget
 ): Promise<string> {
   const opts = parseSnapshotArgs(args);
   const page = bm.getPage();
@@ -560,7 +560,7 @@ async function appendCursorElements(
   output: string[],
   refMap: Map<string, Locator>,
   refCounter: number,
-  bm: BrowserManager,
+  bm: BrowserTarget,
 ): Promise<string> {
   const cursorElements = await findCursorInteractiveElements(evalCtx, opts.selector);
 

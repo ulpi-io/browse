@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import type { BrowserManager } from './manager';
+import type { BrowserTarget } from './target';
 import type { Page } from 'playwright';
 
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'browse', 'react-devtools');
@@ -43,7 +43,7 @@ export async function ensureHook(): Promise<string> {
  * Inject the hook into the browser context via addInitScript.
  * The hook runs before any page JS, so React discovers it on load.
  */
-export async function injectHook(bm: BrowserManager): Promise<void> {
+export async function injectHook(bm: BrowserTarget): Promise<void> {
   const hookScript = await ensureHook();
   const context = bm.getContext();
   if (!context) throw new Error('No browser context available');
@@ -55,21 +55,21 @@ export async function injectHook(bm: BrowserManager): Promise<void> {
  * Mark DevTools as disabled. Can't remove init scripts —
  * takes effect on next context creation or page reload without the hook.
  */
-export function removeHook(bm: BrowserManager): void {
+export function removeHook(bm: BrowserTarget): void {
   bm.setReactDevToolsEnabled(false);
 }
 
 /**
  * Check if React DevTools hook is currently injected.
  */
-export function isEnabled(bm: BrowserManager): boolean {
+export function isEnabled(bm: BrowserTarget): boolean {
   return bm.getReactDevToolsEnabled();
 }
 
 /**
  * Helper: check that DevTools is enabled, throw actionable error if not.
  */
-export function requireEnabled(bm: BrowserManager): void {
+export function requireEnabled(bm: BrowserTarget): void {
   if (!isEnabled(bm)) {
     throw new Error(
       'React DevTools not enabled. Run "browse react-devtools enable" first.'
@@ -103,7 +103,7 @@ export async function requireReact(page: Page): Promise<void> {
 /**
  * Walk the fiber tree from root and return a formatted component tree.
  */
-export async function getTree(bm: BrowserManager, page: Page): Promise<string> {
+export async function getTree(bm: BrowserTarget, page: Page): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -156,7 +156,7 @@ export async function getTree(bm: BrowserManager, page: Page): Promise<string> {
 /**
  * Get props and hook state of the React component that owns the given element.
  */
-export async function getProps(bm: BrowserManager, page: Page, selector: string): Promise<string> {
+export async function getProps(bm: BrowserTarget, page: Page, selector: string): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -222,7 +222,7 @@ export async function getProps(bm: BrowserManager, page: Page, selector: string)
 /**
  * Find all Suspense boundaries and report their resolution status.
  */
-export async function getSuspense(bm: BrowserManager, page: Page): Promise<string> {
+export async function getSuspense(bm: BrowserTarget, page: Page): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -261,7 +261,7 @@ export async function getSuspense(bm: BrowserManager, page: Page): Promise<strin
 /**
  * Find all error boundaries and report whether they have caught errors.
  */
-export async function getErrors(bm: BrowserManager, page: Page): Promise<string> {
+export async function getErrors(bm: BrowserTarget, page: Page): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -297,7 +297,7 @@ export async function getErrors(bm: BrowserManager, page: Page): Promise<string>
  * Report React Profiler timing data (actualDuration / selfBaseDuration).
  * Requires React profiling build (react-dom/profiling).
  */
-export async function getProfiler(bm: BrowserManager, page: Page): Promise<string> {
+export async function getProfiler(bm: BrowserTarget, page: Page): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -330,7 +330,7 @@ export async function getProfiler(bm: BrowserManager, page: Page): Promise<strin
 /**
  * Report hydration timing from performance entries or Next.js instrumentation.
  */
-export async function getHydration(bm: BrowserManager, page: Page): Promise<string> {
+export async function getHydration(bm: BrowserTarget, page: Page): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -361,7 +361,7 @@ export async function getHydration(bm: BrowserManager, page: Page): Promise<stri
  * Report which components re-rendered in the most recent commit.
  * Uses actualDuration > 0 with an alternate fiber as the signal.
  */
-export async function getRenders(bm: BrowserManager, page: Page): Promise<string> {
+export async function getRenders(bm: BrowserTarget, page: Page): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -395,7 +395,7 @@ export async function getRenders(bm: BrowserManager, page: Page): Promise<string
 /**
  * Walk up the fiber tree from an element to show the parent component chain.
  */
-export async function getOwners(bm: BrowserManager, page: Page, selector: string): Promise<string> {
+export async function getOwners(bm: BrowserTarget, page: Page, selector: string): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
@@ -434,7 +434,7 @@ export async function getOwners(bm: BrowserManager, page: Page, selector: string
 /**
  * Read React Context values consumed by the component at the given element.
  */
-export async function getContext(bm: BrowserManager, page: Page, selector: string): Promise<string> {
+export async function getContext(bm: BrowserTarget, page: Page, selector: string): Promise<string> {
   requireEnabled(bm);
   await requireReact(page);
 
