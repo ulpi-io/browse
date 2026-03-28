@@ -5,141 +5,1439 @@
   "overview": "Full product roadmap from v1.5 through v2.2 — 6 versions spanning network intelligence, verification/CI, visual intelligence, native app automation, agent workflows, and ecosystem/SDK.",
   "scopeChallenge": "All 8 previous plans shipped. Current: 31K lines, 99 commands, v1.4.5. Ruled out: Lighthouse (perf-audit better), AI selectors (non-deterministic), visual regression service (screenshot-diff exists), browser cloud (partnered), full test framework (generates Playwright tests instead).",
   "existingCodeLeverage": [
-    {"subProblem": "Network event capture", "existingCode": "browser-manager.ts:1495-1527", "action": "extend"},
-    {"subProblem": "Network buffer storage", "existingCode": "buffers.ts:14-21 NetworkEntry", "action": "extend"},
-    {"subProblem": "Command registration", "existingCode": "command-registry.ts:7-38", "action": "extend"},
-    {"subProblem": "MCP tool definitions", "existingCode": "mcp-tools.ts:30+ ToolDefinition", "action": "extend"},
-    {"subProblem": "perf-audit orchestrator", "existingCode": "perf-audit/index.ts PerfAuditReport", "action": "extend"},
-    {"subProblem": "Recording system", "existingCode": "record-export.ts:220-242 exportReplay", "action": "extend"},
-    {"subProblem": "page.evaluate pattern", "existingCode": "detection/frameworks.ts", "action": "reuse"},
-    {"subProblem": "ARIA snapshot + refs", "existingCode": "snapshot.ts:330-400", "action": "reuse"},
-    {"subProblem": "Action context", "existingCode": "action-context.ts:266-349", "action": "reuse"},
-    {"subProblem": "Session multiplexing", "existingCode": "session-manager.ts:62-157", "action": "extend"},
-    {"subProblem": "CLI flag pattern", "existingCode": "cli.ts:631-669", "action": "reuse"},
-    {"subProblem": "Test infrastructure", "existingCode": "test/setup.ts + test-server.ts", "action": "extend"}
+    {
+      "subProblem": "Network event capture",
+      "existingCode": "browser-manager.ts:1495-1527",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Network buffer storage",
+      "existingCode": "buffers.ts:14-21 NetworkEntry",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Command registration",
+      "existingCode": "command-registry.ts:7-38",
+      "action": "extend"
+    },
+    {
+      "subProblem": "MCP tool definitions",
+      "existingCode": "mcp-tools.ts:30+ ToolDefinition",
+      "action": "extend"
+    },
+    {
+      "subProblem": "perf-audit orchestrator",
+      "existingCode": "perf-audit/index.ts PerfAuditReport",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Recording system",
+      "existingCode": "record-export.ts:220-242 exportReplay",
+      "action": "extend"
+    },
+    {
+      "subProblem": "page.evaluate pattern",
+      "existingCode": "detection/frameworks.ts",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "ARIA snapshot + refs",
+      "existingCode": "snapshot.ts:330-400",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Action context",
+      "existingCode": "action-context.ts:266-349",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Session multiplexing",
+      "existingCode": "session-manager.ts:62-157",
+      "action": "extend"
+    },
+    {
+      "subProblem": "CLI flag pattern",
+      "existingCode": "cli.ts:631-669",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Test infrastructure",
+      "existingCode": "test/setup.ts + test-server.ts",
+      "action": "extend"
+    }
   ],
   "failureModes": [
-    {"risk": "Response body capture slows page loads", "affectedTasks": ["TASK-003"], "mitigation": "Opt-in only. Skip binary. Cap 256KB."},
-    {"risk": "Memory from large bodies in ring buffer", "affectedTasks": ["TASK-003"], "mitigation": "String refs GC'd. 50K cap evicts old."},
-    {"risk": "expect polling burns CPU", "affectedTasks": ["TASK-011"], "mitigation": "100ms interval. Use Playwright waitForFunction."},
-    {"risk": "WCAG contrast wrong on gradients", "affectedTasks": ["TASK-019"], "mitigation": "Skip gradient/image backgrounds. Document."},
-    {"risk": "macOS AX permission UX confusing", "affectedTasks": ["TASK-025"], "mitigation": "Doctor checks permission. Clear error."},
-    {"risk": "Swift binary compile fails", "affectedTasks": ["TASK-028"], "mitigation": "Ship pre-compiled universal binary."},
-    {"risk": "AX tree too deep for Simulator", "affectedTasks": ["TASK-025"], "mitigation": "Depth limit 30. Filter in -i mode."},
-    {"risk": "Flow YAML syntax confuses agents", "affectedTasks": ["TASK-035"], "mitigation": "Validate commands. Line-number errors."},
-    {"risk": "Plugin API breaking changes", "affectedTasks": ["TASK-040"], "mitigation": "Version API. Break only in majors."},
-    {"risk": "SDK API surface too large", "affectedTasks": ["TASK-042"], "mitigation": "Minimal export. Only server-less commands."}
+    {
+      "risk": "Response body capture slows page loads",
+      "affectedTasks": [
+        "TASK-003"
+      ],
+      "mitigation": "Opt-in only. Skip binary. Cap 256KB."
+    },
+    {
+      "risk": "Memory from large bodies in ring buffer",
+      "affectedTasks": [
+        "TASK-003"
+      ],
+      "mitigation": "String refs GC'd. 50K cap evicts old."
+    },
+    {
+      "risk": "expect polling burns CPU",
+      "affectedTasks": [
+        "TASK-011"
+      ],
+      "mitigation": "100ms interval. Use Playwright waitForFunction."
+    },
+    {
+      "risk": "WCAG contrast wrong on gradients",
+      "affectedTasks": [
+        "TASK-019"
+      ],
+      "mitigation": "Skip gradient/image backgrounds. Document."
+    },
+    {
+      "risk": "macOS AX permission UX confusing",
+      "affectedTasks": [
+        "TASK-025"
+      ],
+      "mitigation": "Doctor checks permission. Clear error."
+    },
+    {
+      "risk": "Swift binary compile fails",
+      "affectedTasks": [
+        "TASK-028"
+      ],
+      "mitigation": "Ship pre-compiled universal binary."
+    },
+    {
+      "risk": "AX tree too deep for Simulator",
+      "affectedTasks": [
+        "TASK-025"
+      ],
+      "mitigation": "Depth limit 30. Filter in -i mode."
+    },
+    {
+      "risk": "Flow YAML syntax confuses agents",
+      "affectedTasks": [
+        "TASK-035"
+      ],
+      "mitigation": "Validate commands. Line-number errors."
+    },
+    {
+      "risk": "Plugin API breaking changes",
+      "affectedTasks": [
+        "TASK-040"
+      ],
+      "mitigation": "Version API. Break only in majors."
+    },
+    {
+      "risk": "SDK API surface too large",
+      "affectedTasks": [
+        "TASK-042"
+      ],
+      "mitigation": "Minimal export. Only server-less commands."
+    },
+    {
+      "risk": "User denies or cannot find AX permission grant",
+      "affectedTasks": [
+        "TASK-025",
+        "TASK-031"
+      ],
+      "mitigation": "browse --app fails fast with Accessibility permission required + System Settings deep link. browse doctor shows step-by-step."
+    }
   ],
   "testCoverageMap": [
-    {"codepath": "NetworkEntry body capture", "coveringTask": "TASK-009", "testType": "integration"},
-    {"codepath": "request command", "coveringTask": "TASK-009", "testType": "integration"},
-    {"codepath": "api command", "coveringTask": "TASK-009", "testType": "integration"},
-    {"codepath": "expect conditions (url/text/visible/count)", "coveringTask": "TASK-016", "testType": "integration"},
-    {"codepath": "perf-audit --budget", "coveringTask": "TASK-016", "testType": "integration"},
-    {"codepath": "replay export with expects", "coveringTask": "TASK-017", "testType": "integration"},
-    {"codepath": "playwright test export", "coveringTask": "TASK-017", "testType": "integration"},
-    {"codepath": "visual landmark + anomaly detection", "coveringTask": "TASK-024", "testType": "integration"},
-    {"codepath": "layout computed properties", "coveringTask": "TASK-024", "testType": "integration"},
-    {"codepath": "a11y-audit scoring", "coveringTask": "TASK-024", "testType": "integration"},
-    {"codepath": "AX bridge tree + actions", "coveringTask": "TASK-034", "testType": "integration"},
-    {"codepath": "App snapshot with @refs", "coveringTask": "TASK-034", "testType": "integration"},
-    {"codepath": "Flow execution", "coveringTask": "TASK-039", "testType": "integration"},
-    {"codepath": "Retry + watch", "coveringTask": "TASK-039", "testType": "integration"},
-    {"codepath": "Plugin loading + SDK mode", "coveringTask": "TASK-044", "testType": "integration"},
-    {"codepath": "Custom detection signatures", "coveringTask": "TASK-044", "testType": "integration"}
+    {
+      "codepath": "NetworkEntry body capture",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "request command",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "api command",
+      "coveringTask": "TASK-009",
+      "testType": "integration"
+    },
+    {
+      "codepath": "expect conditions (url/text/visible/count)",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "perf-audit --budget",
+      "coveringTask": "TASK-016",
+      "testType": "integration"
+    },
+    {
+      "codepath": "replay export with expects",
+      "coveringTask": "TASK-017",
+      "testType": "integration"
+    },
+    {
+      "codepath": "playwright test export",
+      "coveringTask": "TASK-017",
+      "testType": "integration"
+    },
+    {
+      "codepath": "visual landmark + anomaly detection",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "layout computed properties",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "a11y-audit scoring",
+      "coveringTask": "TASK-024",
+      "testType": "integration"
+    },
+    {
+      "codepath": "AX bridge tree + actions",
+      "coveringTask": "TASK-034",
+      "testType": "integration"
+    },
+    {
+      "codepath": "App snapshot with @refs",
+      "coveringTask": "TASK-034",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Flow execution",
+      "coveringTask": "TASK-039",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Retry + watch",
+      "coveringTask": "TASK-039",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Plugin loading + SDK mode",
+      "coveringTask": "TASK-044",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Custom detection signatures",
+      "coveringTask": "TASK-044",
+      "testType": "integration"
+    }
   ],
   "tasks": [
-    {"id": "TASK-001", "title": "Extend NetworkEntry with body/header fields", "description": "Add optional requestBody, requestHeaders, responseBody, responseHeaders to NetworkEntry in buffers.ts.", "type": "feature", "effort": "S", "priority": "P0", "dependsOn": [], "acceptanceCriteria": ["NetworkEntry has 4 new optional fields", "TypeScript compiles cleanly", "Existing code unaffected"], "filesToModify": ["src/buffers.ts", "src/types.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-002", "title": "Capture request bodies in browser-manager.ts", "description": "Extend page.on('request') to capture postData() for POST/PUT/PATCH when body mode enabled.", "type": "feature", "effort": "S", "priority": "P0", "dependsOn": ["TASK-001"], "acceptanceCriteria": ["POST bodies captured", "GET has no body", "Binary uploads stored as placeholder"], "filesToModify": ["src/browser-manager.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-003", "title": "Capture response bodies in browser-manager.ts", "description": "Extend page.on('response') to capture text bodies for json/text/xml/html/js/css. Binary as placeholder. Cap 256KB.", "type": "feature", "effort": "M", "priority": "P0", "dependsOn": ["TASK-001"], "acceptanceCriteria": ["Text bodies captured", "Binary as placeholder", "Truncation at 256KB", "Redirect/abort graceful"], "filesToModify": ["src/browser-manager.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-004", "title": "Add --network-bodies CLI flag and env var", "description": "Parse --network-bodies flag, send X-Browse-Network-Bodies header, support BROWSE_NETWORK_BODIES env and browse.json.", "type": "feature", "effort": "S", "priority": "P1", "dependsOn": ["TASK-002", "TASK-003"], "acceptanceCriteria": ["Flag parsed and sent as header", "Server enables body capture on session", "Env var and config work"], "filesToModify": ["src/cli.ts", "src/server.ts", "src/config.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-005", "title": "Add request read command", "description": "New read command: browse request <index|url-pattern> inspects a single network entry with full headers and bodies.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-001"], "acceptanceCriteria": ["Index lookup works", "URL pattern match works", "Clear error when bodies not captured", "Out of range error"], "filesToModify": ["src/commands/read.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-006", "title": "Add api meta command", "description": "New meta command: browse api <method> <url> runs fetch() in page context with cookies/auth. Returns status + headers + parsed body.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-001"], "acceptanceCriteria": ["GET with cookies works", "POST with JSON body works", "CORS error clear message", "Custom headers via --header"], "filesToModify": ["src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-007", "title": "MCP tools + CLI help + chain for v1.5", "description": "Register request and api: MCP tools, CLI help, chain sets, SAFE_TO_RETRY for request.", "type": "chore", "effort": "S", "priority": "P1", "dependsOn": ["TASK-005", "TASK-006"], "acceptanceCriteria": ["MCP tools defined", "SAFE_TO_RETRY includes request", "CLI help updated"], "filesToModify": ["src/mcp-tools.ts", "src/cli.ts", "src/commands/meta.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-008", "title": "Extend HAR export with bodies", "description": "Include request/response bodies in HAR 1.2 export when available.", "type": "feature", "effort": "S", "priority": "P2", "dependsOn": ["TASK-001"], "acceptanceCriteria": ["HAR includes postData.text", "HAR includes response.content.text", "Backward compatible without bodies"], "filesToModify": ["src/har.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-009", "title": "Test fixtures and integration tests for v1.5", "description": "Add JSON API fixture routes. Test body capture, request command, api command, HAR with bodies.", "type": "test", "effort": "M", "priority": "P2", "dependsOn": ["TASK-004", "TASK-005", "TASK-006"], "acceptanceCriteria": ["API fixtures in test-server", "Body capture tested", "request command tested", "api command tested", "Truncation tested"], "filesToModify": ["test/test-server.ts", "test/features.test.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-010", "title": "Implement expect condition parser", "description": "Create src/expect.ts with parseExpectArgs and checkConditions for --url, --text, --visible, --hidden, --count, --request, --timeout.", "type": "feature", "effort": "M", "priority": "P0", "dependsOn": [], "acceptanceCriteria": ["All condition types parsed", "checkConditions returns pass/fail array", "Clear usage error on no conditions"], "filesToModify": [], "filesToCreate": ["src/expect.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-011", "title": "Implement expect meta command", "description": "Add case 'expect' to meta.ts. Polls conditions in loop until pass or timeout. Clear error on failure.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-010"], "acceptanceCriteria": ["Polling with 100ms interval", "Success returns OK", "Failure returns FAIL with details", "Multiple conditions AND logic"], "filesToModify": ["src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-012", "title": "Add --budget flag to perf-audit", "description": "Parse --budget lcp:2500,cls:0.1 flag. Compare metrics. Throw error on budget exceeded.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": [], "acceptanceCriteria": ["Budget parsed into metric:value map", "Exceeded → error with breakdown", "Passed → normal output + confirmation", "Exit code 1 on failure"], "filesToModify": ["src/perf-audit/index.ts", "src/perf-audit/formatter.ts", "src/commands/meta.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-013", "title": "Extend exportReplay with expect steps", "description": "Serialize recorded expect commands as waitForElement/waitForExpression steps in Puppeteer Replay format.", "type": "feature", "effort": "S", "priority": "P1", "dependsOn": ["TASK-010"], "acceptanceCriteria": ["expect --url → waitForExpression", "expect --text → waitForElement", "Non-expect unchanged"], "filesToModify": ["src/record-export.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-014", "title": "Add exportPlaywrightTest function", "description": "New export function mapping recorded commands to Playwright Test API with expect() assertions.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-013"], "acceptanceCriteria": ["goto → page.goto", "click → getByRole().click()", "expect --url → toHaveURL()", "record export playwright subcommand works"], "filesToModify": ["src/record-export.ts", "src/commands/meta.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-015", "title": "MCP tools + CLI help for v1.6", "description": "Register expect MCP tool, update perf-audit description for --budget, add playwright export to help.", "type": "chore", "effort": "S", "priority": "P2", "dependsOn": ["TASK-011", "TASK-012", "TASK-014"], "acceptanceCriteria": ["browse_expect MCP tool", "expect in SAFE_TO_RETRY", "CLI help updated"], "filesToModify": ["src/mcp-tools.ts", "src/cli.ts", "src/commands/meta.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-016", "title": "Integration tests for expect + budget", "description": "Test all expect conditions, timeout behavior, budget pass/fail.", "type": "test", "effort": "M", "priority": "P2", "dependsOn": ["TASK-011", "TASK-012"], "acceptanceCriteria": ["All condition types tested", "Timeout failure tested", "Budget pass/fail tested"], "filesToModify": ["test/features.test.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-017", "title": "Integration tests for export formats", "description": "Test replay with expects and Playwright test export.", "type": "test", "effort": "S", "priority": "P2", "dependsOn": ["TASK-013", "TASK-014"], "acceptanceCriteria": ["Replay expect steps correct", "Playwright test file valid", "Edge case: no expects"], "filesToModify": ["test/features.test.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-018", "title": "Visual evaluate — core infrastructure + helpers", "description": "Create src/visual.ts with landmark scan, parseColor, luminance, getEffectiveBg, overlaps, summarizeChildren.", "type": "feature", "effort": "L", "priority": "P0", "dependsOn": [], "acceptanceCriteria": ["captureVisualState returns VisualReport", "Landmarks found", "Helpers correct", "No crash on empty page"], "filesToModify": [], "filesToCreate": ["src/visual.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-019", "title": "Visual evaluate — anomaly detection", "description": "Add 5 anomaly detectors: contrast, overlap, overflow-x, overflow-hidden, viewport bleed.", "type": "feature", "effort": "L", "priority": "P0", "dependsOn": ["TASK-018"], "acceptanceCriteria": ["Contrast failures detected", "Overlaps detected", "Overflows detected", "Viewport bleed detected", "Gradient backgrounds skipped"], "filesToModify": ["src/visual.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-020", "title": "Visual formatter + visual meta command", "description": "Format VisualReport as text. Register visual as META command.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-019"], "acceptanceCriteria": ["Formatted report with landmarks + issues", "--json returns raw JSON", "Under 200ms execution"], "filesToModify": ["src/visual.ts", "src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-021", "title": "Add layout read command", "description": "browse layout <selector> returns computed layout for element and positioning ancestors.", "type": "feature", "effort": "S", "priority": "P1", "dependsOn": ["TASK-018"], "acceptanceCriteria": ["Returns display/position/zIndex/box/margin/padding/color/contrast", "Walks ancestor chain", "@ref support", "Not found error"], "filesToModify": ["src/visual.ts", "src/commands/read.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-022", "title": "Implement a11y-audit meta command", "description": "WCAG 2.1 AA audit: contrast, missing alt, no label, heading skip, touch targets, generic links, missing lang. Score 0-100.", "type": "feature", "effort": "L", "priority": "P1", "dependsOn": ["TASK-018"], "acceptanceCriteria": ["Score calculation correct", "All 7 check types implemented", "Decorative images excluded", "Critical vs warning severity"], "filesToModify": ["src/visual.ts", "src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-023", "title": "MCP tools + CLI help for v1.7", "description": "Register visual, layout, a11y-audit MCP tools. Update CLI help. Add to SAFE_TO_RETRY.", "type": "chore", "effort": "S", "priority": "P2", "dependsOn": ["TASK-020", "TASK-021", "TASK-022"], "acceptanceCriteria": ["3 MCP tools defined", "All in SAFE_TO_RETRY", "CLI help updated"], "filesToModify": ["src/mcp-tools.ts", "src/cli.ts", "src/commands/meta.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-024", "title": "Test fixtures + integration tests for v1.7", "description": "Create visual-issues.html and a11y-issues.html fixtures. Test all detection types.", "type": "test", "effort": "M", "priority": "P2", "dependsOn": ["TASK-020", "TASK-021", "TASK-022"], "acceptanceCriteria": ["2 new fixtures", "Contrast/overlap/overflow detected", "Layout returns correct properties", "a11y score < 100 on issues fixture"], "filesToModify": ["test/features.test.ts"], "filesToCreate": ["test/fixtures/visual-issues.html", "test/fixtures/a11y-issues.html"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-025", "title": "Swift AX bridge — tree retrieval", "description": "Create browse-ax Swift CLI that reads AX tree of any macOS app by PID. Output JSON.", "type": "feature", "effort": "L", "priority": "P0", "dependsOn": [], "acceptanceCriteria": ["Tree output as JSON", "Each node: role, label, value, frame, children, actions", "Depth limit 30", "Clear error on missing PID/permission"], "filesToModify": [], "filesToCreate": ["browse-ax/Package.swift", "browse-ax/Sources/main.swift"], "agent": "ios-macos-senior-engineer", "review": "claude"},
-    {"id": "TASK-026", "title": "Swift AX bridge — action execution", "description": "Add action command: browse-ax --pid N action <path> <action>. Performs AXPress, AXConfirm, etc.", "type": "feature", "effort": "M", "priority": "P0", "dependsOn": ["TASK-025"], "acceptanceCriteria": ["AXPress works", "Returns success/failure JSON", "Clear error on unsupported action", "Stale path error"], "filesToModify": ["browse-ax/Sources/main.swift"], "filesToCreate": [], "agent": "ios-macos-senior-engineer", "review": "claude"},
-    {"id": "TASK-027", "title": "Swift AX bridge — set value + screenshot", "description": "Add set-value and screenshot commands to browse-ax.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-025"], "acceptanceCriteria": ["set-value sets AXValue", "screenshot captures window as PNG", "Clear errors for non-editable/minimized"], "filesToModify": ["browse-ax/Sources/main.swift"], "filesToCreate": [], "agent": "ios-macos-senior-engineer", "review": "none"},
-    {"id": "TASK-028", "title": "Build system for Swift binary", "description": "Compile universal binary, ship in npm or lazy-download. app-bridge.ts handles path resolution.", "type": "infra", "effort": "M", "priority": "P0", "dependsOn": ["TASK-025"], "acceptanceCriteria": ["Universal binary compiled", "app-bridge.ts ensureBridge() returns path", "Non-macOS throws clear error"], "filesToModify": ["package.json"], "filesToCreate": ["src/app-bridge.ts"], "agent": "ios-macos-senior-engineer", "review": "none"},
-    {"id": "TASK-029", "title": "AppManager — connect, snapshot, text", "description": "Create src/app-manager.ts. Spawns browse-ax, implements connect/snapshot (with @refs)/text.", "type": "feature", "effort": "L", "priority": "P1", "dependsOn": ["TASK-025", "TASK-028"], "acceptanceCriteria": ["connect finds PID by name", "snapshot returns text with @refs", "text extracts all visible text", "App not running error"], "filesToModify": [], "filesToCreate": ["src/app-manager.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-030", "title": "AppManager — tap, fill, type, press, swipe", "description": "Add interaction methods to AppManager using browse-ax action/set-value commands.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-029"], "acceptanceCriteria": ["tap resolves ref + AXPress", "fill resolves ref + AXSetValue", "type sends keyboard events", "Stale ref error"], "filesToModify": ["src/app-manager.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-031", "title": "App command dispatcher + --app flag", "description": "Create commands/app.ts, add --app flag to CLI, route app commands in server.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-029", "TASK-030"], "acceptanceCriteria": ["--app Simulator snapshot -i works", "--app Simulator tap @e3 works", "Unsupported commands → clear error", "--app + --session work together"], "filesToModify": ["src/cli.ts", "src/server.ts"], "filesToCreate": ["src/commands/app.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-032", "title": "Action context for app commands", "description": "Wire before/after state capture into app commands. State = screen title + focused element.", "type": "feature", "effort": "M", "priority": "P2", "dependsOn": ["TASK-031"], "acceptanceCriteria": ["Context line after tap shows screen change", "Empty context when nothing changes", "App crash gracefully skipped"], "filesToModify": ["src/app-manager.ts", "src/action-context.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-033", "title": "MCP tools + CLI help for app commands", "description": "Register app MCP tools, update CLI help, add doctor check for browse-ax.", "type": "chore", "effort": "S", "priority": "P2", "dependsOn": ["TASK-031"], "acceptanceCriteria": ["App MCP tools defined", "CLI help shows --app", "Doctor checks browse-ax + AX permission"], "filesToModify": ["src/mcp-tools.ts", "src/cli.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-034", "title": "Integration tests for app automation", "description": "Test with TextEdit or Electron app. Verify snapshot, tap, fill, context.", "type": "test", "effort": "M", "priority": "P2", "dependsOn": ["TASK-031", "TASK-032"], "acceptanceCriteria": ["Snapshot returns tree with @refs", "Fill sets value", "Context reports changes", "Skips on non-macOS"], "filesToModify": [], "filesToCreate": ["test/app.test.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-035", "title": "Flow YAML parser", "description": "Create src/flow-parser.ts. Parses flow YAML into FlowStep[]. Validates commands.", "type": "feature", "effort": "M", "priority": "P0", "dependsOn": [], "acceptanceCriteria": ["Parses goto/click/fill/expect steps", "Validates commands exist", "Clear error on malformed YAML", "Empty steps error"], "filesToModify": [], "filesToCreate": ["src/flow-parser.ts"], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-036", "title": "Flow meta command", "description": "Add case 'flow' to meta.ts. Execute steps sequentially, stop on failure, report per-step.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-035", "TASK-011"], "acceptanceCriteria": ["Executes all steps", "Reports per-step status", "Stops on failure with step number", "File not found error"], "filesToModify": ["src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-037", "title": "Retry meta command", "description": "Wraps command in retry loop with --max attempts, --backoff, --until condition.", "type": "feature", "effort": "S", "priority": "P1", "dependsOn": ["TASK-010"], "acceptanceCriteria": ["Retries up to max", "Exponential backoff", "--until condition checked", "Clear error on max exceeded"], "filesToModify": ["src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-038", "title": "Watch meta command", "description": "Inject MutationObserver, poll for changes, execute callback command.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-011"], "acceptanceCriteria": ["Detects DOM changes", "Executes callback on change", "--timeout stops after duration", "Clean termination on navigation"], "filesToModify": ["src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-039", "title": "MCP tools + tests for v2.1", "description": "Register flow/retry/watch MCP tools. Integration tests.", "type": "test", "effort": "M", "priority": "P2", "dependsOn": ["TASK-036", "TASK-037", "TASK-038"], "acceptanceCriteria": ["3 MCP tools defined", "Flow 3-step test passes", "Retry succeeds on 2nd attempt", "Watch detects change"], "filesToModify": ["src/mcp-tools.ts", "src/cli.ts", "test/features.test.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-040", "title": "Plugin loader and registry", "description": "Create src/plugin.ts. Scans node_modules/browse-plugin-*, calls register(ctx) with addCommand/addDetection/addAuditRule.", "type": "feature", "effort": "L", "priority": "P0", "dependsOn": [], "acceptanceCriteria": ["Scans node_modules", "register(ctx) called", "addCommand works", "Plugin errors caught"], "filesToModify": [], "filesToCreate": ["src/plugin.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-041", "title": "Plugin install/remove/list commands", "description": "Wraps npm install/uninstall for browse-plugin-* packages.", "type": "feature", "effort": "S", "priority": "P1", "dependsOn": ["TASK-040"], "acceptanceCriteria": ["install runs npm install", "remove runs npm uninstall", "list scans node_modules", "npm not found error"], "filesToModify": ["src/commands/meta.ts", "src/command-registry.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-042", "title": "SDK mode — library entry point", "description": "Create src/sdk.ts wrapping BrowserManager as clean typed API. No HTTP server. Package exports.", "type": "feature", "effort": "M", "priority": "P1", "dependsOn": ["TASK-040"], "acceptanceCriteria": ["import { createBrowser } works", "goto/click/fill/text/snapshot work", "No server spawned", "TypeScript types exported"], "filesToModify": ["package.json"], "filesToCreate": ["src/sdk.ts"], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-043", "title": "Custom detection signatures", "description": "Extend detection loader to scan .browse/detections/*.json for custom signatures.", "type": "feature", "effort": "S", "priority": "P1", "dependsOn": [], "acceptanceCriteria": ["Custom JSON loaded alongside built-in", "detect/version expressions evaluated", "Malformed JSON skipped with warning", "[custom] label in output"], "filesToModify": ["src/detection/index.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "none"},
-    {"id": "TASK-044", "title": "MCP tools + tests for v2.2", "description": "Register plugin MCP tools. Test plugin loading, SDK mode, custom detections.", "type": "test", "effort": "M", "priority": "P2", "dependsOn": ["TASK-040", "TASK-042", "TASK-043"], "acceptanceCriteria": ["Plugin list MCP tool", "SDK createBrowser test", "Custom detection test", "Malformed JSON test"], "filesToModify": ["src/mcp-tools.ts", "src/cli.ts", "test/features.test.ts"], "filesToCreate": [], "agent": "nodejs-cli-senior-engineer", "review": "claude"},
-    {"id": "TASK-045", "title": "Plugin API documentation", "description": "Document plugin creation, register function, addCommand/addDetection/addAuditRule, publishing.", "type": "docs", "effort": "S", "priority": "P3", "dependsOn": ["TASK-040"], "acceptanceCriteria": ["Naming convention", "Register function signature", "Examples", "Publishing instructions"], "filesToModify": [], "filesToCreate": ["docs/plugin-api.md"], "agent": "general-purpose", "review": "none"}
+    {
+      "id": "TASK-001",
+      "title": "Extend NetworkEntry with body/header fields",
+      "description": "Add optional requestBody, requestHeaders, responseBody, responseHeaders to NetworkEntry in buffers.ts.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "NetworkEntry has 4 new optional fields",
+        "TypeScript compiles cleanly",
+        "Existing code unaffected"
+      ],
+      "filesToModify": [
+        "src/buffers.ts",
+        "src/types.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Capture request bodies in browser-manager.ts",
+      "description": "Extend page.on('request') to capture postData() for POST/PUT/PATCH when body mode enabled.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-001"
+      ],
+      "acceptanceCriteria": [
+        "POST bodies captured",
+        "GET has no body",
+        "Binary uploads stored as placeholder"
+      ],
+      "filesToModify": [
+        "src/browser-manager.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Capture response bodies in browser-manager.ts",
+      "description": "Extend page.on('response') to capture text bodies for json/text/xml/html/js/css. Binary as placeholder. Cap 256KB.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-001"
+      ],
+      "acceptanceCriteria": [
+        "Text bodies captured",
+        "Binary as placeholder",
+        "Truncation at 256KB",
+        "Redirect/abort graceful"
+      ],
+      "filesToModify": [
+        "src/browser-manager.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Add --network-bodies CLI flag and env var",
+      "description": "Parse --network-bodies flag, send X-Browse-Network-Bodies header, support BROWSE_NETWORK_BODIES env and browse.json.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-002",
+        "TASK-003"
+      ],
+      "acceptanceCriteria": [
+        "Flag parsed and sent as header",
+        "Server enables body capture on session",
+        "Env var and config work"
+      ],
+      "filesToModify": [
+        "src/cli.ts",
+        "src/server.ts",
+        "src/config.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Add request read command",
+      "description": "New read command: browse request <index|url-pattern> inspects a single network entry with full headers and bodies.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-001"
+      ],
+      "acceptanceCriteria": [
+        "Index lookup works",
+        "URL pattern match works",
+        "Clear error when bodies not captured",
+        "Out of range error"
+      ],
+      "filesToModify": [
+        "src/commands/read.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Add api meta command",
+      "description": "New meta command: browse api <method> <url> runs fetch() in page context with cookies/auth. Returns status + headers + parsed body.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-001"
+      ],
+      "acceptanceCriteria": [
+        "GET with cookies works",
+        "POST with JSON body works",
+        "CORS error clear message",
+        "Custom headers via --header"
+      ],
+      "filesToModify": [
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-007",
+      "title": "MCP tools + CLI help + chain for v1.5",
+      "description": "Register request and api: MCP tools, CLI help, chain sets, SAFE_TO_RETRY for request.",
+      "type": "chore",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-005",
+        "TASK-006"
+      ],
+      "acceptanceCriteria": [
+        "MCP tools defined",
+        "SAFE_TO_RETRY includes request",
+        "CLI help updated"
+      ],
+      "filesToModify": [
+        "src/mcp-tools.ts",
+        "src/cli.ts",
+        "src/commands/meta.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Extend HAR export with bodies",
+      "description": "Include request/response bodies in HAR 1.2 export when available.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-001"
+      ],
+      "acceptanceCriteria": [
+        "HAR includes postData.text",
+        "HAR includes response.content.text",
+        "Backward compatible without bodies"
+      ],
+      "filesToModify": [
+        "src/har.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-009",
+      "title": "Test fixtures and integration tests for v1.5",
+      "description": "Add JSON API fixture routes. Test body capture, request command, api command, HAR with bodies.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-004",
+        "TASK-005",
+        "TASK-006"
+      ],
+      "acceptanceCriteria": [
+        "API fixtures in test-server",
+        "Body capture tested",
+        "request command tested",
+        "api command tested",
+        "Truncation tested",
+        "Test: api GET with session cookie set via cookie command verifies cookie in request"
+      ],
+      "filesToModify": [
+        "test/test-server.ts",
+        "test/features.test.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-010",
+      "title": "Implement expect condition parser",
+      "description": "Create src/expect.ts with parseExpectArgs and checkConditions for --url, --text, --visible, --hidden, --count, --request, --timeout.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "All condition types parsed",
+        "checkConditions returns pass/fail array",
+        "Clear usage error on no conditions"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "src/expect.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-011",
+      "title": "Implement expect meta command",
+      "description": "Add case 'expect' to meta.ts. Polls conditions in loop until pass or timeout. Clear error on failure.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-010"
+      ],
+      "acceptanceCriteria": [
+        "Polling with 100ms interval",
+        "Success returns OK",
+        "Failure returns FAIL with details",
+        "Multiple conditions AND logic"
+      ],
+      "filesToModify": [
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-012",
+      "title": "Add --budget flag to perf-audit",
+      "description": "Parse --budget lcp:2500,cls:0.1 flag. Compare metrics. Throw error on budget exceeded.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Budget parsed into metric:value map",
+        "Exceeded → error with breakdown",
+        "Passed → normal output + confirmation",
+        "Exit code 1 on failure"
+      ],
+      "filesToModify": [
+        "src/perf-audit/index.ts",
+        "src/perf-audit/formatter.ts",
+        "src/commands/meta.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-013",
+      "title": "Extend exportReplay with expect steps",
+      "description": "Serialize recorded expect commands as waitForElement/waitForExpression steps in Puppeteer Replay format.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-010"
+      ],
+      "acceptanceCriteria": [
+        "expect --url → waitForExpression",
+        "expect --text → waitForElement",
+        "Non-expect unchanged"
+      ],
+      "filesToModify": [
+        "src/record-export.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-014",
+      "title": "Add exportPlaywrightTest function",
+      "description": "New export function mapping recorded commands to Playwright Test API with expect() assertions.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-013"
+      ],
+      "acceptanceCriteria": [
+        "goto → page.goto",
+        "click → getByRole().click()",
+        "expect --url → toHaveURL()",
+        "record export playwright subcommand works"
+      ],
+      "filesToModify": [
+        "src/record-export.ts",
+        "src/commands/meta.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-015",
+      "title": "MCP tools + CLI help for v1.6",
+      "description": "Register expect MCP tool, update perf-audit description for --budget, add playwright export to help.",
+      "type": "chore",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-011",
+        "TASK-012",
+        "TASK-014"
+      ],
+      "acceptanceCriteria": [
+        "browse_expect MCP tool",
+        "expect in SAFE_TO_RETRY",
+        "CLI help updated"
+      ],
+      "filesToModify": [
+        "src/mcp-tools.ts",
+        "src/cli.ts",
+        "src/commands/meta.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-016",
+      "title": "Integration tests for expect + budget",
+      "description": "Test all expect conditions, timeout behavior, budget pass/fail.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-011",
+        "TASK-012"
+      ],
+      "acceptanceCriteria": [
+        "All condition types tested",
+        "Timeout failure tested",
+        "Budget pass/fail tested"
+      ],
+      "filesToModify": [
+        "test/features.test.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-017",
+      "title": "Integration tests for export formats",
+      "description": "Test replay with expects and Playwright test export.",
+      "type": "test",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-013",
+        "TASK-014"
+      ],
+      "acceptanceCriteria": [
+        "Replay expect steps correct",
+        "Playwright test file valid",
+        "Edge case: no expects"
+      ],
+      "filesToModify": [
+        "test/features.test.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-018",
+      "title": "Visual evaluate — core infrastructure + helpers",
+      "description": "Create src/visual.ts with landmark scan, parseColor, luminance, getEffectiveBg, overlaps, summarizeChildren.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "captureVisualState returns VisualReport",
+        "Landmarks found",
+        "Helpers correct",
+        "No crash on empty page"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "src/visual.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-019",
+      "title": "Visual evaluate — anomaly detection",
+      "description": "Add 5 anomaly detectors: contrast, overlap, overflow-x, overflow-hidden, viewport bleed.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-018"
+      ],
+      "acceptanceCriteria": [
+        "Contrast failures detected",
+        "Overlaps detected",
+        "Overflows detected",
+        "Viewport bleed detected",
+        "Gradient backgrounds skipped"
+      ],
+      "filesToModify": [
+        "src/visual.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-020",
+      "title": "Visual formatter + visual meta command",
+      "description": "Format VisualReport as text. Register visual as META command.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-019"
+      ],
+      "acceptanceCriteria": [
+        "Formatted report with landmarks + issues",
+        "--json returns raw JSON",
+        "Under 200ms execution"
+      ],
+      "filesToModify": [
+        "src/visual.ts",
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-021",
+      "title": "Add layout read command",
+      "description": "browse layout <selector> returns computed layout for element and positioning ancestors.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-018"
+      ],
+      "acceptanceCriteria": [
+        "Returns display/position/zIndex/box/margin/padding/color/contrast",
+        "Walks ancestor chain",
+        "@ref support",
+        "Not found error"
+      ],
+      "filesToModify": [
+        "src/visual.ts",
+        "src/commands/read.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-022",
+      "title": "Implement a11y-audit meta command",
+      "description": "WCAG 2.1 AA audit: contrast, missing alt, no label, heading skip, touch targets, generic links, missing lang. Score 0-100.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-018"
+      ],
+      "acceptanceCriteria": [
+        "Score calculation correct",
+        "All 7 check types implemented",
+        "Decorative images excluded",
+        "Critical vs warning severity"
+      ],
+      "filesToModify": [
+        "src/visual.ts",
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-023",
+      "title": "MCP tools + CLI help for v1.7",
+      "description": "Register visual, layout, a11y-audit MCP tools. Update CLI help. Add to SAFE_TO_RETRY.",
+      "type": "chore",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-020",
+        "TASK-021",
+        "TASK-022"
+      ],
+      "acceptanceCriteria": [
+        "3 MCP tools defined",
+        "All in SAFE_TO_RETRY",
+        "CLI help updated"
+      ],
+      "filesToModify": [
+        "src/mcp-tools.ts",
+        "src/cli.ts",
+        "src/commands/meta.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-024",
+      "title": "Test fixtures + integration tests for v1.7",
+      "description": "Create visual-issues.html and a11y-issues.html fixtures. Test all detection types.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-020",
+        "TASK-021",
+        "TASK-022"
+      ],
+      "acceptanceCriteria": [
+        "2 new fixtures",
+        "Contrast/overlap/overflow detected",
+        "Layout returns correct properties",
+        "a11y score < 100 on issues fixture"
+      ],
+      "filesToModify": [
+        "test/features.test.ts"
+      ],
+      "filesToCreate": [
+        "test/fixtures/visual-issues.html",
+        "test/fixtures/a11y-issues.html"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-025",
+      "title": "Swift AX bridge — tree retrieval",
+      "description": "Create browse-ax Swift CLI that reads AX tree of any macOS app by PID. Output JSON.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Tree output as JSON",
+        "Each node: role, label, value, frame, children, actions",
+        "Depth limit 30",
+        "Clear error on missing PID/permission"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "browse-ax/Package.swift",
+        "browse-ax/Sources/main.swift"
+      ],
+      "agent": "ios-macos-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-026",
+      "title": "Swift AX bridge — action execution",
+      "description": "Add action command: browse-ax --pid N action <path> <action>. Performs AXPress, AXConfirm, etc.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-025"
+      ],
+      "acceptanceCriteria": [
+        "AXPress works",
+        "Returns success/failure JSON",
+        "Clear error on unsupported action",
+        "Stale path error"
+      ],
+      "filesToModify": [
+        "browse-ax/Sources/main.swift"
+      ],
+      "filesToCreate": [],
+      "agent": "ios-macos-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-027",
+      "title": "Swift AX bridge — set value + screenshot",
+      "description": "Add set-value and screenshot commands to browse-ax.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-025"
+      ],
+      "acceptanceCriteria": [
+        "set-value sets AXValue",
+        "screenshot captures window as PNG",
+        "Clear errors for non-editable/minimized"
+      ],
+      "filesToModify": [
+        "browse-ax/Sources/main.swift"
+      ],
+      "filesToCreate": [],
+      "agent": "ios-macos-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-028",
+      "title": "Build system for Swift binary",
+      "description": "Compile universal binary, ship in npm or lazy-download. app-bridge.ts handles path resolution.",
+      "type": "infra",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-025"
+      ],
+      "acceptanceCriteria": [
+        "Universal binary compiled",
+        "app-bridge.ts ensureBridge() returns path",
+        "Non-macOS throws clear error"
+      ],
+      "filesToModify": [
+        "package.json"
+      ],
+      "filesToCreate": [
+        "src/app-bridge.ts"
+      ],
+      "agent": "ios-macos-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-029",
+      "title": "AppManager — connect, snapshot, text",
+      "description": "Create src/app-manager.ts. Spawns browse-ax, implements connect/snapshot (with @refs)/text.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-025",
+        "TASK-028"
+      ],
+      "acceptanceCriteria": [
+        "connect finds PID by name",
+        "snapshot returns text with @refs",
+        "text extracts all visible text",
+        "App not running error"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "src/app-manager.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-030",
+      "title": "AppManager — tap, fill, type, press, swipe",
+      "description": "Add interaction methods to AppManager using browse-ax action/set-value commands.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-029"
+      ],
+      "acceptanceCriteria": [
+        "tap resolves ref + AXPress",
+        "fill resolves ref + AXSetValue",
+        "type sends keyboard events",
+        "Stale ref error"
+      ],
+      "filesToModify": [
+        "src/app-manager.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-031",
+      "title": "App command dispatcher + --app flag",
+      "description": "Create commands/app.ts, add --app flag to CLI, route app commands in server.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-029",
+        "TASK-030"
+      ],
+      "acceptanceCriteria": [
+        "--app Simulator snapshot -i works",
+        "--app Simulator tap @e3 works",
+        "Unsupported commands → clear error",
+        "--app + --session work together"
+      ],
+      "filesToModify": [
+        "src/cli.ts",
+        "src/server.ts"
+      ],
+      "filesToCreate": [
+        "src/commands/app.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-032",
+      "title": "Action context for app commands",
+      "description": "Wire before/after state capture into app commands. State = screen title + focused element.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-031"
+      ],
+      "acceptanceCriteria": [
+        "Context line after tap shows screen change",
+        "Empty context when nothing changes",
+        "App crash gracefully skipped"
+      ],
+      "filesToModify": [
+        "src/app-manager.ts",
+        "src/action-context.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-033",
+      "title": "MCP tools + CLI help for app commands",
+      "description": "Register app MCP tools, update CLI help, add doctor check for browse-ax.",
+      "type": "chore",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-031"
+      ],
+      "acceptanceCriteria": [
+        "App MCP tools defined",
+        "CLI help shows --app",
+        "Doctor checks browse-ax + AX permission"
+      ],
+      "filesToModify": [
+        "src/mcp-tools.ts",
+        "src/cli.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-034",
+      "title": "Integration tests for app automation",
+      "description": "Test with TextEdit or Electron app. Verify snapshot, tap, fill, context.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-031",
+        "TASK-032"
+      ],
+      "acceptanceCriteria": [
+        "Snapshot returns tree with @refs",
+        "Fill sets value",
+        "Context reports changes",
+        "Skips on non-macOS"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "test/app.test.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-035",
+      "title": "Flow YAML parser",
+      "description": "Create src/flow-parser.ts. Parses flow YAML into FlowStep[]. Validates commands.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Parses goto/click/fill/expect steps",
+        "Validates commands exist",
+        "Clear error on malformed YAML",
+        "Empty steps error"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "src/flow-parser.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-036",
+      "title": "Flow meta command",
+      "description": "Add case 'flow' to meta.ts. Execute steps sequentially, stop on failure, report per-step.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-035",
+        "TASK-011"
+      ],
+      "acceptanceCriteria": [
+        "Executes all steps",
+        "Reports per-step status",
+        "Stops on failure with step number",
+        "File not found error"
+      ],
+      "filesToModify": [
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-037",
+      "title": "Retry meta command",
+      "description": "Wraps command in retry loop with --max attempts, --backoff, --until condition.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-010"
+      ],
+      "acceptanceCriteria": [
+        "Retries up to max",
+        "Exponential backoff",
+        "--until condition checked",
+        "Clear error on max exceeded"
+      ],
+      "filesToModify": [
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-038",
+      "title": "Watch meta command",
+      "description": "Inject MutationObserver, poll for changes, execute callback command.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-011"
+      ],
+      "acceptanceCriteria": [
+        "Detects DOM changes",
+        "Executes callback on change",
+        "--timeout stops after duration",
+        "Clean termination on navigation"
+      ],
+      "filesToModify": [
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-039",
+      "title": "MCP tools + tests for v2.1",
+      "description": "Register flow/retry/watch MCP tools. Integration tests.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-036",
+        "TASK-037",
+        "TASK-038"
+      ],
+      "acceptanceCriteria": [
+        "3 MCP tools defined",
+        "Flow 3-step test passes",
+        "Retry succeeds on 2nd attempt",
+        "Watch detects change"
+      ],
+      "filesToModify": [
+        "src/mcp-tools.ts",
+        "src/cli.ts",
+        "test/features.test.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-040",
+      "title": "Plugin loader and registry",
+      "description": "Create src/plugin.ts. Scans node_modules/browse-plugin-*, calls register(ctx) with addCommand/addDetection/addAuditRule.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Scans node_modules",
+        "register(ctx) called",
+        "addCommand works",
+        "Plugin errors caught"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "src/plugin.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-041",
+      "title": "Plugin install/remove/list commands",
+      "description": "Wraps npm install/uninstall for browse-plugin-* packages.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-040"
+      ],
+      "acceptanceCriteria": [
+        "install runs npm install",
+        "remove runs npm uninstall",
+        "list scans node_modules",
+        "npm not found error"
+      ],
+      "filesToModify": [
+        "src/commands/meta.ts",
+        "src/command-registry.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-042",
+      "title": "SDK mode — library entry point",
+      "description": "Create src/sdk.ts wrapping BrowserManager as clean typed API. No HTTP server. Package exports.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [
+        "TASK-040"
+      ],
+      "acceptanceCriteria": [
+        "import { createBrowser } works",
+        "goto/click/fill/text/snapshot work",
+        "No server spawned",
+        "TypeScript types exported"
+      ],
+      "filesToModify": [
+        "package.json"
+      ],
+      "filesToCreate": [
+        "src/sdk.ts"
+      ],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-043",
+      "title": "Custom detection signatures",
+      "description": "Extend detection loader to scan .browse/detections/*.json for custom signatures.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Custom JSON loaded alongside built-in",
+        "detect/version expressions evaluated",
+        "Malformed JSON skipped with warning",
+        "[custom] label in output"
+      ],
+      "filesToModify": [
+        "src/detection/index.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-044",
+      "title": "MCP tools + tests for v2.2",
+      "description": "Register plugin MCP tools. Test plugin loading, SDK mode, custom detections.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": [
+        "TASK-040",
+        "TASK-042",
+        "TASK-043"
+      ],
+      "acceptanceCriteria": [
+        "Plugin list MCP tool",
+        "SDK createBrowser test",
+        "Custom detection test",
+        "Malformed JSON test"
+      ],
+      "filesToModify": [
+        "src/mcp-tools.ts",
+        "src/cli.ts",
+        "test/features.test.ts"
+      ],
+      "filesToCreate": [],
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-045",
+      "title": "Plugin API documentation",
+      "description": "Document plugin creation, register function, addCommand/addDetection/addAuditRule, publishing.",
+      "type": "docs",
+      "effort": "S",
+      "priority": "P3",
+      "dependsOn": [
+        "TASK-040"
+      ],
+      "acceptanceCriteria": [
+        "Naming convention",
+        "Register function signature",
+        "Examples",
+        "Publishing instructions"
+      ],
+      "filesToModify": [],
+      "filesToCreate": [
+        "docs/plugin-api.md"
+      ],
+      "agent": "general-purpose",
+      "review": "none"
+    }
   ],
   "dependencies": {
     "TASK-001": [],
-    "TASK-002": ["TASK-001"],
-    "TASK-003": ["TASK-001"],
-    "TASK-004": ["TASK-002", "TASK-003"],
-    "TASK-005": ["TASK-001"],
-    "TASK-006": ["TASK-001"],
-    "TASK-007": ["TASK-005", "TASK-006"],
-    "TASK-008": ["TASK-001"],
-    "TASK-009": ["TASK-004", "TASK-005", "TASK-006"],
+    "TASK-002": [
+      "TASK-001"
+    ],
+    "TASK-003": [
+      "TASK-001"
+    ],
+    "TASK-004": [
+      "TASK-002",
+      "TASK-003"
+    ],
+    "TASK-005": [
+      "TASK-001"
+    ],
+    "TASK-006": [
+      "TASK-001"
+    ],
+    "TASK-007": [
+      "TASK-005",
+      "TASK-006"
+    ],
+    "TASK-008": [
+      "TASK-001"
+    ],
+    "TASK-009": [
+      "TASK-004",
+      "TASK-005",
+      "TASK-006"
+    ],
     "TASK-010": [],
-    "TASK-011": ["TASK-010"],
+    "TASK-011": [
+      "TASK-010"
+    ],
     "TASK-012": [],
-    "TASK-013": ["TASK-010"],
-    "TASK-014": ["TASK-013"],
-    "TASK-015": ["TASK-011", "TASK-012", "TASK-014"],
-    "TASK-016": ["TASK-011", "TASK-012"],
-    "TASK-017": ["TASK-013", "TASK-014"],
+    "TASK-013": [
+      "TASK-010"
+    ],
+    "TASK-014": [
+      "TASK-013"
+    ],
+    "TASK-015": [
+      "TASK-011",
+      "TASK-012",
+      "TASK-014"
+    ],
+    "TASK-016": [
+      "TASK-011",
+      "TASK-012"
+    ],
+    "TASK-017": [
+      "TASK-013",
+      "TASK-014"
+    ],
     "TASK-018": [],
-    "TASK-019": ["TASK-018"],
-    "TASK-020": ["TASK-019"],
-    "TASK-021": ["TASK-018"],
-    "TASK-022": ["TASK-018"],
-    "TASK-023": ["TASK-020", "TASK-021", "TASK-022"],
-    "TASK-024": ["TASK-020", "TASK-021", "TASK-022"],
+    "TASK-019": [
+      "TASK-018"
+    ],
+    "TASK-020": [
+      "TASK-019"
+    ],
+    "TASK-021": [
+      "TASK-018"
+    ],
+    "TASK-022": [
+      "TASK-018"
+    ],
+    "TASK-023": [
+      "TASK-020",
+      "TASK-021",
+      "TASK-022"
+    ],
+    "TASK-024": [
+      "TASK-020",
+      "TASK-021",
+      "TASK-022"
+    ],
     "TASK-025": [],
-    "TASK-026": ["TASK-025"],
-    "TASK-027": ["TASK-025"],
-    "TASK-028": ["TASK-025"],
-    "TASK-029": ["TASK-025", "TASK-028"],
-    "TASK-030": ["TASK-029"],
-    "TASK-031": ["TASK-029", "TASK-030"],
-    "TASK-032": ["TASK-031"],
-    "TASK-033": ["TASK-031"],
-    "TASK-034": ["TASK-031", "TASK-032"],
+    "TASK-026": [
+      "TASK-025"
+    ],
+    "TASK-027": [
+      "TASK-025"
+    ],
+    "TASK-028": [
+      "TASK-025"
+    ],
+    "TASK-029": [
+      "TASK-025",
+      "TASK-028"
+    ],
+    "TASK-030": [
+      "TASK-029"
+    ],
+    "TASK-031": [
+      "TASK-029",
+      "TASK-030"
+    ],
+    "TASK-032": [
+      "TASK-031"
+    ],
+    "TASK-033": [
+      "TASK-031"
+    ],
+    "TASK-034": [
+      "TASK-031",
+      "TASK-032"
+    ],
     "TASK-035": [],
-    "TASK-036": ["TASK-035", "TASK-011"],
-    "TASK-037": ["TASK-010"],
-    "TASK-038": ["TASK-011"],
-    "TASK-039": ["TASK-036", "TASK-037", "TASK-038"],
+    "TASK-036": [
+      "TASK-035",
+      "TASK-011"
+    ],
+    "TASK-037": [
+      "TASK-010"
+    ],
+    "TASK-038": [
+      "TASK-011"
+    ],
+    "TASK-039": [
+      "TASK-036",
+      "TASK-037",
+      "TASK-038"
+    ],
     "TASK-040": [],
-    "TASK-041": ["TASK-040"],
-    "TASK-042": ["TASK-040"],
+    "TASK-041": [
+      "TASK-040"
+    ],
+    "TASK-042": [
+      "TASK-040"
+    ],
     "TASK-043": [],
-    "TASK-044": ["TASK-040", "TASK-042", "TASK-043"],
-    "TASK-045": ["TASK-040"]
+    "TASK-044": [
+      "TASK-040",
+      "TASK-042",
+      "TASK-043"
+    ],
+    "TASK-045": [
+      "TASK-040"
+    ]
   }
 }

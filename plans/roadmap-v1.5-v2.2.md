@@ -32,7 +32,7 @@ v1.5 Network Intelligence                v1.6 Verify                    v1.7 Vis
 │                         │     │   playwright export [015] │     │                          │
 │ commands/meta.ts        │     │                           │     │ commands/meta.ts         │
 │   api cmd         [006] │     │ commands/meta.ts          │     │   visual cmd       [023] │
-│                         │     │   expect cmd        [012] │     │   a11y-audit cmd   [026] │
+│                         │     │   expect cmd        [012] │     │   a11y-audit cmd   [022] │
 │ cli.ts                  │     │                           │     │                          │
 │   --network-bodies[004] │     │                           │     │                          │
 └─────────────────────────┘     └───────────────────────────┘     └──────────────────────────┘
@@ -42,17 +42,17 @@ v1.5 Network Intelligence                v1.6 Verify                    v1.7 Vis
 v2.0 App Automation                       │              v2.1 Workflows         v2.2 Ecosystem
 ┌─────────────────────────┐               │     ┌─────────────────────┐  ┌──────────────────┐
 │ browse-ax/ (Swift)      │               │     │ src/flow-parser.ts  │  │ src/plugin.ts    │
-│   tree retrieval  [030] │               │     │              [043]  │  │            [050] │
-│   actions         [031] │               │     │                     │  │                  │
-│   properties      [032] │               │     │ commands/meta.ts    │  │ src/sdk.ts       │
-│                         │               │     │   flow        [044] │  │            [052] │
-│ src/app-manager.ts      │               │     │   retry       [045] │  │                  │
-│   connect/snapshot[034] │               │     │   watch       [046] │  │ detection/       │
-│   tap/fill/type   [035] │               │     │                     │  │  custom     [053]│
-│   text/screenshot [036] │               │     └─────────────────────┘  └──────────────────┘
+│   tree retrieval  [025] │               │     │              [035]  │  │            [040] │
+│   actions         [026] │               │     │                     │  │                  │
+│   properties      [027] │               │     │ commands/meta.ts    │  │ src/sdk.ts       │
+│                         │               │     │   flow        [036] │  │            [042] │
+│ src/app-manager.ts      │               │     │   retry       [037] │  │                  │
+│   connect/snapshot[029] │               │     │   watch       [038] │  │ detection/       │
+│   tap/fill/type   [030] │               │     │                     │  │  custom     [043]│
+│   text/screenshot [027] │               │     └─────────────────────┘  └──────────────────┘
 │                         │               │
-│ commands/app.ts   [037] │               │
-│ --app flag        [038] │               │
+│ commands/app.ts   [031] │               │
+│ --app flag        [031] │               │
 └─────────────────────────┘               │
 ```
 
@@ -128,7 +128,7 @@ Extend the `page.on('request', ...)` handler (line ~1495) to capture request bod
 **Agent:** nodejs-cli-senior-engineer
 **Review:** none
 **Depends on:** TASK-001
-**Priority:** P0
+**Priority:** P1
 
 ---
 
@@ -152,7 +152,7 @@ Extend the `page.on('response', ...)` handler (line ~1506) to capture response b
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
 **Depends on:** TASK-001
-**Priority:** P0
+**Priority:** P1
 
 ---
 
@@ -290,6 +290,7 @@ Add JSON API fixture routes to test-server.ts. Write integration tests covering 
 - [ ] Test: `api GET <baseUrl>/api/data` returns parsed JSON
 - [ ] Test: body truncation at limit works correctly
 - [ ] Edge case test: binary response body stored as `[binary N bytes]`
+- [ ] Test: `api GET` with session cookie set via `cookie` command → verify cookie appears in request sent by fetch
 
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
@@ -548,7 +549,7 @@ Extend `src/visual.ts` evaluate with 5 anomaly detectors: contrast failures (WCA
 **Agent:** nodejs-cli-senior-engineer
 **Review:** claude
 **Depends on:** TASK-018
-**Priority:** P0
+**Priority:** P1
 
 ---
 
@@ -722,7 +723,7 @@ Add `browse-ax --pid <pid> action <element-path> <action-name>` command. Element
 **Agent:** ios-macos-senior-engineer
 **Review:** claude
 **Depends on:** TASK-025
-**Priority:** P0
+**Priority:** P1
 
 ---
 
@@ -769,7 +770,7 @@ Configure build process: compile Swift binary to universal (arm64 + x86_64), inc
 **Agent:** ios-macos-senior-engineer
 **Review:** none
 **Depends on:** TASK-025
-**Priority:** P0
+**Priority:** P1
 
 ---
 
@@ -1198,6 +1199,7 @@ Document plugin API: how to create a browse plugin, register function interface,
 | expect polling burns CPU | TASK-011 | 100ms interval. Use page.waitForFunction for URL/text conditions (Playwright-native, no polling). |
 | WCAG contrast calculation wrong on gradients/images | TASK-019 | Skip contrast check when background is gradient or image. Document limitation. |
 | macOS Accessibility permission UX is confusing | TASK-025 | Doctor command checks permission. Clear error message with System Settings deep link. |
+| User denies or can't find AX permission grant | TASK-025, TASK-031 | `browse --app` fails fast with "Accessibility permission required" + `open x-apple.systempreferences:...` deep link URL. `browse doctor` shows step-by-step instructions. |
 | Swift binary doesn't compile on user's machine | TASK-028 | Ship pre-compiled universal binary in npm package. Lazy-download fallback. |
 | AX tree too deep/wide for iOS Simulator | TASK-025 | Depth limit (30). Filter non-interactive elements in snapshot -i mode. |
 | Flow YAML syntax errors confuse agents | TASK-035 | Validate all commands against command registry. Report errors with line numbers. |
