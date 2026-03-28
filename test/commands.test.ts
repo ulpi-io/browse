@@ -441,9 +441,9 @@ describe('CLI lifecycle', () => {
     let restartedPid: number | null = null;
 
     try {
-      const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+      const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
+        let resolved = false;
         const proc = spawn('./node_modules/.bin/tsx', [cliPath, 'status'], {
-          timeout: 25000,
           env: {
             ...process.env,
             BROWSE_STATE_FILE: stateFile,
@@ -454,7 +454,22 @@ describe('CLI lifecycle', () => {
         let stderr = '';
         proc.stdout.on('data', (d) => stdout += d.toString());
         proc.stderr.on('data', (d) => stderr += d.toString());
-        proc.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+        proc.on('close', (code) => {
+          if (!resolved) { resolved = true; resolve({ code: code ?? 1, stdout, stderr }); }
+        });
+        // Hard timeout: tsx may not forward SIGTERM, leaving pipes open.
+        // SIGKILL the process group and destroy streams to guarantee resolution.
+        const hardTimeout = setTimeout(() => {
+          if (resolved) return;
+          try { process.kill(-proc.pid!, 'SIGKILL'); } catch {
+            try { proc.kill('SIGKILL'); } catch {}
+          }
+          proc.stdout.destroy();
+          proc.stderr.destroy();
+          resolved = true;
+          resolve({ code: 1, stdout, stderr });
+        }, 30000);
+        proc.on('close', () => clearTimeout(hardTimeout));
       });
 
       if (fs.existsSync(stateFile)) {
@@ -472,7 +487,7 @@ describe('CLI lifecycle', () => {
       try { fs.unlinkSync(stateFile); } catch {}
       try { fs.unlinkSync(stateFile + '.lock'); } catch {}
     }
-  }, 20000);
+  });
 });
 
 // ─── Buffer bounds ──────────────────────────────────────────────
