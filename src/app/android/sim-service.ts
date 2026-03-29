@@ -84,20 +84,31 @@ export async function status(): Promise<{ running: boolean; state: AndroidServic
 
 // ─── Stop ──────────────────────────────────────────────────────
 
+/** Stop just the driver (for app switching). Keeps the emulator running. */
+export async function stopDriver(): Promise<void> {
+  const state = readState();
+  if (!state) return;
+  try {
+    execSync(`adb -s ${state.serial} shell am force-stop io.ulpi.browse.driver.test`, { stdio: 'pipe', timeout: 5000 });
+    execSync(`adb -s ${state.serial} shell am force-stop io.ulpi.browse.driver`, { stdio: 'pipe', timeout: 5000 });
+    execSync(`adb -s ${state.serial} forward --remove tcp:${state.port}`, { stdio: 'pipe', timeout: 5000 });
+  } catch {}
+  clearState();
+}
+
+/** Full stop — kill driver and emulator. */
 export async function stop(): Promise<string> {
   const state = readState();
   if (!state) return 'No Android device/emulator running.';
 
-  const { ensureAndroidBridge } = await import('./bridge');
   try {
-    // Kill driver instrumentation
     execSync(`adb -s ${state.serial} shell am force-stop io.ulpi.browse.driver.test`, { stdio: 'pipe', timeout: 5000 });
     execSync(`adb -s ${state.serial} shell am force-stop io.ulpi.browse.driver`, { stdio: 'pipe', timeout: 5000 });
-    // Remove port forwarding
     execSync(`adb -s ${state.serial} forward --remove tcp:${state.port}`, { stdio: 'pipe', timeout: 5000 });
-  } catch {
-    // Best-effort cleanup
-  }
+    if (state.serial.startsWith('emulator-')) {
+      execSync(`adb -s ${state.serial} emu kill`, { stdio: 'pipe', timeout: 10_000 });
+    }
+  } catch {}
 
   clearState();
   return `Android stopped (${state.device}).`;
@@ -124,16 +135,16 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
       // Switch target app if different
       if (opts.app && existing.app !== opts.app) {
         log(`Switching to ${opts.app}...`);
-        // Must restart driver with new target package — Android instrumentation
+        // Restart driver only (keep emulator running) — Android instrumentation
         // is scoped to a package at launch time (unlike iOS /configure)
-        await stop();
+        await stopDriver();
         // Fall through to full start with new app
       } else {
         return existing;
       }
     }
     log('Cleaning up stale driver...');
-    await stop();
+    await stopDriver();
   }
 
   // Find device — auto-install adb if missing, auto-start emulator if no device

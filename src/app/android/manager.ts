@@ -212,15 +212,21 @@ export class AndroidAppManager implements AutomationTarget {
     if (ref) {
       const { path, label } = this.resolveRef(ref);
       const result = await this.bridge.action(path, actionName);
-      if (!result.success) throw new Error(result.error ?? `Swipe ${direction} failed`);
+      if (!result.success) return this.swipeBoundaryMessage(direction, result.error);
       return `Swiped ${direction} on ${ref}${label ? ` "${label}"` : ''}`;
     }
 
     // No ref — find the first scrollable node in the tree
     const scrollPath = this.findScrollable();
     const result = await this.bridge.action(scrollPath, actionName);
-    if (!result.success) throw new Error(result.error ?? `Swipe ${direction} failed`);
+    if (!result.success) return this.swipeBoundaryMessage(direction, result.error);
     return `Swiped ${direction}`;
+  }
+
+  /** Return a friendly message when swipe hits the boundary */
+  private swipeBoundaryMessage(direction: string, error?: string): string {
+    const boundary = direction === 'up' || direction === 'left' ? 'bottom' : 'top';
+    return `Already at ${boundary} — cannot scroll ${direction} further.`;
   }
 
   /** Find the best scrollable node in the last tree (prefers deepest/largest) */
