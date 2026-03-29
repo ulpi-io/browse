@@ -272,3 +272,11 @@ export function createIOSBridge(
     },
   };
 }
+
+/**
+ * Reconfigure a running runner's target app at runtime.
+ * Used by sim-service when switching targets without restarting the runner.
+ */
+export async function configureRunnerTarget(port: number, bundleId: string): Promise<void> {
+  await runnerRequest<{ configured: string }>(port, '/configure', { targetBundleId: bundleId });
+}
