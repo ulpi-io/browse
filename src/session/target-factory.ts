@@ -135,6 +135,29 @@ export function createIOSTargetFactory(
 ): SessionTargetFactory {
   return {
     async create(_buffers: SessionBuffers): Promise<CreatedTarget> {
+      // Check if sim-service already has a healthy runner
+      const { readState, checkHealth } = await import('../app/ios/sim-service');
+      const state = readState();
+      if (state && await checkHealth(state.port)) {
+        // Runner is already running — create manager with pre-connected bridge
+        const { createIOSBridge } = await import('../app/ios/bridge');
+        const { IOSAppManager } = await import('../app/ios/manager');
+        const manager = new IOSAppManager(state.udid, bundleId, state.port);
+        // Skip connect() — directly set the bridge since runner is healthy
+        (manager as any).bridge = createIOSBridge(state.udid, bundleId, state.port);
+        (manager as any).connected = true;
+        return {
+          target: manager,
+          getContext: () => null,
+          setDomainFilter: () => {},
+          setInitScript: () => {},
+          getTabList: () => [],
+          getPageById: () => undefined,
+          getTabCount: () => 0,
+        };
+      }
+
+      // No running runner — full bootstrap
       const { createIOSAppManager } = await import('../app/ios/manager');
       const manager = await createIOSAppManager(bundleId, udid);
 

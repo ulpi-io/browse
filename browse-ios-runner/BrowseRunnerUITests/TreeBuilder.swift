@@ -10,9 +10,177 @@ import XCTest
 enum TreeBuilder {
 
     /// Build the full accessibility tree for the given application.
-    /// Returns the root `RawIOSNode` representing the application element.
+    /// Uses snapshot().dictionaryRepresentation for a fast single-IPC-call tree fetch
+    /// (same technique as Maestro). Falls back to element-by-element walk on failure.
     static func buildTree(from app: XCUIApplication) -> RawIOSNode {
-        return walkElement(app)
+        do {
+            let snapshot = try app.snapshot()
+            let dict = snapshot.dictionaryRepresentation
+            return nodeFromSnapshot(dict)
+        } catch {
+            NSLog("[BrowseRunner] Snapshot API failed (\(error.localizedDescription)), falling back to element walk")
+            return walkElement(app)
+        }
+    }
+
+    /// Convert a snapshot dictionary to a RawIOSNode recursively.
+    private static func nodeFromSnapshot(_ dict: [XCUIElement.AttributeName: Any]) -> RawIOSNode {
+        let elementType = (dict[.elementType] as? Int).flatMap { mapElementType($0) } ?? "other"
+        let label = dict[.label] as? String ?? ""
+        let value = dict[.value] as? String ?? ""
+        let identifier = dict[.identifier] as? String ?? ""
+        let placeholderValue = dict[.placeholderValue] as? String ?? ""
+        let isEnabled = dict[.enabled] as? Bool ?? true
+        let hasFocus = dict[.hasFocus] as? Bool ?? false
+        let isSelected = dict[.selected] as? Bool ?? false
+
+        // Frame from snapshot
+        var frame = NodeFrame(x: 0, y: 0, width: 0, height: 0)
+        if let frameDict = dict[.frame] as? [String: Double] {
+            frame = NodeFrame(
+                x: frameDict["X"] ?? 0,
+                y: frameDict["Y"] ?? 0,
+                width: frameDict["Width"] ?? 0,
+                height: frameDict["Height"] ?? 0
+            )
+        }
+
+        // Traits
+        var traits: [String] = []
+        if let traitValue = dict[XCUIElement.AttributeName(rawValue: "traits")] as? UInt64 {
+            traits = mapSnapshotTraits(traitValue)
+        }
+
+        // Children
+        var children: [RawIOSNode] = []
+        if let childDicts = dict[.children] as? [[XCUIElement.AttributeName: Any]] {
+            children = childDicts.map { nodeFromSnapshot($0) }
+        }
+
+        return RawIOSNode(
+            elementType: elementType,
+            identifier: identifier,
+            label: label,
+            value: value,
+            placeholderValue: placeholderValue,
+            frame: frame,
+            isEnabled: isEnabled,
+            isSelected: isSelected,
+            hasFocus: hasFocus,
+            traits: traits,
+            children: children
+        )
+    }
+
+    /// Map XCUIElement.ElementType raw value to string.
+    private static func mapElementType(_ rawValue: Int) -> String {
+        // These values match XCUIElement.ElementType rawValue
+        switch rawValue {
+        case 0: return "any"
+        case 1: return "other"
+        case 2: return "application"
+        case 3: return "group"
+        case 4: return "window"
+        case 5: return "sheet"
+        case 6: return "drawer"
+        case 7: return "alert"
+        case 8: return "dialog"
+        case 9: return "button"
+        case 10: return "radioButton"
+        case 11: return "radioGroup"
+        case 12: return "checkBox"
+        case 13: return "disclosureTriangle"
+        case 14: return "popUpButton"
+        case 15: return "comboBox"
+        case 16: return "menuButton"
+        case 17: return "toolbarButton"
+        case 18: return "popover"
+        case 19: return "keyboard"
+        case 20: return "key"
+        case 21: return "navigationBar"
+        case 22: return "tabBar"
+        case 23: return "tabGroup"
+        case 24: return "toolbar"
+        case 25: return "statusBar"
+        case 26: return "table"
+        case 27: return "tableRow"
+        case 28: return "tableColumn"
+        case 29: return "outline"
+        case 30: return "outlineRow"
+        case 31: return "browser"
+        case 32: return "collectionView"
+        case 33: return "slider"
+        case 34: return "pageIndicator"
+        case 35: return "progressIndicator"
+        case 36: return "activityIndicator"
+        case 37: return "segmentedControl"
+        case 38: return "picker"
+        case 39: return "pickerWheel"
+        case 40: return "switch"
+        case 41: return "toggle"
+        case 42: return "link"
+        case 43: return "image"
+        case 44: return "icon"
+        case 45: return "searchField"
+        case 46: return "scrollView"
+        case 47: return "scrollBar"
+        case 48: return "staticText"
+        case 49: return "textField"
+        case 50: return "secureTextField"
+        case 51: return "datePicker"
+        case 52: return "textView"
+        case 53: return "menu"
+        case 54: return "menuItem"
+        case 55: return "menuBar"
+        case 56: return "menuBarItem"
+        case 57: return "map"
+        case 58: return "webView"
+        case 59: return "incrementArrow"
+        case 60: return "decrementArrow"
+        case 61: return "timeline"
+        case 62: return "ratingIndicator"
+        case 63: return "valueIndicator"
+        case 64: return "splitGroup"
+        case 65: return "splitter"
+        case 66: return "relevanceIndicator"
+        case 67: return "colorWell"
+        case 68: return "helpTag"
+        case 69: return "matte"
+        case 70: return "dockItem"
+        case 71: return "ruler"
+        case 72: return "rulerMarker"
+        case 73: return "grid"
+        case 74: return "levelIndicator"
+        case 75: return "cell"
+        case 76: return "layoutArea"
+        case 77: return "layoutItem"
+        case 78: return "handle"
+        case 79: return "stepper"
+        case 80: return "tab"
+        default: return "other"
+        }
+    }
+
+    /// Map snapshot trait bitmask to string array.
+    private static func mapSnapshotTraits(_ value: UInt64) -> [String] {
+        var traits: [String] = []
+        if value & (1 << 0) != 0 { traits.append("button") }
+        if value & (1 << 1) != 0 { traits.append("link") }
+        if value & (1 << 2) != 0 { traits.append("image") }
+        if value & (1 << 3) != 0 { traits.append("selected") }
+        if value & (1 << 4) != 0 { traits.append("playsSound") }
+        if value & (1 << 5) != 0 { traits.append("keyboardKey") }
+        if value & (1 << 6) != 0 { traits.append("staticText") }
+        if value & (1 << 7) != 0 { traits.append("summaryElement") }
+        if value & (1 << 8) != 0 { traits.append("notEnabled") }
+        if value & (1 << 9) != 0 { traits.append("updatesFrequently") }
+        if value & (1 << 12) != 0 { traits.append("searchField") }
+        if value & (1 << 13) != 0 { traits.append("startsMediaSession") }
+        if value & (1 << 14) != 0 { traits.append("adjustable") }
+        if value & (1 << 15) != 0 { traits.append("allowsDirectInteraction") }
+        if value & (1 << 16) != 0 { traits.append("causesPageTurn") }
+        if value & (1 << 17) != 0 { traits.append("tabBar") }
+        return traits
     }
 
     /// Count the total number of elements in the tree rooted at the given element.

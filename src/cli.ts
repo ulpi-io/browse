@@ -430,7 +430,7 @@ export const SAFE_TO_RETRY = new Set([
 
 // Commands that are inherently long-running (reload + analysis + detection).
 // These get a 120s HTTP timeout instead of the default 30s.
-const LONG_RUNNING = new Set(['perf-audit', 'sim']);
+const LONG_RUNNING = new Set(['perf-audit', 'sim', 'snapshot', 'text']);
 
 // Commands that return static data independent of page state.
 // Safe to retry even after a server restart (no "blank page" issue).
@@ -479,7 +479,9 @@ async function sendCommand(state: ServerState, command: string, args: string[], 
       method: 'POST',
       headers,
       body,
-      signal: AbortSignal.timeout(LONG_RUNNING.has(command) ? 120000 : 30000),
+      signal: AbortSignal.timeout(
+        LONG_RUNNING.has(command) || cliFlags.platform || cliFlags.app ? 120000 : 30000
+      ),
     });
 
     if (resp.status === 401) {
