@@ -300,7 +300,9 @@ browse record start            # Record browsing commands as you go
 browse record stop             # Stop recording
 browse record status           # Check recording status
 browse record export browse [path]      # Export as chain-compatible JSON (replay with browse chain)
-browse record export replay [path]     # Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+browse record export flow [path]       # Export as YAML flow (replay with browse flow)
+browse record export replay [path]     # Export as Chrome DevTools Recorder (browser only)
+browse record export playwright [path] # Export as Playwright Test (browser only)
 browse record export replay --selectors css,aria [path]  # Filter selector types in export
 ```
 
@@ -580,9 +582,14 @@ browse flow run.yaml                  # Execute YAML automation script
 browse flow save login-flow           # Save current recording as named flow
 browse flow run login-flow            # Execute saved flow
 browse flow list                      # List saved flows
-browse retry                          # Retry last failed command with backoff
-browse watch                          # Watch DOM element for changes
+browse retry                          # Retry command with backoff (browser only)
+browse watch                          # Watch DOM element for changes (browser only)
 ```
+
+Flows work on all platforms (browser, Android, iOS, macOS). Each flow step goes through the `executeCommand()` pipeline — capability-gated per target. Recording captures individual flow steps, not the flow wrapper.
+
+**Browser-only workflow commands:** `retry`, `watch`, `har start/stop`, `video start/stop`
+**Browser-only export formats:** `record export replay`, `record export playwright`
 
 ### Assertions
 

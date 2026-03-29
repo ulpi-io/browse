@@ -310,10 +310,11 @@ describe('BrowseConfig', () => {
 
 describe('Flow save/run roundtrip', () => {
   test('save a recording then run it back', async () => {
-    // The flows module reads BROWSE_LOCAL_DIR at import time as a module-level
-    // constant, so we must use the same directory it resolves to.
-    // When BROWSE_LOCAL_DIR is unset, it defaults to '/tmp'.
-    const localDir = process.env.BROWSE_LOCAL_DIR || '/tmp';
+    // getFlowsDir() resolves via: config flowPaths → BROWSE_LOCAL_DIR → findProjectRoot()/.browse → cwd/.browse
+    // In test env within a git repo, findProjectRoot() returns the project root.
+    const { findProjectRoot } = await import('../src/config');
+    const root = findProjectRoot();
+    const localDir = process.env.BROWSE_LOCAL_DIR || (root ? path.join(root, '.browse') : '/tmp');
     const flowName = `roundtrip-${Date.now()}`;
     const savedPath = path.join(localDir, 'flows', `${flowName}.yaml`);
 

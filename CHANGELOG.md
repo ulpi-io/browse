@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.2.1
+
+**Unified flows, recording, and replay** — recording is the canonical capture model:
+
+- Flow and chain sub-steps now route through `executeCommand()` with lifecycle hook forwarding
+- Recording captures individual flow/chain sub-steps, not the wrapper command (`skipRecording` on flow/chain/retry/watch)
+- `record export flow [path]` — new YAML export format, round-trips with `flow <file>`
+- Flows work on all `AutomationTarget` types (browser, Android, iOS, macOS) — each step capability-gated
+- `retry` and `watch` marked `targetSupport: 'browser'` — proper executor errors on app targets
+- `record export replay` and `record export playwright` blocked on non-browser sessions with clear error
+- `har` and `video` commands blocked on non-browser sessions with clear error
+- `CommandContext.lifecycle` field threads transport hooks into nested execution
+- `findProjectRoot()` exported from config — flows dir resolves relative to project root, never `/tmp`
+- `Session.lastRecording` typed field replaces untyped `_lastRecording` hack
+- `RecordedStep` deduplicated — single source in `src/export/record.ts`
+- 46 new tests (unified-flows.test.ts) covering all new codepaths
+
 ## v2.2.0
 
 **Project-local extensibility** — custom rules, detections, and flows from project config:

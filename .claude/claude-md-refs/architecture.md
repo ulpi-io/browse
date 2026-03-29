@@ -191,6 +191,28 @@ Allows: about:blank, data:, blob:, matching domains
 Wildcard: *.example.com matches example.com AND any subdomain
 ```
 
+## Lifecycle Threading (Flows/Chain)
+
+```
+Transport (server.ts / mcp/server.ts)
+  constructs lifecycle = { before, after(recording+context), onError }
+  passes lifecycle into both:
+    - opts.lifecycle (for the executor pipeline)
+    - context.lifecycle (so command handlers can forward it)
+
+Flow/Chain handler receives ctx.lifecycle, forwards to nested executeCommand():
+  executeCommand(step.command, step.args, {
+    context: { ..., lifecycle: ctx.lifecycle },
+    lifecycle: ctx.lifecycle,
+  })
+
+This causes the transport's after-hook (which pushes to session.recording)
+to fire for each sub-step. Wrapper commands have skipRecording: true so
+only sub-steps are recorded.
+
+Flow nesting depth tracked per-session via WeakMap (max 10).
+```
+
 ## Action Context
 
 ```

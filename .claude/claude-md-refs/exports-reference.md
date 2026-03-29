@@ -36,7 +36,9 @@
 | `SAFE_TO_RETRY` | cli.ts | Set\<string\> | Read-only commands safe for auto-retry |
 | `handleReadCommand` | commands/read.ts | async function | Dispatch read commands to Playwright |
 | `handleWriteCommand` | commands/write.ts | async function | Dispatch write commands to Playwright |
-| `handleMetaCommand` | commands/meta.ts | async function | Dispatch meta commands (tabs, screenshot, auth, HAR) |
+| `handleMetaCommand` | commands/meta/index.ts | async function | Dispatch meta commands — accepts `AutomationTarget`, threads `lifecycle` |
+| `exportFlowYaml` | export/record.ts | function | Serialize RecordedStep[] to YAML flow format |
+| `findProjectRoot` | config.ts | function | Find project root by walking up from cwd (returns string or null) |
 | `handleSnapshot` | snapshot.ts | async function | Build ARIA snapshot with @ref map |
 | `parseSnapshotArgs` | snapshot.ts | function | Parse -i/-c/-C/-d/-s flags into options |
 | `addConsoleEntry` | buffers.ts | function | Push to legacy global console ring buffer |
@@ -79,7 +81,7 @@
 | `LogEntry` | buffers.ts | `{ timestamp, level, text }` |
 | `NetworkEntry` | buffers.ts | `{ timestamp, method, url, status?, duration?, size? }` |
 | `DeviceDescriptor` | browser-manager.ts | `{ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch }` |
-| `CommandContext` | types.ts | `{ manager, command, args }` |
+| `CommandContext` | automation/command.ts | `{ args, target, buffers, domainFilter?, session?, shutdown?, sessionManager?, lifecycle? }` |
 | `CommandResult` | types.ts | `{ output, hint? }` |
 | `PageState` | types.ts | `{ url, title, tabCount, dialog, consoleErrorCount, networkPendingCount, timestamp }` |
 | `ContextDelta` | types.ts | `{ urlChanged?, titleChanged?, dialogAppeared?, dialogDismissed?, tabsChanged?, consoleErrors?, navigated? }` |

@@ -98,17 +98,53 @@ export async function status(): Promise<{ running: boolean; state: SimServiceSta
   return { running: true, state, healthy: true };
 }
 
+// ─── Cleanup ──────────────────────────────────────────────────
+
+/**
+ * Kill any xcodebuild processes running the BrowseRunner scheme,
+ * and any process holding the runner port. This ensures a clean
+ * start even after crashes, stale PIDs, or interrupted shutdowns.
+ */
+async function killStaleRunners(port: number, statePid?: number): Promise<void> {
+  const { execSync } = await import('child_process');
+
+  // 1. Kill the PID from state if it's still alive
+  if (statePid) {
+    try { process.kill(statePid, 'SIGKILL'); } catch {}
+  }
+
+  // 2. Kill all xcodebuild processes running BrowseRunnerApp
+  try {
+    execSync('pkill -9 -f "xcodebuild.*BrowseRunnerApp"', { stdio: 'pipe', timeout: 5000 });
+  } catch { /* no matching processes — fine */ }
+
+  // 3. Kill anything holding the runner port (SIGKILL to avoid CLOSE_WAIT lingering)
+  try {
+    const lsof = execSync(`lsof -ti :${port}`, { stdio: 'pipe', timeout: 5000 }).toString().trim();
+    for (const pid of lsof.split('\n').filter(Boolean)) {
+      try { process.kill(parseInt(pid, 10), 'SIGKILL'); } catch {}
+    }
+  } catch { /* nothing on port — fine */ }
+
+  // Wait for the OS to fully release the port and clean up CLOSE_WAIT connections
+  for (let i = 0; i < 5; i++) {
+    await sleep(1000);
+    try {
+      execSync(`lsof -ti :${port}`, { stdio: 'pipe', timeout: 2000 });
+      // Still occupied — keep waiting
+    } catch {
+      break; // Port is free
+    }
+  }
+}
+
 // ─── Stop ──────────────────────────────────────────────────────
 
 export async function stop(): Promise<string> {
   const state = readState();
   if (!state) return 'No simulator/emulator running.';
 
-  // Kill the runner process
-  if (state.pid) {
-    try { process.kill(state.pid, 'SIGTERM'); } catch {}
-  }
-
+  await killStaleRunners(state.port, state.pid);
   clearState();
   return `${state.platform} simulator stopped (${state.device}).`;
 }
@@ -141,7 +177,13 @@ export async function startIOS(opts: StartOptions = {}): Promise<SimServiceState
       }
       return existing;
     }
+    // Unhealthy — clean up stale processes before fresh start
+    log('Cleaning up stale runner...');
+    await killStaleRunners(existing.port, existing.pid);
     clearState();
+  } else {
+    // No state file but port might still be occupied by an orphan
+    await killStaleRunners(port);
   }
 
   // Resolve simulator
