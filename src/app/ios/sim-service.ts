@@ -223,8 +223,14 @@ export async function startIOS(opts: StartOptions = {}): Promise<SimServiceState
     try { execSyncVis('open -a Simulator', { stdio: 'pipe', timeout: 5000 }); } catch {}
   }
 
-  // Build runner if needed
-  const runnerDir = path.resolve(__dirname_svc, '../../../browse-ios-runner');
+  // Build runner if needed — check multiple locations for bundled vs dev
+  const runnerCandidates = [
+    path.resolve(__dirname_svc, '../../../browse-ios-runner'),
+    path.resolve(__dirname_svc, '../../browse-ios-runner'),
+    path.resolve(__dirname_svc, '../bin/browse-ios-runner'),
+  ];
+  const runnerDir = runnerCandidates.find(d => fs.existsSync(path.join(d, 'project.yml')))
+    || runnerCandidates[0];
   const { execSync } = await import('child_process');
 
   if (!fs.existsSync(path.join(runnerDir, 'BrowseRunner.xcodeproj', 'project.pbxproj'))) {

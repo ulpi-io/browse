@@ -40,20 +40,24 @@ const DRIVER_HEALTH_TIMEOUT_MS = 15_000;
 const DRIVER_HEALTH_POLL_MS = 250;
 const INSTRUMENTATION_MAX_RETRIES = 2;
 
-/** Path to the prebuilt driver APK, relative to this file */
+/** Path to the prebuilt driver APK — checks multiple locations */
 function resolveDriverApkPath(): string {
-  // 1. Pre-built alongside source (CI or local build)
-  const localBuild = path.resolve(
-    __dirname,
-    '../../../browse-android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk',
-  );
-  if (fs.existsSync(localBuild)) return localBuild;
+  const candidates = [
+    // 1. Local dev build
+    path.resolve(__dirname, '../../../browse-android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'),
+    // 2. Installed alongside source (bin/ at project root)
+    path.resolve(__dirname, '../../bin/browse-android.apk'),
+    // 3. Bundled build (dist/browse.cjs → ../bin/)
+    path.resolve(__dirname, '../bin/browse-android.apk'),
+    // 4. Same directory as binary
+    path.resolve(__dirname, 'browse-android.apk'),
+  ];
 
-  // 2. Installed alongside package
-  const installed = path.resolve(__dirname, '../../bin/browse-android.apk');
-  if (fs.existsSync(installed)) return installed;
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
 
-  // 3. Lazy download location
+  // 5. Lazy download location
   const lazyPath = path.join(
     process.env.BROWSE_LOCAL_DIR || path.join(process.cwd(), '.browse'),
     'bin', 'browse-android.apk',
@@ -61,10 +65,23 @@ function resolveDriverApkPath(): string {
   if (fs.existsSync(lazyPath)) return lazyPath;
 
   throw new Error(
-    'browse-android APK not found. Build it with:\n' +
-    '  cd browse-android && ./gradlew :app:assembleDebugAndroidTest\n' +
-    'Or run: browse doctor --platform android',
+    'browse-android APK not found. Run: browse enable android\n' +
+    'Or build manually: cd browse-android && ./gradlew :app:assembleDebugAndroidTest',
   );
+}
+
+/** Path to the base app APK (needed alongside the test APK) */
+function resolveAppApkPath(): string | null {
+  const candidates = [
+    path.resolve(__dirname, '../../../browse-android/app/build/outputs/apk/debug/app-debug.apk'),
+    path.resolve(__dirname, '../../bin/browse-android-app.apk'),
+    path.resolve(__dirname, '../bin/browse-android-app.apk'),
+    path.resolve(__dirname, 'browse-android-app.apk'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 
 // ─── adb helpers ─────────────────────────────────────────────────
@@ -296,7 +313,7 @@ function installDriverApk(serial: string, apkPath: string): void {
 
   // Install both the app and test APK
   // Need the app APK for the instrumentation target
-  const appApkPath = apkPath.replace('-androidTest', '');
+  const appApkPath = resolveAppApkPath() || apkPath.replace('-androidTest', '');
   if (fs.existsSync(appApkPath)) {
     try {
       adbExec(serial, 'install', '-t', '-r', `"${appApkPath}"`);

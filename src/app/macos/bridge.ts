@@ -19,18 +19,21 @@ const __dirname_bridge = path.dirname(__filename_bridge);
  * Checks: local build, installed binary, lazy download location.
  */
 export function resolveBridgePath(): string {
-  // 1. Local dev build
-  const localBuild = path.resolve(__dirname_bridge, '../../../browse-ax/.build/release/browse-ax');
-  if (fs.existsSync(localBuild)) return localBuild;
+  const candidates = [
+    // 1. Local dev build
+    path.resolve(__dirname_bridge, '../../../browse-ax/.build/release/browse-ax'),
+    path.resolve(__dirname_bridge, '../../../browse-ax/.build/debug/browse-ax'),
+    // 2. Installed alongside source (bin/ at project root)
+    path.resolve(__dirname_bridge, '../../bin/browse-ax'),
+    // 3. Bundled build (dist/browse.cjs → ../bin/)
+    path.resolve(__dirname_bridge, '../bin/browse-ax'),
+  ];
 
-  const localDebug = path.resolve(__dirname_bridge, '../../../browse-ax/.build/debug/browse-ax');
-  if (fs.existsSync(localDebug)) return localDebug;
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
 
-  // 2. Installed alongside package
-  const installed = path.resolve(__dirname_bridge, '../../bin/browse-ax');
-  if (fs.existsSync(installed)) return installed;
-
-  // 3. Lazy download location
+  // 4. Lazy download location
   const lazyPath = path.join(
     process.env.BROWSE_LOCAL_DIR || path.join(process.cwd(), '.browse'),
     'bin', 'browse-ax',
@@ -38,8 +41,8 @@ export function resolveBridgePath(): string {
   if (fs.existsSync(lazyPath)) return lazyPath;
 
   throw new Error(
-    'browse-ax binary not found. Build it with: cd browse-ax && swift build -c release\n' +
-    'Or run: browse doctor --platform macos',
+    'browse-ax binary not found. Run: browse enable macos\n' +
+    'Or build manually: cd browse-ax && swift build -c release',
   );
 }
 
