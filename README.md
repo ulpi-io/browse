@@ -1,6 +1,6 @@
 # @ulpi/browse
 
-Headless browser CLI for AI coding agents. Persistent Chromium daemon via Playwright, ~100ms per command after startup.
+Fast headless browser and native app automation CLI for AI coding agents. Persistent Chromium daemon via Playwright, ~100ms per command. Automate Android, iOS, and macOS apps through the same interface.
 
 ## Installation
 
@@ -519,6 +519,126 @@ For full process isolation (separate Chromium instances), use `BROWSE_PORT` to r
 | Multiplexing | Yes (parallel agents) | No (one agent per profile) |
 | Use case | Parallel browsing, lightweight | Real login state, heavy |
 
+## Native App Automation
+
+Automate Android, iOS, and macOS apps through the same CLI and ref workflow:
+
+### Android
+
+```bash
+browse --platform android --app com.example.myapp snapshot -i
+browse --platform android --app com.example.myapp click @e3
+browse --platform android --app com.example.myapp fill @e2 "test@example.com"
+browse --platform android --app com.example.myapp text
+browse --platform android --app com.example.myapp screenshot app.png
+```
+
+Requires: Android SDK platform-tools (`adb` on PATH), a booted emulator or connected device.
+
+```bash
+browse doctor --platform android    # Check setup
+```
+
+The Android driver is an on-device instrumentation test that exposes the accessibility tree via HTTP. The host bridge installs it automatically, forwards ports via `adb`, and manages the lifecycle.
+
+### iOS
+
+```bash
+browse --platform ios --app com.example.myapp snapshot -i
+browse --platform ios --app com.example.myapp tap @e1
+browse --platform ios --app com.example.myapp fill @e3 "hello"
+```
+
+Requires: Xcode, a booted iOS Simulator.
+
+### macOS
+
+```bash
+browse --app "Safari" snapshot -i
+browse --app "Safari" click @e2
+browse --app "Safari" text
+```
+
+Requires: macOS, Accessibility permission granted to the terminal.
+
+### Platform Flags
+
+| Flag | Description |
+|------|-------------|
+| `--platform android\|ios\|macos` | Target platform (default: browser) |
+| `--app <name>` | App package name (Android), bundle ID (iOS), or process name (macOS) |
+| `--device <serial>` | Device serial (Android), simulator UDID (iOS) |
+
+All platforms share the same `@ref` workflow — `snapshot -i` assigns refs, then use `click @e1`, `fill @e2 "text"`, etc. Commands that require browser capabilities (navigation, tabs, JavaScript) are blocked with clear errors on app targets.
+
+## Workflow Commands
+
+### Flows
+
+```bash
+browse flow run.yaml                  # Execute YAML automation script
+browse flow save login-flow           # Save current recording as named flow
+browse flow run login-flow            # Execute saved flow
+browse flow list                      # List saved flows
+browse retry                          # Retry last failed command with backoff
+browse watch                          # Watch DOM element for changes
+```
+
+### Assertions
+
+```bash
+browse expect "text 'Welcome'"        # Assert text exists on page
+browse expect "count .item > 3"       # Assert element count
+browse expect "url contains /dashboard" # Assert URL
+browse expect "title 'My App'"        # Assert page title
+```
+
+### SDK Mode
+
+```typescript
+import { createBrowser } from '@ulpi/browse/sdk';
+
+const browser = await createBrowser();
+await browser.goto('https://example.com');
+const text = await browser.text();
+await browser.close();
+```
+
+## Custom Extensibility
+
+Extend browse with project-local JSON/YAML configuration in `.browse/`:
+
+### Custom Audit Rules
+
+`.browse/rules/my-rules.json`:
+```json
+[
+  { "kind": "metric-threshold", "metric": "lcp", "max": 2000, "severity": "critical" },
+  { "kind": "selector-count", "selector": "img:not([alt])", "max": 0, "severity": "warning" }
+]
+```
+
+### Custom Detection Signatures
+
+`.browse/detections/my-framework.json`:
+```json
+[
+  { "name": "MyFramework", "detect": "!!window.__MY_FRAMEWORK__", "versionExpr": "window.__MY_FRAMEWORK__.version", "category": "custom" }
+]
+```
+
+### Project Config
+
+`browse.json`:
+```json
+{
+  "detectionPaths": [".browse/detections"],
+  "rulePaths": [".browse/rules"],
+  "flowPaths": [".browse/flows"],
+  "startupFlows": ["setup.yaml"]
+}
+```
+
 ## Security
 
 All security features are opt-in — existing workflows are unaffected until you explicitly enable a feature.
@@ -587,7 +707,11 @@ Create a `browse.json` file at your project root to set persistent defaults:
   "idleTimeout": 3600000,
   "viewport": "1280x720",
   "device": "iPhone 14",
-  "runtime": "playwright"
+  "runtime": "playwright",
+  "detectionPaths": [".browse/detections"],
+  "rulePaths": [".browse/rules"],
+  "flowPaths": [".browse/flows"],
+  "startupFlows": ["setup.yaml"]
 }
 ```
 
@@ -635,7 +759,7 @@ Use browse to test the login flow. Run browse --help to see available commands.
 
 ## MCP Server Mode
 
-Run browse as an [MCP](https://modelcontextprotocol.io/) server for editors that support the Model Context Protocol. All 99 CLI commands are available as MCP tools, including `perf-audit`, `detect`, `coverage`, and `initscript`.
+Run browse as an [MCP](https://modelcontextprotocol.io/) server for editors that support the Model Context Protocol. All CLI commands are available as MCP tools — browser automation, app automation, perf-audit, detect, coverage, flows, and more.
 
 ```bash
 browse --mcp
@@ -739,18 +863,22 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 ## Architecture
 
 ```
-browse [--session <id>] <command>
+browse [--session <id>] [--platform <p>] [--app <name>] <command>
           |
     CLI (thin HTTP client)
           |
     Persistent server (localhost, auto-started)
           |
-    SessionManager
-    ├── "default"  → BrowserContext → tabs, refs, cookies, buffers
-    ├── "agent-a"  → BrowserContext → tabs, refs, cookies, buffers
-    └── "agent-b"  → BrowserContext → tabs, refs, cookies, buffers
-          |
-    Chromium (Playwright, headless, shared)
+    SessionManager + CommandRegistry + executeCommand()
+    ├── Browser sessions:
+    │   ├── "default"  → BrowserManager → Chromium (Playwright)
+    │   ├── "agent-a"  → BrowserManager → Chromium (shared)
+    │   └── "agent-b"  → BrowserManager → Chromium (shared)
+    ├── App sessions:
+    │   ├── "app:com.example"     → AndroidAppManager → adb → device driver
+    │   ├── "app:com.example.ios" → IOSAppManager     → simctl → Simulator
+    │   └── "app:Safari"          → AppManager         → browse-ax → macOS AX
+    └── All targets implement AutomationTarget interface
 ```
 
 - **First command:** ~2s (server + Chromium startup, once)
@@ -796,4 +924,4 @@ Inspired by and originally derived from the `/browse` skill in [gstack](https://
 
 ## License
 
-MIT
+Apache-2.0
