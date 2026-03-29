@@ -525,40 +525,63 @@ For full process isolation (separate Chromium instances), use `BROWSE_PORT` to r
 
 Automate Android, iOS, and macOS apps through the same CLI and ref workflow:
 
+### Simulator/Emulator Lifecycle
+
+```bash
+browse sim start --platform ios --app com.apple.Preferences --visible
+browse sim start --platform android --app com.android.settings --visible
+browse sim stop --platform ios
+browse sim stop --platform android
+browse sim status --platform ios
+browse sim status --platform android
+```
+
+- `sim start` boots the simulator/emulator, launches the target app, and starts the automation driver
+- `--visible` opens the simulator/emulator window (default: headless)
+- Switching `--app` on a running simulator reconfigures the target without rebooting
+- **Auto-install**: Android `sim start` automatically installs `adb`, Java, Android SDK, system image, and emulator via Homebrew if missing
+
 ### Android
 
 ```bash
-browse --platform android --app com.example.myapp snapshot -i
-browse --platform android --app com.example.myapp click @e3
-browse --platform android --app com.example.myapp fill @e2 "test@example.com"
-browse --platform android --app com.example.myapp text
-browse --platform android --app com.example.myapp screenshot app.png
+browse sim start --platform android --app com.android.settings --visible
+browse --platform android --app com.android.settings snapshot -i
+browse --platform android --app com.android.settings tap @e3
+browse --platform android --app com.android.settings swipe up
+browse --platform android --app com.android.settings press back
+browse --platform android --app com.android.settings text
+browse --platform android --app com.android.settings screenshot app.png
+browse sim stop --platform android
 ```
 
-Requires: Android SDK platform-tools (`adb` on PATH), a booted emulator or connected device.
+Auto-installs the full toolchain on first use (adb, JDK 21, Android SDK, emulator, system image, AVD). No manual setup required.
 
 ```bash
 browse doctor --platform android    # Check setup
 ```
 
-The Android driver is an on-device instrumentation test that exposes the accessibility tree via HTTP. The host bridge installs it automatically, forwards ports via `adb`, and manages the lifecycle.
-
 ### iOS
 
 ```bash
-browse --platform ios --app com.example.myapp snapshot -i
-browse --platform ios --app com.example.myapp tap @e1
-browse --platform ios --app com.example.myapp fill @e3 "hello"
+browse sim start --platform ios --app com.apple.Preferences --visible
+browse --platform ios --app com.apple.Preferences snapshot -i
+browse --platform ios --app com.apple.Preferences tap @e2
+browse --platform ios --app com.apple.Preferences swipe up
+browse --platform ios --app com.apple.Preferences press home
+browse --platform ios --app com.apple.mobilesafari snapshot -i  # Switch app
+browse sim stop --platform ios
 ```
 
-Requires: Xcode, a booted iOS Simulator.
+Requires: Xcode. Simulator boots automatically.
 
 ### macOS
 
 ```bash
-browse --app "Safari" snapshot -i
-browse --app "Safari" click @e2
-browse --app "Safari" text
+browse --app "System Settings" snapshot -i
+browse --app "System Settings" tap @e5
+browse --app "System Settings" swipe up
+browse --app TextEdit type "Hello"
+browse --app TextEdit press "cmd+n"   # Modifier combos supported
 ```
 
 Requires: macOS, Accessibility permission granted to the terminal.
@@ -570,8 +593,11 @@ Requires: macOS, Accessibility permission granted to the terminal.
 | `--platform android\|ios\|macos` | Target platform (default: browser) |
 | `--app <name>` | App package name (Android), bundle ID (iOS), or process name (macOS) |
 | `--device <serial>` | Device serial (Android), simulator UDID (iOS) |
+| `--visible` | Show simulator/emulator window (default: headless) |
 
-All platforms share the same `@ref` workflow — `snapshot -i` assigns refs, then use `click @e1`, `fill @e2 "text"`, etc. Commands that require browser capabilities (navigation, tabs, JavaScript) are blocked with clear errors on app targets.
+### Unified Command Surface
+
+All platforms support the same commands: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`. The `@ref` workflow is identical — `snapshot -i` assigns refs, then `tap @e1`, `fill @e2 "text"`, etc. Commands requiring browser capabilities (navigation, tabs, JavaScript) are blocked with clear errors on app targets.
 
 ## Workflow Commands
 

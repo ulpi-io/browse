@@ -1,6 +1,6 @@
 # @ulpi/browse
 
-Fast headless browser CLI for AI coding agents. Persistent Chromium daemon via Playwright, controlled through `browse <command>` CLI. Supports parallel agents via session multiplexing.
+Fast headless browser and native app automation CLI for AI coding agents. Persistent Chromium daemon via Playwright, Android/iOS/macOS app automation via accessibility APIs. Controlled through `browse <command>` CLI. Supports parallel agents via session multiplexing.
 
 ## Project Documentation
 

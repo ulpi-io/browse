@@ -127,6 +127,20 @@ browse provider save browserbase <api-key>
 browse --provider browserbase goto https://example.com
 browse provider list
 browse provider delete browserbase
+
+# Native app automation (Android, iOS, macOS)
+browse sim start --platform android --app com.android.settings --visible
+browse sim start --platform ios --app com.apple.Preferences --visible
+browse --platform android --app com.android.settings snapshot -i
+browse --platform ios --app com.apple.Preferences snapshot -i
+browse --app "System Settings" snapshot -i              # macOS
+browse --platform android --app com.android.settings tap @e3
+browse --platform android --app com.android.settings swipe up
+browse --platform android --app com.android.settings press back
+browse --platform ios --app com.apple.mobilesafari type "example.com"
+browse --app TextEdit press "cmd+n"                     # macOS modifier combos
+browse sim stop --platform android
+browse sim stop --platform ios
 ```
 
 ## Command Reference
@@ -173,6 +187,20 @@ browse attrs @e6          Get attributes of ref @e6
 ```
 
 Refs are invalidated on navigation — run `snapshot` again after `goto`.
+
+### Native App Automation
+```
+browse sim start --platform ios|android --app <id> [--visible]  Start simulator/emulator + app
+browse sim stop --platform ios|android                          Stop simulator/emulator
+browse sim status --platform ios|android                        Check runner status
+browse --platform ios --app <bundleId> <command>                Target iOS app
+browse --platform android --app <package> <command>             Target Android app
+browse --app <name> <command>                                   Target macOS app
+```
+
+Supported commands on all app platforms: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
+macOS also supports modifier combos: `browse --app TextEdit press "cmd+n"`.
+Android auto-installs adb, Java, SDK, and emulator on first use (macOS via Homebrew).
 
 ### Interaction
 ```

@@ -1,5 +1,48 @@
 # Changelog
 
+## v2.3.0
+
+**Simulator lifecycle and zero-setup native app automation:**
+
+**Simulator/Emulator management:**
+- `browse sim start --platform ios|android --app <id> [--visible]` — boot, launch app, start driver
+- `browse sim stop --platform ios|android` — clean shutdown (kills emulator on Android, stops runner on iOS)
+- `browse sim status --platform ios|android` — health and connection info
+- `--visible` flag opens the simulator/emulator window (default: headless)
+- iOS app switching: reconfigures runner in-place via `/configure` without restarting
+- Android app switching: restarts driver with new target, keeps emulator running
+
+**Android zero-setup bootstrap:**
+- Auto-installs entire Android toolchain when missing: adb, JDK 21, Android SDK, emulator, system image, AVD
+- All via Homebrew on macOS — single `sim start` command from blank machine to running emulator
+- Build-tools, platform, and system image auto-installed via sdkmanager
+- Driver APK auto-built from source when gradlew is available
+
+**iOS runner fixes:**
+- `ConfigureHandler` calls `.activate()` on target app — fixes runner crash on app switch
+- Coordinate-based swipe (`press+drag`) instead of `element.swipeUp()` — reliably scrolls WebViews
+- Smart swipe target: auto-finds first scrollable descendant (webView, scrollView, table)
+
+**macOS bridge improvements:**
+- Coordinate-based click fallback when `AXPress` isn't supported (sidebar items, static text)
+- Modifier key combos: `cmd+n`, `cmd+shift+s`, `ctrl+c` via CGEvent
+- Text element labels: uses value for AXStaticText/AXCell when title/description are missing
+- `walkToElement` falls back to app element when no window exists (menu bar interactions)
+
+**Android driver fixes:**
+- INTERNET permission + `usesCleartextTraffic` in manifest — fixes EPERM on server socket
+- WebView tree: `UiDevice.getWindowRoots()` via reflection + invisible-node workaround inside WebViews
+- `FLAG_INCLUDE_NOT_IMPORTANT_VIEWS` for broader tree coverage
+- Smart scroll target: finds deepest scrollable node instead of using root
+- Friendly boundary messages: "Already at top" instead of "scrollForward returned false"
+
+**Cross-platform alignment:**
+- All three platforms expose: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`
+- Standardized `targetType` to `'app'` across macOS, iOS, Android (was `'android-app'`)
+- `read.ts` dispatch fixed for all app targets (was only checking `'app'`)
+- Interactive snapshot shows labeled children of clickable containers (fixes Android Settings)
+- `normalize.ts` strips `AXAndroid:` prefix from role names for cleaner output
+
 ## v2.2.1
 
 **Unified flows, recording, and replay** — recording is the canonical capture model:
