@@ -1,5 +1,86 @@
 # Changelog
 
+## v2.0.0
+
+**Native app automation** — automate Android, iOS, and macOS apps through the same CLI:
+
+**Android automation:**
+- On-device instrumentation driver (`browse-android/`) — Kotlin NanoHTTPD server running as an Android instrumentation test
+- Accessibility tree traversal via `UiAutomation` + `AccessibilityNodeInfo`, scoped to target package
+- Full protocol: `/health`, `/tree`, `/action`, `/setValue`, `/type`, `/press`, `/screenshot`, `/state`
+- Character-by-character key injection with clipboard-paste fallback for Unicode
+- Host bridge with retry logic, stale instrumentation cleanup, port-forward lifecycle management
+- `AndroidAppManager` implements `AutomationTarget` — same command surface as browser
+- 24 mocked contract tests covering all protocol methods and error paths
+
+**iOS automation:**
+- iOS Simulator bridge via runner app + `simctl`
+- `IOSAppManager` with snapshot, tap, fill, type, press, screenshot
+- Simulator lifecycle: boot, install, launch, terminate, permissions, media, status bar
+- Role normalization from iOS accessibility roles to AX-style roles
+
+**macOS app automation:**
+- Swift bridge binary (`browse-ax`) — communicates with macOS Accessibility API
+- `AppManager` with snapshot, tap, fill, type, press, screenshot
+- Auto-prompts Accessibility permission dialog on first use
+
+**Unified platform surface:**
+- `--platform android|ios|macos --app <name> --device <serial>` — single CLI entry point
+- `SessionTargetFactory` abstraction — browser, Android, iOS, macOS targets created through same factory
+- Capability gating — commands requiring `navigation`, `tabs`, or `javascript` blocked with clear errors on app targets
+- `@ref` system works identically across all platforms
+- MCP tools auto-register from registry — no platform-specific MCP namespaces
+
+**App target infrastructure:**
+- `AutomationTarget` interface (5 methods) + `TargetCapabilities` flags
+- `AppNode` / `AppState` normalized types — platform bridges provide raw data, browse owns semantics
+- `assignRefs()` / `extractText()` shared across all app platforms
+- Tree normalization with role mapping (Android class names → AX roles, iOS roles → AX roles)
+
+**Doctor diagnostics:**
+- `browse doctor` now shows Android diagnostics: adb version, connected devices, AVDs, driver APK status
+- `browse doctor --platform android` for focused output
+- macOS app bridge check preserved
+
+**Build pipeline:**
+- `scripts/build-all.sh` builds Android instrumentation APK alongside Node.js bundle
+- APK auto-resolved from local build, installed package, or lazy-download location
+
+## v2.1.0
+
+**Workflow commands and SDK mode:**
+- `flow <file.yaml>` — execute YAML automation scripts with steps, variables, conditionals
+- `retry` — retry last failed command
+- `watch <ms>` — auto-retry with delay
+- SDK mode — programmatic API for embedding browse in Node.js applications
+- Custom audit rules — JSON-declarative metric-threshold and selector-count rules
+
+## v1.7.0
+
+**Visual analysis and accessibility audit:**
+- `visual` — visual layout inspection (spacing, alignment, overflow detection)
+- `a11y-audit` — accessibility audit (WCAG violations, missing labels, contrast issues)
+- `layout` — full computed layout with contrast ratio for any element
+
+## v1.6.0
+
+**Assertions, budgets, and export:**
+- `expect <expression>` — assertion command with parser for text/element/attribute/count/url/title checks
+- `perf-audit --budget <file>` — performance budgets with pass/fail per metric
+- `wait --request <pattern>` — wait for a specific network request
+- Playwright export format for recorded sessions
+- MCP registration for all new commands
+
+## v1.5.2
+
+**Network body capture and API discovery:**
+- `--network-bodies` flag / `BROWSE_NETWORK_BODIES=1` — capture request/response bodies (256KB per entry limit)
+- `request <url-pattern>` — inspect captured request/response for a specific URL
+- `api` — list discovered API endpoints from network traffic
+- Guarded write behavior — write commands wait for network + DOM to settle before returning
+- Settle mode — configurable via `browse set settle on|off`
+- HAR recording now includes request/response bodies when capture is enabled
+
 ## v1.5.1
 
 **Domain architecture closeout** — final pre-roadmap structural refactor:
