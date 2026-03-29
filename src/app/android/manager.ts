@@ -215,9 +215,29 @@ export class AndroidAppManager implements AutomationTarget {
       if (!result.success) throw new Error(result.error ?? `Swipe ${direction} failed`);
       return `Swiped ${direction} on ${ref}${label ? ` "${label}"` : ''}`;
     }
-    const result = await this.bridge.action([0], actionName);
+
+    // No ref — find the first scrollable node in the tree
+    const scrollPath = this.findScrollable();
+    const result = await this.bridge.action(scrollPath, actionName);
     if (!result.success) throw new Error(result.error ?? `Swipe ${direction} failed`);
     return `Swiped ${direction}`;
+  }
+
+  /** Find the best scrollable node in the last tree (prefers deepest/largest) */
+  private findScrollable(): number[] {
+    if (!this.lastTree) return [0];
+    const scrollables: { path: number[]; depth: number }[] = [];
+    function walk(node: AppNode, depth: number): void {
+      if (node.actions.includes('AXScroll')) {
+        scrollables.push({ path: node.path, depth });
+      }
+      for (const child of node.children) walk(child, depth + 1);
+    }
+    walk(this.lastTree, 0);
+    // Prefer the deepest scrollable — usually the main content, not the toolbar
+    if (scrollables.length === 0) return [0];
+    scrollables.sort((a, b) => b.depth - a.depth);
+    return scrollables[0].path;
   }
 
   /** Press a named key */
