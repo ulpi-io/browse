@@ -525,6 +525,17 @@ For full process isolation (separate Chromium instances), use `BROWSE_PORT` to r
 
 Automate Android, iOS, and macOS apps through the same CLI and ref workflow:
 
+### Enable Platforms
+
+```bash
+browse enable android    # Installs adb, JDK, Android SDK, emulator, system image, driver APK
+browse enable ios        # Builds iOS runner (requires Xcode)
+browse enable macos      # Builds macOS AX bridge (requires Xcode CLI tools)
+browse enable all        # Enable all platforms
+```
+
+Each `enable` command installs all dependencies and builds the native driver for that platform. Run once — everything is cached for future use.
+
 ### Simulator/Emulator Lifecycle
 
 ```bash

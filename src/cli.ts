@@ -933,6 +933,13 @@ export async function main() {
     return;
   }
 
+  // enable android|ios|macos|all — install dependencies and build native drivers
+  if (args[0] === 'enable') {
+    const { handleEnable } = await import('./enable');
+    await handleEnable(args.slice(1));
+    return;
+  }
+
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     const { generateHelp } = await import('./automation/registry');
     console.log(generateHelp());

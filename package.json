@@ -27,6 +27,10 @@
     "bin/",
     "dist/",
     "skill/",
+    "browse-ios-runner/BrowseRunnerApp/",
+    "browse-ios-runner/BrowseRunnerUITests/",
+    "browse-ios-runner/project.yml",
+    "browse-ios-runner/build.sh",
     "LICENSE",
     "README.md"
   ],
@@ -37,7 +41,12 @@
     "headless",
     "cli",
     "ai-agent",
-    "claude"
+    "claude",
+    "android",
+    "ios",
+    "macos",
+    "mobile-testing",
+    "accessibility"
   ],
   "license": "Apache-2.0",
   "publishConfig": {
