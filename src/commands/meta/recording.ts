@@ -91,8 +91,11 @@ export async function handleRecordingCommand(
           }
           const { exportPlaywrightTest } = await import('../../export/replay');
           output = exportPlaywrightTest(steps, selectorFilter as any);
+        } else if (format === 'flow') {
+          const { exportFlowYaml } = await import('../../export/record');
+          output = exportFlowYaml(steps);
         } else {
-          throw new Error(`Unknown format: ${format}. Use "browse" (chain JSON), "replay" (Puppeteer), or "playwright" (Playwright Test).`);
+          throw new Error(`Unknown format: ${format}. Use "browse" (chain JSON), "replay" (Puppeteer), "playwright" (Playwright Test), or "flow" (YAML).`);
         }
 
         if (filePath) {
@@ -104,7 +107,7 @@ export async function handleRecordingCommand(
         return output;
       }
 
-      throw new Error('Usage: browse record start | stop | status | export browse|replay [path]');
+      throw new Error('Usage: browse record start | stop | status | export browse|replay|playwright|flow [path]');
     }
 
     case 'har': {

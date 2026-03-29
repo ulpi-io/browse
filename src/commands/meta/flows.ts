@@ -229,20 +229,9 @@ export async function handleFlowsCommand(
           );
         }
 
-        // Serialize steps to YAML using the yaml package
-        const YAML = await import('yaml');
-        const yamlSteps = steps.map((step: { command: string; args: string[] }) => {
-          const { command: cmd, args: stepArgs } = step;
-          if (stepArgs.length === 0) {
-            return { [cmd]: null };
-          } else if (stepArgs.length === 1) {
-            return { [cmd]: stepArgs[0] };
-          } else {
-            return { [cmd]: stepArgs };
-          }
-        });
-
-        const yamlContent = YAML.stringify(yamlSteps);
+        // Serialize steps to YAML using shared export function
+        const { exportFlowYaml } = await import('../../export/record');
+        const yamlContent = exportFlowYaml(steps);
         const flowPath = path.join(getFlowsDir(), `${name}.yaml`);
         fs.writeFileSync(flowPath, yamlContent, 'utf-8');
 

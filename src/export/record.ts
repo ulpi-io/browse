@@ -3,9 +3,11 @@
  * - RecordedStep: shared recording step type
  * - resolveRefSelectors: extract real selectors from Playwright Locators
  * - exportBrowse: chain-compatible JSON (replay with `browse chain`)
+ * - exportFlowYaml: YAML flow file (replay with `flow <file>`)
  */
 
 import type { Locator } from 'playwright';
+import YAML from 'yaml';
 
 export interface RecordedStep {
   command: string;
@@ -138,4 +140,20 @@ export async function resolveRefSelectors(locator: Locator): Promise<string[]> {
 export function exportBrowse(steps: RecordedStep[]): string {
   const commands = steps.map(step => [step.command, ...step.args]);
   return JSON.stringify(commands);
+}
+
+// ─── Flow YAML (compatible with `flow <file>` / `flow run <name>`) ──
+
+/**
+ * Export recorded steps as a YAML flow file.
+ * Produces the same format that `flow <file>` and `flow run <name>` execute.
+ */
+export function exportFlowYaml(steps: RecordedStep[]): string {
+  const yamlSteps = steps.map(step => {
+    const { command, args } = step;
+    if (args.length === 0) return { [command]: null };
+    if (args.length === 1) return { [command]: args[0] };
+    return { [command]: args };
+  });
+  return YAML.stringify(yamlSteps);
 }

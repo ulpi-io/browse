@@ -531,7 +531,7 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { prefix: { type: 'string', description: 'File path prefix for the screenshots (default: .browse/browse-responsive).' } } },
     argDecode: (p) => p.prefix ? [String(p.prefix)] : [],
   } }),
-  m('chain',            'Execute command sequence (stdin JSON)',             { mcp: {
+  m('chain',            'Execute command sequence (stdin JSON)',             { skipRecording: true, mcp: {
     description: 'Execute a sequence of commands in order. Pass a JSON array of command arrays. Each command is [name, ...args]. Results are returned for each step. Failed steps show errors without stopping the chain.',
     inputSchema: { type: 'object', properties: { commands: { type: 'string', description: 'JSON array of commands, e.g. [["goto","https://example.com"],["text"],["click","@e3"]]' } }, required: ['commands'] },
     argDecode: (p) => [String(p.commands)],
@@ -646,8 +646,8 @@ registry.registerAll([
     argDecode: () => [],
   } }),
   m('record',           'Record/export interactions',                       { usage: 'start|stop|status|export', safeToRetry: true, skipRecording: true, mcp: {
-    description: 'Record a sequence of browse commands for later replay. Start recording, execute commands, then stop and export as browse chain JSON, Chrome DevTools Recorder replay JSON, or Playwright Test script. The "playwright" format generates a complete @playwright/test file with proper assertions (expect commands become toHaveURL/toBeVisible/toBeHidden).',
-    inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Record operation.', enum: ['start', 'stop', 'status', 'export'] }, format: { type: 'string', description: 'Export format (used with "export"). "browse" = chain JSON, "replay" = Chrome DevTools Recorder, "playwright" = Playwright Test script.', enum: ['browse', 'replay', 'playwright'] }, path: { type: 'string', description: 'File path to save export (used with "export", optional — prints to stdout if omitted).' } }, required: ['action'] },
+    description: 'Record a sequence of browse commands for later replay. Start recording, execute commands, then stop and export as browse chain JSON, Chrome DevTools Recorder replay JSON, Playwright Test script, or flow YAML. The "playwright" format generates a complete @playwright/test file with proper assertions. The "flow" format produces YAML compatible with `flow <file>` and `flow run <name>`.',
+    inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Record operation.', enum: ['start', 'stop', 'status', 'export'] }, format: { type: 'string', description: 'Export format (used with "export"). "browse" = chain JSON, "replay" = Chrome DevTools Recorder, "playwright" = Playwright Test script, "flow" = YAML flow file.', enum: ['browse', 'replay', 'playwright', 'flow'] }, path: { type: 'string', description: 'File path to save export (used with "export", optional — prints to stdout if omitted).' } }, required: ['action'] },
     argDecode: (p) => {
       const args = [String(p.action)];
       if (p.action === 'export') {
@@ -851,7 +851,7 @@ registry.registerAll([
 
   // ─── Workflow Commands (v2.1) ─────────────────────────────────
 
-  m('flow',              'Execute, save, run, or list YAML flows',          { usage: '<file.yaml> | save <name> | run <name> | list', mcp: {
+  m('flow',              'Execute, save, run, or list YAML flows',          { usage: '<file.yaml> | save <name> | run <name> | list', skipRecording: true, mcp: {
     description: [
       'Manage and execute YAML flow files containing sequences of browse commands.',
       '',
@@ -885,7 +885,7 @@ registry.registerAll([
       return [String(p.subcommand), String(p.name)];
     },
   } }),
-  m('retry',             'Retry command with backoff until condition met',  { usage: '"<cmd>" --until <cond> [--max N] [--backoff]', mcp: {
+  m('retry',             'Retry command with backoff until condition met',  { usage: '"<cmd>" --until <cond> [--max N] [--backoff]', skipRecording: true, targetSupport: 'browser', mcp: {
     description: 'Retry a browse command until a condition is satisfied. Supports exponential backoff (100ms, 200ms, 400ms...). The condition uses the same syntax as browse_expect (--url, --text, --visible, --hidden, --count). Useful for dismissing transient overlays, waiting for async updates, or polling for state changes.',
     inputSchema: { type: 'object', properties: {
       command: { type: 'string', description: 'The browse command to retry (e.g. "click .dismiss").' },
@@ -900,7 +900,7 @@ registry.registerAll([
       return args;
     },
   } }),
-  m('watch',             'Watch for DOM changes on an element',             { usage: '"<sel>" [--on-change "<cmd>"] [--timeout ms]', mcp: {
+  m('watch',             'Watch for DOM changes on an element',             { usage: '"<sel>" [--on-change "<cmd>"] [--timeout ms]', skipRecording: true, targetSupport: 'browser', mcp: {
     description: 'Watch a DOM element for mutations (child changes, text changes, attribute changes) using MutationObserver. Optionally execute a callback command when a change is detected. Times out after 30s by default.',
     inputSchema: { type: 'object', properties: {
       selector: { type: 'string', description: 'CSS selector of the element to watch for changes.' },
