@@ -121,6 +121,16 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
   if (existing) {
     const healthy = await checkHealth(existing.port);
     if (healthy) {
+      // Switch target app if different
+      if (opts.app && existing.app !== opts.app) {
+        log(`Switching to ${opts.app}...`);
+        // Must restart driver with new target package — Android instrumentation
+        // is scoped to a package at launch time (unlike iOS /configure)
+        await stop();
+        // Fall through to full start with new app
+      } else {
+        return existing;
+      }
       return existing;
     }
     log('Cleaning up stale driver...');

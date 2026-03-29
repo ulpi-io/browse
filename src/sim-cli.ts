@@ -75,7 +75,7 @@ export async function handleSimCLI(args: string[]): Promise<void> {
 
     if (platform === 'android') {
       const { startAndroid } = await import('./app/android/sim-service');
-      const state = await startAndroid({ device, app });
+      const state = await startAndroid({ device, app, visible });
       console.log(`Android ready: ${state.device} (target: ${state.app})`);
     } else if (platform === 'ios') {
       const { startIOS } = await import('./app/ios/sim-service');

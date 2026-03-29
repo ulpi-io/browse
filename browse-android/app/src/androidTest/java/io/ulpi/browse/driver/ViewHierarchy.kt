@@ -83,7 +83,8 @@ object ViewHierarchy {
             val info = uiAutomation.serviceInfo
                 ?: AccessibilityServiceInfo()
             info.flags = info.flags or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
             uiAutomation.serviceInfo = info
         } catch (_: Exception) {
             // Best-effort — some API levels may not support this
@@ -100,27 +101,48 @@ object ViewHierarchy {
     ): List<AccessibilityNodeInfo> {
         val roots = mutableListOf<AccessibilityNodeInfo>()
 
+        // Try reflection on UiDevice.getWindowRoots() first (same technique as Maestro).
+        // This returns ALL window roots including WebView renderer windows that
+        // aren't visible via uiAutomation.windows.
         try {
-            val windows: List<AccessibilityWindowInfo> = uiAutomation.windows ?: emptyList()
-            for (window in windows) {
-                val root = window.root ?: continue
-                val pkg = root.packageName?.toString() ?: continue
-                if (pkg == targetPackage) {
-                    roots.add(root)
+            val uiDevice = androidx.test.uiautomator.UiDevice.getInstance(
+                androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+            )
+            val method = uiDevice.javaClass.getDeclaredMethod("getWindowRoots")
+            method.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val allRoots = method.invoke(uiDevice) as? Array<AccessibilityNodeInfo>
+            if (allRoots != null) {
+                for (root in allRoots) {
+                    val pkg = root.packageName?.toString() ?: continue
+                    if (pkg == targetPackage) {
+                        roots.add(root)
+                    }
                 }
             }
         } catch (_: Exception) {
-            // Fallback: use the active window root
+            // Reflection failed — fall through to standard approach
         }
 
-        // Fallback: if no package-scoped roots, try the active window
+        // Standard approach: uiAutomation.windows
+        if (roots.isEmpty()) {
+            try {
+                val windows: List<AccessibilityWindowInfo> = uiAutomation.windows ?: emptyList()
+                for (window in windows) {
+                    val root = window.root ?: continue
+                    val pkg = root.packageName?.toString() ?: continue
+                    if (pkg == targetPackage) {
+                        roots.add(root)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Fallback: active window regardless of package
         if (roots.isEmpty()) {
             val activeRoot = uiAutomation.rootInActiveWindow
             if (activeRoot != null) {
-                val pkg = activeRoot.packageName?.toString()
-                if (pkg == targetPackage) {
-                    roots.add(activeRoot)
-                }
+                roots.add(activeRoot)
             }
         }
 
@@ -134,6 +156,7 @@ object ViewHierarchy {
     private fun serializeNode(
         node: AccessibilityNodeInfo,
         path: IntArray,
+        insideWebView: Boolean = false,
     ): JSONObject {
         val obj = JSONObject()
 
@@ -176,19 +199,21 @@ object ViewHierarchy {
         obj.put("scrollable", node.isScrollable)
         obj.put("visibleToUser", node.isVisibleToUser)
 
+        // Detect if this node is a WebView — content inside may be marked invisible
+        val className = node.className?.toString() ?: ""
+        val isWebView = insideWebView || className.contains("WebView", ignoreCase = true)
+
         // Children
         val children = JSONArray()
         val childCount = node.childCount
         for (i in 0 until childCount) {
             val child = node.getChild(i) ?: continue
-            // Only include visible-to-user nodes to keep the tree manageable
-            if (!child.isVisibleToUser) {
+            // Allow invisible nodes inside WebViews (Android accessibility bug)
+            if (!child.isVisibleToUser && !isWebView) {
                 child.recycle()
                 continue
             }
-            children.put(serializeNode(child, path + i))
-            // Note: we do NOT recycle child here — it was returned from getChild
-            // and the JSON serialization is synchronous. The node will be GC'd.
+            children.put(serializeNode(child, path + i, isWebView))
         }
         obj.put("children", children)
 

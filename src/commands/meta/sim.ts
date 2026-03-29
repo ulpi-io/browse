@@ -65,7 +65,7 @@ export async function handleSimCommand(
 
   if (platform === 'android') {
     const { startAndroid } = await import('../../app/android/sim-service');
-    const state = await startAndroid({ device, app });
+    const state = await startAndroid({ device, app, visible });
     return `Android ready: ${state.device} (target: ${state.app})`;
   }
 
