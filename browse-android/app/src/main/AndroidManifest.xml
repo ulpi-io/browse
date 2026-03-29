@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Stub app — the driver lives entirely in androidTest.
-         This manifest satisfies the Android build system. -->
+    <!-- INTERNET is required for the NanoHTTPD server in the androidTest driver.
+         Merged into the test APK via manifest merging. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application android:usesCleartextTraffic="true" />
 </manifest>

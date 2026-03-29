@@ -144,7 +144,7 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
       } catch (retryErr: any) {
         if (retryErr.message?.includes('No booted Android device')) {
           const { ensureEmulator } = await import('./emulator');
-          serial = await ensureEmulator(log);
+          serial = await ensureEmulator(log, opts.visible);
         } else {
           throw retryErr;
         }
@@ -152,7 +152,7 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
     } else if (err.message?.includes('No booted Android device')) {
       // adb exists but no device — start emulator
       const { ensureEmulator } = await import('./emulator');
-      serial = await ensureEmulator(log);
+      serial = await ensureEmulator(log, opts.visible);
     } else {
       throw err;
     }
@@ -200,7 +200,19 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
   }
 
   const targetApp = opts.app || 'com.android.settings';
-  log(`Starting driver for ${targetApp}...`);
+
+  // Launch the target app before starting the driver
+  log(`Launching ${targetApp}...`);
+  try {
+    execSync(`adb -s ${serial} shell monkey -p ${targetApp} -c android.intent.category.LAUNCHER 1`, {
+      stdio: 'pipe', timeout: 10_000,
+    });
+  } catch {
+    // App might not have a launcher activity — that's OK
+  }
+  await new Promise(r => setTimeout(r, 2000)); // wait for app to settle
+
+  log('Starting driver...');
   await createAndroidBridge(serial, targetApp);
 
   const state: AndroidServiceState = {

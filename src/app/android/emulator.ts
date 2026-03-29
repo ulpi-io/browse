@@ -215,14 +215,11 @@ export function createAvd(sdkRoot: string, avdManager: string, log: Log): boolea
 // ─── Emulator Start ─────────────────────────────────────────────
 
 /** Start an emulator with the given AVD name */
-export function startEmulator(emulatorBin: string, avdName: string, log: Log): void {
-  log(`Starting emulator '${avdName}'...`);
-  const proc = spawn(emulatorBin, [
-    '-avd', avdName,
-    '-no-audio',
-    '-no-window',
-    '-gpu', 'swiftshader_indirect',
-  ], {
+export function startEmulator(emulatorBin: string, avdName: string, log: Log, visible = false): void {
+  log(`Starting emulator '${avdName}'${visible ? '' : ' (headless)'}...`);
+  const emulatorArgs = ['-avd', avdName, '-no-audio', '-gpu', 'swiftshader_indirect'];
+  if (!visible) emulatorArgs.push('-no-window');
+  const proc = spawn(emulatorBin, emulatorArgs, {
     stdio: 'ignore',
     detached: true,
   });
@@ -263,7 +260,7 @@ export async function waitForBoot(log: Log, timeoutMs = 120_000): Promise<string
  * Ensure an Android emulator is running and return its serial.
  * Handles the full chain: SDK → system image → AVD → emulator → boot.
  */
-export async function ensureEmulator(log: Log): Promise<string> {
+export async function ensureEmulator(log: Log, visible = false): Promise<string> {
   // 0. Ensure Java is available (required by sdkmanager)
   ensureJavaHome();
   const hasJava = () => { try { execSync('java -version', { stdio: 'ignore', timeout: 5000 }); return true; } catch { return false; } };
@@ -368,7 +365,7 @@ export async function ensureEmulator(log: Log): Promise<string> {
   }
 
   // 7. Start emulator
-  startEmulator(emulatorBin, DEFAULT_AVD_NAME, log);
+  startEmulator(emulatorBin, DEFAULT_AVD_NAME, log, visible);
 
   // 8. Wait for boot
   return waitForBoot(log);

@@ -287,10 +287,11 @@ function installDriverApk(serial: string, apkPath: string): void {
     throw err;
   }
 
-  // Check if already installed
-  const installed = adbExecSafe(serial, 'shell', 'pm', 'list', 'packages', DRIVER_TEST_PACKAGE);
-  if (installed && installed.includes(DRIVER_TEST_PACKAGE)) {
-    return; // Already installed — skip reinstall for speed
+  // Check if both base and test packages are already installed
+  const installedBase = adbExecSafe(serial, 'shell', 'pm', 'list', 'packages', DRIVER_PACKAGE);
+  const installedTest = adbExecSafe(serial, 'shell', 'pm', 'list', 'packages', DRIVER_TEST_PACKAGE);
+  if (installedBase?.includes(`package:${DRIVER_PACKAGE}`) && installedTest?.includes(DRIVER_TEST_PACKAGE)) {
+    return; // Both installed — skip reinstall for speed
   }
 
   // Install both the app and test APK
