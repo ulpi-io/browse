@@ -79,14 +79,7 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
     try {
       let writeCapture: WriteContextCapture | null = null;
 
-      const { output: result, spec } = await executeCommand(command, args, {
-        context: {
-          args,
-          target: bm,
-          buffers,
-          shutdown: async () => { await cleanup(); },
-        },
-        lifecycle: {
+      const lifecycle: import('../automation/events').CommandLifecycle = {
           before: [async (event) => {
             // Write context capture
             if (event.category === 'write') {
@@ -114,7 +107,17 @@ export async function startMcpServer(jsonMode: boolean): Promise<void> {
             return res;
           }],
           onError: [async (event) => rewriteError(event.error.message)],
+      };
+
+      const { output: result, spec } = await executeCommand(command, args, {
+        context: {
+          args,
+          target: bm,
+          buffers,
+          shutdown: async () => { await cleanup(); },
+          lifecycle,
         },
+        lifecycle,
       });
 
       // Snapshot commands: return structured refs alongside text content

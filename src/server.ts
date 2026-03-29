@@ -251,17 +251,7 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
   try {
     let writeCapture: WriteContextCapture | null = null;
 
-    const { output, spec } = await executeCommand(command, args, {
-      context: {
-        args,
-        target,
-        buffers: session.buffers,
-        domainFilter: session.domainFilter,
-        session,
-        shutdown,
-        sessionManager: sessionManager ?? undefined,
-      },
-      lifecycle: {
+    const lifecycle: import('./automation/events').CommandLifecycle = {
         before: [async (event) => {
           // Write context capture (before execution) — browser targets only
           if (event.category === 'write' && bt) {
@@ -342,7 +332,20 @@ async function handleCommand(body: any, session: Session, opts: RequestOptions):
           }
           return friendlyError;
         }],
+    };
+
+    const { output, spec } = await executeCommand(command, args, {
+      context: {
+        args,
+        target,
+        buffers: session.buffers,
+        domainFilter: session.domainFilter,
+        session,
+        shutdown,
+        sessionManager: sessionManager ?? undefined,
+        lifecycle,
       },
+      lifecycle,
     });
 
     // ─── Transport-specific post-processing ────────────────
@@ -494,6 +497,7 @@ async function start() {
       buffers: new SessionBuffers(),
       domainFilter: null,
       recording: null,
+      lastRecording: null,
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),

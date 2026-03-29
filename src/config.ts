@@ -31,28 +31,39 @@ export interface BrowseConfig {
 }
 
 /**
- * Load browse.json from the project root (directory containing .git or .claude).
- * Returns empty config if file doesn't exist or is malformed.
+ * Find the project root by walking up from cwd looking for .git or .claude markers.
+ * Returns the absolute path to the project root, or null if not found.
  */
-export function loadConfig(): BrowseConfig {
+export function findProjectRoot(): string | null {
   let dir = process.cwd();
   for (let i = 0; i < 20; i++) {
     if (fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, '.claude'))) {
-      const configPath = path.join(dir, 'browse.json');
-      if (fs.existsSync(configPath)) {
-        try {
-          const raw = fs.readFileSync(configPath, 'utf-8');
-          return JSON.parse(raw) as BrowseConfig;
-        } catch {
-          // Malformed JSON — silently ignore
-          return {};
-        }
-      }
-      return {};
+      return dir;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Load browse.json from the project root (directory containing .git or .claude).
+ * Returns empty config if file doesn't exist or is malformed.
+ */
+export function loadConfig(): BrowseConfig {
+  const root = findProjectRoot();
+  if (!root) return {};
+
+  const configPath = path.join(root, 'browse.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      return JSON.parse(raw) as BrowseConfig;
+    } catch {
+      // Malformed JSON — silently ignore
+      return {};
+    }
   }
   return {};
 }

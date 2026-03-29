@@ -1,0 +1,69 @@
+# Wikipedia research session — search, navigate, extract, compare
+# Usage: browse flow examples/flows/web-wikipedia-research.yaml
+
+# 1. Navigate to Wikipedia
+- goto: "https://en.wikipedia.org"
+- expect:
+    text: "Wikipedia"
+    timeout: 5000
+
+# 2. Search for a topic
+- snapshot: "-i"
+- fill:
+    "#searchInput": "artificial intelligence"
+- press: "Enter"
+- expect:
+    url: "/wiki/"
+    timeout: 5000
+
+# 3. Read the article
+- text: {}
+- screenshot: ".browse/wiki-ai-article.png"
+
+# 4. Find links on the page
+- snapshot: "-i"
+
+# 5. Click on "Machine learning" in the article
+- click: "a[href='/wiki/Machine_learning']"
+- expect:
+    url: "Machine_learning"
+    timeout: 5000
+
+# 6. Read machine learning article
+- text: {}
+- screenshot: ".browse/wiki-ml-article.png"
+
+# 7. Check page performance
+- perf: {}
+
+# 8. Navigate back to AI article
+- back: {}
+- expect:
+    url: "Artificial_intelligence"
+    timeout: 3000
+
+# 9. Click on "Deep learning"
+- click: "a[href='/wiki/Deep_learning']"
+- expect:
+    url: "Deep_learning"
+    timeout: 5000
+
+# 10. Read and screenshot deep learning
+- text: {}
+- screenshot: ".browse/wiki-dl-article.png"
+
+# 11. Check accessibility
+- a11y-audit: {}
+
+# 12. Inspect visual layout
+- visual: {}
+
+# 13. Go back twice to AI article
+- back: {}
+- back: {}
+- expect:
+    url: "Artificial_intelligence"
+    timeout: 3000
+
+# 14. Verify we're back
+- status: {}

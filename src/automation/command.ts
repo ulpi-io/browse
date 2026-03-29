@@ -85,6 +85,8 @@ export interface CommandContext {
   shutdown?: () => Promise<void> | void;
   /** Session manager reference for multi-session commands */
   sessionManager?: import('../session/manager').SessionManager;
+  /** Transport lifecycle hooks, threaded for sub-command dispatch (flow/chain) */
+  lifecycle?: import('./events').CommandLifecycle;
 }
 
 // ─── Command Definition ──────────────────────────────────────────

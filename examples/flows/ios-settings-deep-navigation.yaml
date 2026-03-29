@@ -1,0 +1,53 @@
+# iOS Settings deep navigation — explore multiple sections
+# Prerequisites: browse sim start --platform ios --app com.apple.Preferences
+# Usage: browse --platform ios --app com.apple.Preferences flow examples/flows/ios-settings-deep-navigation.yaml
+
+# 1. Start at Settings home
+- snapshot: "-i"
+- status: {}
+
+# 2. Navigate to General
+- tap: "@e6"
+- snapshot: "-i"
+- status: {}
+
+# 3. Read General contents
+- text: {}
+
+# 4. Navigate to About
+- snapshot: "-i"
+- tap: "@e3"
+- text: {}
+- screenshot: ".browse/ios-about.png"
+
+# 5. Go back to General
+- snapshot: "-i"
+- tap: "@e2"
+- status: {}
+
+# 6. Go back to Settings
+- snapshot: "-i"
+- tap: "@e2"
+- status: {}
+
+# 7. Navigate to Accessibility
+- snapshot: "-i"
+- tap: "@e7"
+- text: {}
+- screenshot: ".browse/ios-accessibility.png"
+
+# 8. Go back to Settings
+- snapshot: "-i"
+- tap: "@e2"
+- status: {}
+
+# 9. Navigate to Privacy & Security
+- snapshot: "-i"
+- tap: "@e15"
+- text: {}
+- screenshot: ".browse/ios-privacy.png"
+
+# 10. Go back to Settings
+- snapshot: "-i"
+- tap: "@e2"
+- status: {}

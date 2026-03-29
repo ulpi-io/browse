@@ -1,0 +1,87 @@
+# Hacker News full audit — navigate, interact, inspect, verify
+# Usage: browse flow examples/flows/web-hackernews-audit.yaml
+
+# 1. Load Hacker News
+- goto: "https://news.ycombinator.com"
+- expect:
+    text: "Hacker News"
+    timeout: 5000
+
+# 2. Screenshot the front page
+- screenshot: ".browse/hn-frontpage.png"
+
+# 3. Read the headlines
+- text: {}
+
+# 4. Get the page structure
+- snapshot: "-i"
+
+# 5. Click the first story link
+- click: "a.titleline > a"
+- expect:
+    timeout: 5000
+
+# 6. Read the linked article
+- text: {}
+- screenshot: ".browse/hn-story.png"
+
+# 7. Go back to HN
+- back: {}
+- expect:
+    text: "Hacker News"
+    timeout: 3000
+
+# 8. Navigate to "new" stories
+- click: "a[href='newest']"
+- expect:
+    url: "newest"
+    timeout: 5000
+
+# 9. Read new stories
+- text: {}
+- screenshot: ".browse/hn-newest.png"
+
+# 10. Navigate to "ask" section
+- click: "a[href='ask']"
+- expect:
+    url: "ask"
+    timeout: 5000
+- text: {}
+
+# 11. Navigate to "show" section
+- click: "a[href='show']"
+- expect:
+    url: "show"
+    timeout: 5000
+- text: {}
+
+# 12. Navigate to "jobs"
+- click: "a[href='jobs']"
+- expect:
+    url: "jobs"
+    timeout: 5000
+- text: {}
+
+# 13. Go back to front page
+- goto: "https://news.ycombinator.com"
+- expect:
+    text: "Hacker News"
+    timeout: 5000
+
+# 14. Run performance audit with budget
+- perf-audit: "--budget lcp:2000,cls:0.1,tbt:300"
+
+# 15. Run accessibility audit
+- a11y-audit: {}
+
+# 16. Run visual analysis
+- visual: {}
+
+# 17. Check network traffic
+- network: {}
+
+# 18. Detect tech stack
+- detect: {}
+
+# 19. Final status
+- status: {}

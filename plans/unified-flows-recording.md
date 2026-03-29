@@ -479,7 +479,7 @@ Update architecture.md and exports-reference.md to reflect the lifecycle threadi
   "TASK-009": ["TASK-001", "TASK-008"],
   "TASK-010": ["TASK-003", "TASK-005"],
   "TASK-011": ["TASK-005", "TASK-007"],
-  "TASK-012": ["TASK-006", "TASK-008", "TASK-009"],
+  "TASK-012": ["TASK-006", "TASK-007", "TASK-008", "TASK-009"],
   "TASK-013": ["TASK-007", "TASK-008", "TASK-011"],
   "TASK-014": ["TASK-009", "TASK-011"],
   "TASK-015": ["TASK-005", "TASK-006"]

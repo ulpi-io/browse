@@ -1,0 +1,84 @@
+# GitHub exploration — browse trending repos, read READMEs, inspect
+# Usage: browse flow examples/flows/web-github-explore.yaml
+
+# 1. Go to GitHub trending
+- goto: "https://github.com/trending"
+- expect:
+    text: "Trending"
+    timeout: 5000
+
+# 2. Screenshot trending page
+- screenshot: ".browse/github-trending.png"
+
+# 3. Read trending repos
+- text: {}
+
+# 4. Get interactive elements
+- snapshot: "-i"
+
+# 5. Click on the first trending repo
+- click: "article h2 a"
+- expect:
+    timeout: 5000
+
+# 6. Read the repo page
+- text: {}
+- screenshot: ".browse/github-repo.png"
+
+# 7. Check the repo's tech stack
+- detect: {}
+
+# 8. Look at the star count and details
+- snapshot: "-i"
+
+# 9. Navigate to Issues tab
+- click: "a[data-tab-item='i-issues-tab']"
+- expect:
+    timeout: 5000
+- text: {}
+
+# 10. Navigate to Pull Requests tab
+- click: "a[data-tab-item='i-pull-requests-tab']"
+- expect:
+    timeout: 5000
+- text: {}
+
+# 11. Go back to the repo main page
+- back: {}
+- back: {}
+- expect:
+    timeout: 3000
+
+# 12. Navigate to GitHub Explore
+- goto: "https://github.com/explore"
+- expect:
+    text: "Explore"
+    timeout: 5000
+- text: {}
+
+# 13. Navigate to Topics
+- goto: "https://github.com/topics"
+- expect:
+    text: "Topics"
+    timeout: 5000
+- text: {}
+- screenshot: ".browse/github-topics.png"
+
+# 14. Search for "automation"
+- goto: "https://github.com/search?q=automation&type=repositories"
+- expect:
+    text: "automation"
+    timeout: 5000
+- text: {}
+
+# 15. Performance audit
+- perf-audit: {}
+
+# 16. Accessibility audit
+- a11y-audit: {}
+
+# 17. Visual analysis
+- visual: {}
+
+# 18. Final status
+- status: {}

@@ -76,7 +76,7 @@ export async function handleFlowsCommand(
         if (!currentSession) throw new Error('flow save requires a session context');
 
         // Use active recording or last stopped recording
-        const steps = currentSession.recording || (currentSession as any)._lastRecording;
+        const steps = currentSession.recording || currentSession.lastRecording;
         if (!steps || steps.length === 0) {
           throw new Error(
             'No recording to save. Run "browse record start", execute commands, then "browse flow save <name>".'

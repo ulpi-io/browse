@@ -1,0 +1,13 @@
+# iOS Settings app navigation — 9-step flow
+# Usage: browse sim start --platform ios --app com.apple.Preferences
+#        browse --platform ios --app com.apple.Preferences flow examples/flows/ios-settings-navigation.yaml
+
+- snapshot: "-i"
+- tap: "@e6"
+- snapshot: "-i"
+- tap: "@e2"
+- snapshot: "-i"
+- tap: "@e7"
+- text: {}
+- tap: "@e2"
+- status: {}

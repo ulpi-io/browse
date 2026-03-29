@@ -15,15 +15,11 @@ import { resolveEncryptionKey } from './encryption';
 import type { ContextLevel } from '../types';
 import type { AutomationTarget } from '../automation/target';
 import type { SessionTargetFactory, CreatedTarget } from './target-factory';
+import type { RecordedStep } from '../export/record';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface RecordedStep {
-  command: string;
-  args: string[];
-  timestamp: number;
-  resolvedSelectors?: Record<string, string[]>;
-}
+export type { RecordedStep };
 
 export interface Session {
   id: string;
@@ -31,6 +27,7 @@ export interface Session {
   buffers: SessionBuffers;
   domainFilter: DomainFilter | null;
   recording: RecordedStep[] | null;
+  lastRecording: RecordedStep[] | null;
   outputDir: string;
   lastActivity: number;
   createdAt: number;
@@ -157,6 +154,7 @@ export class SessionManager {
       buffers,
       domainFilter,
       recording: null,
+      lastRecording: null,
       outputDir,
       lastActivity: Date.now(),
       createdAt: Date.now(),

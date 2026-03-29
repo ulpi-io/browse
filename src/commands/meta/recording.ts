@@ -2,6 +2,7 @@
  * Recording commands — record, har, video
  */
 
+import type { AutomationTarget } from '../../automation/target';
 import type { BrowserTarget } from '../../browser/target';
 import type { Session } from '../../session/manager';
 import * as fs from 'fs';
@@ -11,7 +12,7 @@ const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
 export async function handleRecordingCommand(
   command: string,
   args: string[],
-  bm: BrowserTarget,
+  target: AutomationTarget,
   currentSession?: Session,
 ): Promise<string> {
   switch (command) {
@@ -31,7 +32,7 @@ export async function handleRecordingCommand(
         if (!currentSession.recording) throw new Error('No active recording. Run "browse record start" first.');
         const count = currentSession.recording.length;
         // Store last recording for export after stop
-        (currentSession as any)._lastRecording = currentSession.recording;
+        currentSession.lastRecording = currentSession.recording;
         currentSession.recording = null;
         return `Recording stopped (${count} steps captured)`;
       }
@@ -41,7 +42,7 @@ export async function handleRecordingCommand(
         if (currentSession.recording) {
           return `Recording active — ${currentSession.recording.length} steps captured`;
         }
-        const last = (currentSession as any)._lastRecording;
+        const last = currentSession.lastRecording;
         if (last) return `Recording stopped — ${last.length} steps available for export`;
         return 'No active recording';
       }
@@ -52,7 +53,7 @@ export async function handleRecordingCommand(
         if (!format) throw new Error('Usage: browse record export browse|replay|playwright [--selectors css,aria,xpath,text] [path]');
 
         // Use active recording or last stopped recording
-        const steps = currentSession.recording || (currentSession as any)._lastRecording;
+        const steps = currentSession.recording || currentSession.lastRecording;
         if (!steps || steps.length === 0) {
           throw new Error('No recording to export. Run "browse record start" first, execute commands, then export.');
         }
@@ -79,9 +80,15 @@ export async function handleRecordingCommand(
           const { exportBrowse } = await import('../../export/record');
           output = exportBrowse(steps);
         } else if (format === 'replay') {
+          if (target.targetType !== 'browser') {
+            throw new Error('replay export requires a browser session. Use "record export browse" or "record export flow" for app targets.');
+          }
           const { exportReplay } = await import('../../export/replay');
           output = exportReplay(steps, selectorFilter as any);
         } else if (format === 'playwright') {
+          if (target.targetType !== 'browser') {
+            throw new Error('playwright export requires a browser session. Use "record export browse" or "record export flow" for app targets.');
+          }
           const { exportPlaywrightTest } = await import('../../export/replay');
           output = exportPlaywrightTest(steps, selectorFilter as any);
         } else {
