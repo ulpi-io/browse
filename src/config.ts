@@ -28,6 +28,8 @@ export interface BrowseConfig {
   rulePaths?: string[];
   /** Extra directories to search for flow YAML files */
   flowPaths?: string[];
+  /** Maximum flow nesting depth (default: 10) */
+  maxFlowDepth?: number;
 }
 
 /**

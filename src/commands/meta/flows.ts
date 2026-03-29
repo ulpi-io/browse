@@ -13,6 +13,7 @@ import type { CommandLifecycle } from '../../automation/events';
 import type { Session } from '../../session/manager';
 import type { SessionManager } from '../../session/manager';
 import type { BrowserTarget } from '../../browser/target';
+import { loadConfig, findProjectRoot } from '../../config';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -29,18 +30,15 @@ import * as path from 'path';
  */
 function getFlowsDir(): string {
   // 1. Config flowPaths (resolved relative to project root)
-  try {
-    const { loadConfig, findProjectRoot } = require('../../config') as typeof import('../../config');
-    const config = loadConfig();
-    const root = findProjectRoot();
+  const config = loadConfig();
+  const root = findProjectRoot();
 
-    if (config.flowPaths?.length && root) {
-      for (const fp of config.flowPaths) {
-        const abs = path.isAbsolute(fp) ? fp : path.join(root, fp);
-        try { fs.mkdirSync(abs, { recursive: true }); return abs; } catch { /* try next */ }
-      }
+  if (config.flowPaths?.length && root) {
+    for (const fp of config.flowPaths) {
+      const abs = path.isAbsolute(fp) ? fp : path.join(root, fp);
+      try { fs.mkdirSync(abs, { recursive: true }); return abs; } catch { /* try next */ }
     }
-  } catch { /* config not available — fall through */ }
+  }
 
   // 2. BROWSE_LOCAL_DIR/flows (set by CLI to <project>/.browse/)
   const localDir = process.env.BROWSE_LOCAL_DIR;
@@ -51,15 +49,11 @@ function getFlowsDir(): string {
   }
 
   // 3. .browse/flows from project root
-  try {
-    const { findProjectRoot } = require('../../config') as typeof import('../../config');
-    const root = findProjectRoot();
-    if (root) {
-      const dir = path.join(root, '.browse', 'flows');
-      fs.mkdirSync(dir, { recursive: true });
-      return dir;
-    }
-  } catch { /* fall through */ }
+  if (root) {
+    const dir = path.join(root, '.browse', 'flows');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
 
   // 4. Absolute last resort: cwd/.browse/flows (never /tmp)
   const dir = path.join(process.cwd(), '.browse', 'flows');
@@ -87,26 +81,50 @@ function validateFlowName(name: string): void {
   }
 }
 
-// ─── Flow Depth Tracking (per-session, for nested flow detection) ──
+// ─── Flow Depth Tracking (per-execution, for nested flow detection) ──
 
-const MAX_FLOW_DEPTH = 10;
+const DEFAULT_MAX_FLOW_DEPTH = 10;
 
-/** Per-session flow nesting depth tracker. WeakMap so sessions are GC'd normally. */
+/** Resolve max flow depth: BROWSE_MAX_FLOW_DEPTH env > browse.json > default 10 */
+function getMaxFlowDepth(): number {
+  const envVal = process.env.BROWSE_MAX_FLOW_DEPTH;
+  if (envVal) {
+    const n = parseInt(envVal, 10);
+    if (!isNaN(n) && n >= 1) return n;
+  }
+  const config = loadConfig();
+  if (config.maxFlowDepth != null && config.maxFlowDepth >= 1) {
+    return config.maxFlowDepth;
+  }
+  return DEFAULT_MAX_FLOW_DEPTH;
+}
+
+/**
+ * Per-key flow nesting depth tracker. WeakMap so sessions are GC'd normally.
+ * When no session exists, a module-level sentinel is used as the key so that
+ * recursion protection still works for sessionless execution.
+ */
 const flowDepthMap = new WeakMap<object, number>();
 
+/** Sentinel key for sessionless flow execution */
+const sessionlessSentinel: object = {};
+
+function depthKey(session: Session | undefined): object {
+  return session ?? sessionlessSentinel;
+}
+
 function getFlowDepth(session: Session | undefined): number {
-  if (!session) return 0;
-  return flowDepthMap.get(session) ?? 0;
+  return flowDepthMap.get(depthKey(session)) ?? 0;
 }
 
 async function withFlowDepth<T>(session: Session | undefined, fn: () => Promise<T>): Promise<T> {
-  if (!session) return fn();
-  const current = flowDepthMap.get(session) ?? 0;
-  flowDepthMap.set(session, current + 1);
+  const key = depthKey(session);
+  const current = flowDepthMap.get(key) ?? 0;
+  flowDepthMap.set(key, current + 1);
   return fn().finally(() => {
-    const now = flowDepthMap.get(session) ?? 1;
-    if (now <= 1) flowDepthMap.delete(session);
-    else flowDepthMap.set(session, now - 1);
+    const now = flowDepthMap.get(key) ?? 1;
+    if (now <= 1) flowDepthMap.delete(key);
+    else flowDepthMap.set(key, now - 1);
   });
 }
 
@@ -127,9 +145,10 @@ async function executeFlowSteps(
   currentSession: Session | undefined,
   lifecycle: CommandLifecycle | undefined,
 ): Promise<string> {
+  const maxDepth = getMaxFlowDepth();
   const depth = getFlowDepth(currentSession);
-  if (depth > MAX_FLOW_DEPTH) {
-    throw new Error(`flow nesting depth exceeded (max ${MAX_FLOW_DEPTH})`);
+  if (depth >= maxDepth) {
+    throw new Error(`flow nesting depth exceeded (max ${maxDepth})`);
   }
 
   const { executeCommand } = await import('../../automation/executor');
@@ -182,7 +201,10 @@ async function executeFlowSteps(
 /** Assert target is a BrowserTarget and return it typed. Throws on non-browser targets. */
 function requireBrowserTarget(target: AutomationTarget, commandName: string): BrowserTarget {
   if (!('getPage' in target)) {
-    throw new Error(`${commandName} requires a browser target`);
+    throw new Error(
+      `Command '${commandName}' not available for ${target.targetType} targets. ` +
+      `Use 'text' or 'snapshot' instead.`,
+    );
   }
   return target as BrowserTarget;
 }
