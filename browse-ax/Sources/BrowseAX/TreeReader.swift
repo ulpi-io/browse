@@ -56,11 +56,10 @@ final class TreeReader {
     }
 
     /// Walk the AX tree from the frontmost window following child indices.
+    /// Falls back to the application element when no window is open (e.g. menu bar actions).
     /// Returns the AXUIElement at the given path or throws a descriptive error.
     func walkToElement(path: [Int]) throws -> PathWalkResult {
-        guard let windowElement = getFrontmostWindow() else {
-            throw PathWalkError.noWindow
-        }
+        let windowElement = getFrontmostWindow() ?? appElement
 
         if path.isEmpty {
             return PathWalkResult(element: windowElement, path: path)
@@ -170,6 +169,14 @@ final class TreeReader {
         }
         if let desc = copyAttribute(of: element, name: kAXDescriptionAttribute) as? String, !desc.isEmpty {
             return desc
+        }
+        // For text-like elements, use value as label when title/description are missing
+        let role = (copyAttribute(of: element, name: kAXRoleAttribute) as? String) ?? ""
+        let textRoles = ["AXStaticText", "AXTextField", "AXTextArea", "AXCell"]
+        if textRoles.contains(role) {
+            if let value = copyAttribute(of: element, name: kAXValueAttribute) as? String, !value.isEmpty {
+                return value
+            }
         }
         if let roleDesc = copyAttribute(of: element, name: kAXRoleDescriptionAttribute) as? String, !roleDesc.isEmpty {
             return roleDesc

@@ -25,13 +25,18 @@ enum ActionHandler {
         // Verify the action is supported
         var actionNames: CFArray?
         let listResult = AXUIElementCopyActionNames(element, &actionNames)
-        if listResult == .success, let names = actionNames as? [String] {
-            guard names.contains(actionName) else {
-                let pathStr = formatPath(path)
-                return JSONOutput.failureJSON(
-                    "Action '\(actionName)' not supported by element at path \(pathStr)"
-                )
-            }
+        let supportedNames = (listResult == .success) ? (actionNames as? [String] ?? []) : []
+
+        // If AXPress is requested but not supported, fall back to coordinate-based click
+        if actionName == "AXPress" && !supportedNames.contains("AXPress") {
+            return coordinateClick(element: element, path: path)
+        }
+
+        if !supportedNames.contains(actionName) {
+            let pathStr = formatPath(path)
+            return JSONOutput.failureJSON(
+                "Action '\(actionName)' not supported by element at path \(pathStr)"
+            )
         }
 
         let axResult = AXUIElementPerformAction(element, actionName as CFString)
@@ -108,5 +113,42 @@ enum ActionHandler {
 
     static func formatPath(_ path: [Int]) -> String {
         return "[" + path.map { String($0) }.joined(separator: ",") + "]"
+    }
+
+    /// Fall back to a coordinate-based click when AXPress isn't supported.
+    /// Gets the element's frame and posts a CGEvent mouse click at its center.
+    private static func coordinateClick(element: AXUIElement, path: [Int]) -> String {
+        var posValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        let posResult = AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posValue)
+        let sizeResult = AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue)
+
+        guard posResult == .success, sizeResult == .success,
+              let posVal = posValue, let sizeVal = sizeValue else {
+            let pathStr = formatPath(path)
+            return JSONOutput.failureJSON(
+                "Cannot click element at path \(pathStr): no position/size available"
+            )
+        }
+
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(posVal as! AXValue, .cgPoint, &position)
+        AXValueGetValue(sizeVal as! AXValue, .cgSize, &size)
+
+        let center = CGPoint(x: position.x + size.width / 2, y: position.y + size.height / 2)
+
+        guard let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown,
+                                       mouseCursorPosition: center, mouseButton: .left),
+              let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+                                     mouseCursorPosition: center, mouseButton: .left) else {
+            return JSONOutput.failureJSON("Failed to create mouse click events")
+        }
+
+        mouseDown.post(tap: .cghidEventTap)
+        usleep(50_000) // 50ms between down and up
+        mouseUp.post(tap: .cghidEventTap)
+
+        return JSONOutput.successJSON()
     }
 }

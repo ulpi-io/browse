@@ -61,26 +61,19 @@ enum KeyboardHandler {
     ///   - text: The text string to type
     /// - Returns: JSON string with success/error result
     static func typeText(reader: TreeReader, text: String) -> String {
-        // Check if app has a focused element
-        let focused = reader.copyAttribute(
-            of: reader.appElement, name: kAXFocusedUIElementAttribute
-        )
-        if focused == nil {
-            return JSONOutput.failureJSON("No focused element")
-        }
-
         let pid = reader.pid
 
         for char in text {
             let charStr = String(char).lowercased()
             let needsShift = char.isUppercase || isShiftedCharacter(char)
+            let shiftFlags: CGEventFlags = needsShift ? .maskShift : []
 
             if let keyCode = keyCodeMap[charStr] {
-                sendKeyEvent(keyCode: keyCode, keyDown: true, pid: pid, shift: needsShift)
-                sendKeyEvent(keyCode: keyCode, keyDown: false, pid: pid, shift: needsShift)
+                sendKeyEvent(keyCode: keyCode, keyDown: true, pid: pid, flags: shiftFlags)
+                sendKeyEvent(keyCode: keyCode, keyDown: false, pid: pid, flags: shiftFlags)
             } else if let keyCode = keyCodeForShiftedChar(char) {
-                sendKeyEvent(keyCode: keyCode, keyDown: true, pid: pid, shift: true)
-                sendKeyEvent(keyCode: keyCode, keyDown: false, pid: pid, shift: true)
+                sendKeyEvent(keyCode: keyCode, keyDown: true, pid: pid, flags: .maskShift)
+                sendKeyEvent(keyCode: keyCode, keyDown: false, pid: pid, flags: .maskShift)
             } else {
                 // For characters not in our map, try Unicode input via CGEvent
                 sendUnicodeChar(char, pid: pid)
@@ -93,41 +86,48 @@ enum KeyboardHandler {
         return JSONOutput.successJSON()
     }
 
-    /// Press a single named key (e.g. "Enter", "Tab", "Escape").
+    /// Press a named key or modifier combo (e.g. "Enter", "cmd+n", "cmd+shift+s").
     /// - Parameters:
     ///   - reader: TreeReader with the target app
-    ///   - keyName: The key name to press
+    ///   - keyName: The key name or combo to press
     /// - Returns: JSON string with success/error result
     static func pressKey(reader: TreeReader, keyName: String) -> String {
-        // Check if app has a focused element
-        let focused = reader.copyAttribute(
-            of: reader.appElement, name: kAXFocusedUIElementAttribute
-        )
-        if focused == nil {
-            return JSONOutput.failureJSON("No focused element")
+        let pid = reader.pid
+
+        // Parse modifier combos like "cmd+n", "cmd+shift+s"
+        let parts = keyName.lowercased().split(separator: "+").map { String($0) }
+        var flags: CGEventFlags = []
+        var keyPart: String? = nil
+
+        for part in parts {
+            switch part {
+            case "cmd", "command", "meta":  flags.insert(.maskCommand)
+            case "shift":                    flags.insert(.maskShift)
+            case "alt", "option", "opt":     flags.insert(.maskAlternate)
+            case "ctrl", "control":          flags.insert(.maskControl)
+            default:                         keyPart = part
+            }
         }
 
-        let lowered = keyName.lowercased()
-        guard let keyCode = keyCodeMap[lowered] else {
+        guard let key = keyPart, let keyCode = keyCodeMap[key] else {
             return JSONOutput.failureJSON("Unknown key: '\(keyName)'")
         }
 
-        let pid = reader.pid
-        sendKeyEvent(keyCode: keyCode, keyDown: true, pid: pid, shift: false)
-        sendKeyEvent(keyCode: keyCode, keyDown: false, pid: pid, shift: false)
+        sendKeyEvent(keyCode: keyCode, keyDown: true, pid: pid, flags: flags)
+        sendKeyEvent(keyCode: keyCode, keyDown: false, pid: pid, flags: flags)
 
         return JSONOutput.successJSON()
     }
 
     // MARK: - Private Helpers
 
-    private static func sendKeyEvent(keyCode: CGKeyCode, keyDown: Bool, pid: pid_t, shift: Bool) {
+    private static func sendKeyEvent(keyCode: CGKeyCode, keyDown: Bool, pid: pid_t, flags: CGEventFlags = []) {
         guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: keyDown) else {
             return
         }
 
-        if shift {
-            event.flags = .maskShift
+        if !flags.isEmpty {
+            event.flags = flags
         }
 
         // Post the event directly to the target process
