@@ -157,7 +157,7 @@ function decodeStepArgs(command: string, value: unknown, stepNum: number): strin
 function decodeObjectArgs(command: string, obj: Record<string, unknown>, stepNum: number): string[] {
   const entries = Object.entries(obj);
   if (entries.length === 0) {
-    throw new Error(`Step ${stepNum}: empty object value for '${command}'`);
+    return []; // Empty object = no args (command with no parameters)
   }
 
   // fill / select: { selector: value }

@@ -310,14 +310,12 @@ describe('BrowseConfig', () => {
 
 describe('Flow save/run roundtrip', () => {
   test('save a recording then run it back', async () => {
-    // Set up a temp dir for flows
-    const tmpDir = makeTempDir('flows');
-    const flowsDir = path.join(tmpDir, 'flows');
-    fs.mkdirSync(flowsDir, { recursive: true });
-
-    // Store original BROWSE_LOCAL_DIR and override
-    const origLocalDir = process.env.BROWSE_LOCAL_DIR;
-    process.env.BROWSE_LOCAL_DIR = tmpDir;
+    // The flows module reads BROWSE_LOCAL_DIR at import time as a module-level
+    // constant, so we must use the same directory it resolves to.
+    // When BROWSE_LOCAL_DIR is unset, it defaults to '/tmp'.
+    const localDir = process.env.BROWSE_LOCAL_DIR || '/tmp';
+    const flowName = `roundtrip-${Date.now()}`;
+    const savedPath = path.join(localDir, 'flows', `${flowName}.yaml`);
 
     try {
       // Create a session with a recording
@@ -328,24 +326,20 @@ describe('Flow save/run roundtrip', () => {
       const session = makeSession(recording);
 
       // Save the recording as a named flow
-      const saveResult = await handleMetaCommand('flow', ['save', 'test-roundtrip'], bm, shutdown, undefined, session);
+      const saveResult = await handleMetaCommand('flow', ['save', flowName], bm, shutdown, undefined, session);
       expect(saveResult).toContain('Flow saved');
       expect(saveResult).toContain('2 steps');
 
       // Verify the file exists
-      const savedPath = path.join(flowsDir, 'test-roundtrip.yaml');
       expect(fs.existsSync(savedPath)).toBe(true);
 
       // Run the saved flow back
-      const runResult = await handleMetaCommand('flow', ['run', 'test-roundtrip'], bm, shutdown, undefined, session);
+      const runResult = await handleMetaCommand('flow', ['run', flowName], bm, shutdown, undefined, session);
       expect(runResult).toContain('Flow complete');
       expect(runResult).toContain('2/2 steps passed');
     } finally {
-      if (origLocalDir !== undefined) {
-        process.env.BROWSE_LOCAL_DIR = origLocalDir;
-      } else {
-        delete process.env.BROWSE_LOCAL_DIR;
-      }
+      // Clean up the saved flow file
+      try { fs.unlinkSync(savedPath); } catch {}
     }
   });
 });

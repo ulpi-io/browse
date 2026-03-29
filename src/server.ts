@@ -596,13 +596,30 @@ async function start() {
           session.lastActivity = Date.now();
         } else {
           const appName = req.headers.get('x-browse-app');
+          const platform = req.headers.get('x-browse-platform') || '';
+          const device = req.headers.get('x-browse-device') || '';
           let sessionId: string;
           if (appName) {
             sessionId = `app:${appName}`;
-            // Lazily register an app target factory for this app session
+            // Lazily register a platform-appropriate target factory for this app session
             if (!sessionManager!.hasAppFactory(sessionId)) {
-              const { createAppTargetFactory } = await import('./session/target-factory');
-              sessionManager!.setAppFactory(sessionId, createAppTargetFactory(appName));
+              if (platform === 'ios') {
+                const { createIOSTargetFactory } = await import('./session/target-factory');
+                sessionManager!.setAppFactory(
+                  sessionId,
+                  createIOSTargetFactory(appName, device || undefined),
+                );
+              } else if (platform === 'android') {
+                const { createAndroidTargetFactory } = await import('./session/target-factory');
+                sessionManager!.setAppFactory(
+                  sessionId,
+                  createAndroidTargetFactory(appName, device || undefined),
+                );
+              } else {
+                // Default: macOS app automation
+                const { createAppTargetFactory } = await import('./session/target-factory');
+                sessionManager!.setAppFactory(sessionId, createAppTargetFactory(appName));
+              }
             }
           } else {
             sessionId = req.headers.get('x-browse-session') || 'default';
