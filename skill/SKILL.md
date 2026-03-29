@@ -2,12 +2,11 @@
 name: browse
 version: 3.5.0
 description: |
-  Fast web browsing and web app testing for AI coding agents via persistent headless Chromium daemon.
-  Browse any URL, read page content, click elements, fill forms, run JavaScript, take screenshots,
-  inspect CSS/DOM, capture console/network logs, and more. Ideal for verifying local dev servers,
-  testing UI changes, and validating web app behavior end-to-end. ~100ms per command after
-  first call. Works with Claude Code, Cursor, Cline, Windsurf, and any agent that can run Bash.
-  No MCP, no Chrome extension — just fast CLI.
+  Fast web browsing, web app testing, and native app automation for AI coding agents.
+  Persistent headless Chromium for web. Android, iOS, and macOS app automation via accessibility APIs.
+  Browse URLs, read content, click elements, fill forms, run JavaScript, take screenshots,
+  automate native apps — all through the same CLI and @ref workflow. ~100ms per command.
+  Auto-installs Android toolchain. Works with Claude Code, Cursor, Cline, Windsurf, and any agent that can run Bash.
 allowed-tools:
   - Bash
   - Read
