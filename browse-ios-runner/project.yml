@@ -12,7 +12,7 @@ settings:
 packages:
   FlyingFox:
     url: https://github.com/swhitty/FlyingFox
-    from: "0.22.0"
+    exactVersion: "0.22.0"
 
 targets:
   BrowseRunnerApp:

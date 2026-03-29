@@ -83,7 +83,21 @@ export async function checkHealth(port: number = DEFAULT_PORT): Promise<boolean>
 
 // ─── Configure Target ──────────────────────────────────────────
 
-export async function configureTarget(port: number, bundleId: string): Promise<void> {
+export async function configureTarget(port: number, bundleId: string, udid?: string): Promise<void> {
+  // Launch the app via simctl first — XCUIApplication.activate() inside the runner
+  // blocks the main actor indefinitely for cold launches. Launching externally
+  // (like Maestro does) avoids this.
+  if (bundleId !== 'io.ulpi.browse-ios-runner') {
+    const { execSync } = await import('child_process');
+    const deviceId = udid || readState()?.udid;
+    if (deviceId) {
+      try {
+        execSync(`xcrun simctl launch ${deviceId} ${bundleId}`, { stdio: 'pipe', timeout: 30000 });
+      } catch {
+        // App might already be running — that's fine
+      }
+    }
+  }
   const { configureRunnerTarget } = await import('./bridge');
   await configureRunnerTarget(port, bundleId);
 }

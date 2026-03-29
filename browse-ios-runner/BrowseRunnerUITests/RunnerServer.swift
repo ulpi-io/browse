@@ -1,208 +1,271 @@
 import Foundation
-import Network
+import FlyingFox
+import XCTest
 
 // MARK: - HTTP Server
 
-/// Lightweight HTTP server built on Network.framework (NWListener).
+/// Async HTTP server built on FlyingFox for the XCUITest runner.
 ///
 /// Runs inside the XCUITest process, listening on a configurable port.
 /// Routes incoming HTTP requests to handler closures registered per path.
-/// Designed for JSON-RPC communication with the browse host bridge.
-final class RunnerServer: @unchecked Sendable {
-
-    // MARK: Types
-
-    struct HTTPRequest {
-        let method: String
-        let path: String
-        let body: Data?
-    }
-
-    typealias Handler = (HTTPRequest) -> HTTPResponse
-
-    struct HTTPResponse {
-        let statusCode: Int
-        let body: Data
-
-        static func json(_ object: Any, status: Int = 200) -> HTTPResponse {
-            let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
-            return HTTPResponse(statusCode: status, body: data)
-        }
-
-        static func error(_ message: String, status: Int = 400) -> HTTPResponse {
-            return json(["success": false, "error": message], status: status)
-        }
-
-        static func success(_ data: Any? = nil) -> HTTPResponse {
-            var obj: [String: Any] = ["success": true]
-            if let data = data {
-                obj["data"] = data
-            }
-            return json(obj)
-        }
-    }
+/// Uses `@MainActor` handlers so XCUITest APIs run on the main thread
+/// automatically via Swift concurrency — no semaphores or RunLoop needed.
+final class RunnerServer {
 
     // MARK: Properties
 
-    private let listener: NWListener
-    private let queue = DispatchQueue(label: "io.ulpi.browse-runner.server", qos: .userInitiated)
-    private var handlers: [String: Handler] = [:]
     private let port: UInt16
+    private var server: HTTPServer?
+
+    /// The registered route handlers, keyed by path (e.g. "/health").
+    /// Populated before `start()` is called.
+    private var handlers: [String: any HTTPHandler] = [:]
 
     // MARK: Init
 
-    init(port: UInt16 = 9820) throws {
+    init(port: UInt16 = 9820) {
         self.port = port
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-        self.listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
     }
 
     // MARK: Route Registration
 
-    func route(_ path: String, handler: @escaping Handler) {
+    /// Register a handler for a given path.
+    /// Must be called before `start()`.
+    func route(_ path: String, handler: some HTTPHandler) {
         handlers[path] = handler
     }
 
-    // MARK: Start / Stop
+    // MARK: Start
 
-    func start() {
-        listener.stateUpdateHandler = { [port] state in
-            switch state {
-            case .ready:
-                NSLog("[BrowseRunner] HTTP server listening on port %d", port)
-            case .failed(let error):
-                NSLog("[BrowseRunner] Server failed: %@", error.localizedDescription)
-            default:
-                break
-            }
+    /// Start the HTTP server. This method blocks (awaits) indefinitely,
+    /// serving requests until the process is terminated.
+    func start() async throws {
+        let server = HTTPServer(
+            address: try .inet(ip4: "127.0.0.1", port: port),
+            timeout: 100
+        )
+        self.server = server
+
+        for (path, handler) in handlers {
+            await server.appendRoute(HTTPRoute(path), to: handler)
         }
 
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.handleConnection(connection)
+        NSLog("[BrowseRunner] HTTP server listening on port %d", port)
+        try await server.run()
+    }
+}
+
+// MARK: - JSON Response Helpers
+
+/// Convenience helpers for building JSON HTTP responses.
+enum JSONResponse {
+
+    static func success(_ data: Any? = nil) -> FlyingFox.HTTPResponse {
+        var obj: [String: Any] = ["success": true]
+        if let data = data {
+            obj["data"] = data
+        }
+        return jsonResponse(obj, status: 200)
+    }
+
+    static func error(_ message: String, status: Int = 400) -> FlyingFox.HTTPResponse {
+        return jsonResponse(["success": false, "error": message], status: status)
+    }
+
+    private static func jsonResponse(_ object: Any, status: Int) -> FlyingFox.HTTPResponse {
+        let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+        return FlyingFox.HTTPResponse(
+            statusCode: HTTPStatusCode(status, phrase: ""),
+            headers: [HTTPHeader("Content-Type"): "application/json"],
+            body: data
+        )
+    }
+}
+
+// MARK: - Route Handlers
+
+/// Health check handler — lightweight, does not need `@MainActor`.
+struct HealthHandler: HTTPHandler {
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        return JSONResponse.success(["status": "healthy"])
+    }
+}
+
+/// Configure handler — switches the target app at runtime.
+/// Must run on `@MainActor` because it accesses XCUIApplication.
+@MainActor
+struct ConfigureHandler: HTTPHandler {
+    let context: RunnerContext
+
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let body = try await request.bodyData
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let bundleId = json["targetBundleId"] as? String else {
+            return JSONResponse.error("Expected: {\"targetBundleId\": \"com.apple.Preferences\"}")
         }
 
-        listener.start(queue: queue)
+        context.targetBundleId = bundleId
+        context.targetApp = XCUIApplication(bundleIdentifier: bundleId)
+        NSLog("[BrowseRunner] Target app switched to: %@", bundleId)
+        return JSONResponse.success(["configured": bundleId])
     }
+}
 
-    func stop() {
-        listener.cancel()
+/// Tree handler — builds the full accessibility tree.
+@MainActor
+struct TreeHandler: HTTPHandler {
+    let context: RunnerContext
+
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let tree = TreeBuilder.buildTree(from: context.targetApp)
+        guard let data = try? JSONEncoder().encode(tree),
+              let dict = try? JSONSerialization.jsonObject(with: data) else {
+            return JSONResponse.error("Failed to encode tree")
+        }
+        return JSONResponse.success(dict)
     }
+}
 
-    // MARK: Connection Handling
+/// Action handler — performs an action on an element by tree path.
+@MainActor
+struct ActionRouteHandler: HTTPHandler {
+    let context: RunnerContext
 
-    private func handleConnection(_ connection: NWConnection) {
-        connection.start(queue: queue)
-        receiveHTTPRequest(connection)
-    }
-
-    private func receiveHTTPRequest(_ connection: NWConnection) {
-        // Read up to 1 MB
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) {
-            [weak self] content, _, isComplete, error in
-
-            guard let self = self else {
-                connection.cancel()
-                return
-            }
-
-            if let error = error {
-                NSLog("[BrowseRunner] Receive error: %@", error.localizedDescription)
-                connection.cancel()
-                return
-            }
-
-            guard let data = content, !data.isEmpty else {
-                if isComplete {
-                    connection.cancel()
-                }
-                return
-            }
-
-            let request = self.parseHTTPRequest(data)
-            let response: HTTPResponse
-
-            if let request = request, let handler = self.handlers[request.path] {
-                // Most handlers need XCUITest APIs which are main-thread-only.
-                // Use a semaphore to dispatch and wait (main thread is running a RunLoop, not blocked).
-                if request.path == "/health" {
-                    // Health check is lightweight — can run on any thread
-                    response = handler(request)
-                } else {
-                    var handlerResult: HTTPResponse?
-                    let sem = DispatchSemaphore(value: 0)
-                    DispatchQueue.main.async {
-                        handlerResult = handler(request)
-                        sem.signal()
-                    }
-                    sem.wait()
-                    response = handlerResult!
-                }
-            } else if let request = request {
-                response = .error("Not found: \(request.path)", status: 404)
-            } else {
-                response = .error("Bad request", status: 400)
-            }
-
-            self.sendHTTPResponse(connection, response: response)
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let body = try await request.bodyData
+        guard let req = try? JSONDecoder().decode(ActionRequest.self, from: body) else {
+            return JSONResponse.error("Invalid request body. Expected: {\"path\":[0,1],\"actionName\":\"tap\"}")
+        }
+        let result = ActionHandler.performAction(
+            app: context.targetApp,
+            path: req.path,
+            actionName: req.actionName
+        )
+        if let ok = result["success"] as? Bool, ok {
+            return JSONResponse.success(result)
+        } else {
+            let msg = result["error"] as? String ?? "Action failed"
+            return JSONResponse.error(msg)
         }
     }
+}
 
-    // MARK: HTTP Parsing
+/// Set-value handler — sets text on an element by tree path.
+@MainActor
+struct SetValueRouteHandler: HTTPHandler {
+    let context: RunnerContext
 
-    private func parseHTTPRequest(_ data: Data) -> HTTPRequest? {
-        guard let raw = String(data: data, encoding: .utf8) else { return nil }
-
-        // Split header and body
-        let parts = raw.components(separatedBy: "\r\n\r\n")
-        guard !parts.isEmpty else { return nil }
-
-        let headerSection = parts[0]
-        let lines = headerSection.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else { return nil }
-
-        let tokens = requestLine.split(separator: " ")
-        guard tokens.count >= 2 else { return nil }
-
-        let method = String(tokens[0])
-        let path = String(tokens[1])
-
-        // Body is everything after the double CRLF
-        var body: Data? = nil
-        if parts.count > 1 {
-            let bodyString = parts.dropFirst().joined(separator: "\r\n\r\n")
-            if !bodyString.isEmpty {
-                body = bodyString.data(using: .utf8)
-            }
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let body = try await request.bodyData
+        guard let req = try? JSONDecoder().decode(SetValueRequest.self, from: body) else {
+            return JSONResponse.error("Invalid request body. Expected: {\"path\":[0,1],\"value\":\"text\"}")
         }
-
-        return HTTPRequest(method: method, path: path, body: body)
-    }
-
-    // MARK: HTTP Response
-
-    private func sendHTTPResponse(_ connection: NWConnection, response: HTTPResponse) {
-        var header = "HTTP/1.1 \(response.statusCode) \(statusText(response.statusCode))\r\n"
-        header += "Content-Type: application/json\r\n"
-        header += "Content-Length: \(response.body.count)\r\n"
-        header += "Connection: close\r\n"
-        header += "\r\n"
-
-        var data = header.data(using: .utf8) ?? Data()
-        data.append(response.body)
-
-        connection.send(content: data, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
-    }
-
-    private func statusText(_ code: Int) -> String {
-        switch code {
-        case 200: return "OK"
-        case 400: return "Bad Request"
-        case 404: return "Not Found"
-        case 500: return "Internal Server Error"
-        default: return "Unknown"
+        let result = ActionHandler.setValue(
+            app: context.targetApp,
+            path: req.path,
+            value: req.value
+        )
+        if let ok = result["success"] as? Bool, ok {
+            return JSONResponse.success(result)
+        } else {
+            let msg = result["error"] as? String ?? "Set value failed"
+            return JSONResponse.error(msg)
         }
+    }
+}
+
+/// Type handler — types text via the keyboard.
+@MainActor
+struct TypeRouteHandler: HTTPHandler {
+    let context: RunnerContext
+
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let body = try await request.bodyData
+        guard let req = try? JSONDecoder().decode(TypeRequest.self, from: body) else {
+            return JSONResponse.error("Invalid request body. Expected: {\"text\":\"hello\"}")
+        }
+        let result = ActionHandler.typeText(app: context.targetApp, text: req.text)
+        if let ok = result["success"] as? Bool, ok {
+            return JSONResponse.success(result)
+        } else {
+            let msg = result["error"] as? String ?? "Type failed"
+            return JSONResponse.error(msg)
+        }
+    }
+}
+
+/// Press handler — presses a named key.
+@MainActor
+struct PressRouteHandler: HTTPHandler {
+    let context: RunnerContext
+
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let body = try await request.bodyData
+        guard let req = try? JSONDecoder().decode(PressRequest.self, from: body) else {
+            return JSONResponse.error("Invalid request body. Expected: {\"key\":\"return\"}")
+        }
+        let result = ActionHandler.pressKey(app: context.targetApp, key: req.key)
+        if let ok = result["success"] as? Bool, ok {
+            return JSONResponse.success(result)
+        } else {
+            let msg = result["error"] as? String ?? "Press key failed"
+            return JSONResponse.error(msg)
+        }
+    }
+}
+
+/// Screenshot handler — captures and saves a screenshot.
+@MainActor
+struct ScreenshotRouteHandler: HTTPHandler {
+    let context: RunnerContext
+
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let body = try await request.bodyData
+        guard let req = try? JSONDecoder().decode(ScreenshotRequest.self, from: body) else {
+            return JSONResponse.error("Invalid request body. Expected: {\"outputPath\":\"/tmp/shot.png\"}")
+        }
+        let result = ScreenshotHandler.captureScreenshot(
+            app: context.targetApp,
+            outputPath: req.outputPath
+        )
+        if let ok = result["success"] as? Bool, ok {
+            return JSONResponse.success(result)
+        } else {
+            let msg = result["error"] as? String ?? "Screenshot failed"
+            return JSONResponse.error(msg)
+        }
+    }
+}
+
+/// State handler — captures lightweight state snapshot.
+@MainActor
+struct StateRouteHandler: HTTPHandler {
+    let context: RunnerContext
+
+    func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
+        let state = StateHandler.captureState(
+            app: context.targetApp,
+            bundleId: context.targetBundleId
+        )
+        guard let data = try? JSONEncoder().encode(state),
+              let dict = try? JSONSerialization.jsonObject(with: data) else {
+            return JSONResponse.error("Failed to encode state")
+        }
+        return JSONResponse.success(dict)
+    }
+}
+
+// MARK: - Runner Context
+
+/// Shared mutable context holding the target app and bundle ID.
+/// Accessed from @MainActor handlers via MainActor.run inside each handler.
+/// Marked @unchecked Sendable because all real access is serialized on the main thread.
+final class RunnerContext: @unchecked Sendable {
+    var targetApp: XCUIApplication
+    var targetBundleId: String
+
+    init(targetApp: XCUIApplication, targetBundleId: String) {
+        self.targetApp = targetApp
+        self.targetBundleId = targetBundleId
     }
 }
