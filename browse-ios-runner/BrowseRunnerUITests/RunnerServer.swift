@@ -7,44 +7,27 @@ import XCTest
 /// Async HTTP server built on FlyingFox for the XCUITest runner.
 ///
 /// Runs inside the XCUITest process, listening on a configurable port.
-/// Routes incoming HTTP requests to handler closures registered per path.
-/// Uses `@MainActor` handlers so XCUITest APIs run on the main thread
-/// automatically via Swift concurrency — no semaphores or RunLoop needed.
+/// Uses `onMain {}` to dispatch XCUITest API calls to the main thread
+/// via DispatchQueue.main + withCheckedContinuation, since @MainActor
+/// doesn't execute reliably inside XCUITest async contexts.
 final class RunnerServer {
 
-    // MARK: Properties
-
     private let port: UInt16
-    private var server: HTTPServer?
-
-    /// The registered route handlers, keyed by path (e.g. "/health").
-    /// Populated before `start()` is called.
     private var handlers: [String: any HTTPHandler] = [:]
-
-    // MARK: Init
 
     init(port: UInt16 = 9820) {
         self.port = port
     }
 
-    // MARK: Route Registration
-
-    /// Register a handler for a given path.
-    /// Must be called before `start()`.
     func route(_ path: String, handler: some HTTPHandler) {
         handlers[path] = handler
     }
 
-    // MARK: Start
-
-    /// Start the HTTP server. This method blocks (awaits) indefinitely,
-    /// serving requests until the process is terminated.
     func start() async throws {
         let server = HTTPServer(
             address: try .inet(ip4: "127.0.0.1", port: port),
             timeout: 100
         )
-        self.server = server
 
         for (path, handler) in handlers {
             await server.appendRoute(HTTPRoute(path), to: handler)
@@ -55,9 +38,23 @@ final class RunnerServer {
     }
 }
 
+// MARK: - Main Thread Dispatch
+
+/// Dispatch a block to the main thread and await its result.
+/// XCUITest APIs must run on the main thread. We can't use @MainActor
+/// because the Swift concurrency main actor executor doesn't drain
+/// reliably inside XCUITest async test methods. Instead we use
+/// DispatchQueue.main + withCheckedContinuation, which always works.
+func onMain<T: Sendable>(_ block: @escaping @Sendable () -> T) async -> T {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+            continuation.resume(returning: block())
+        }
+    }
+}
+
 // MARK: - JSON Response Helpers
 
-/// Convenience helpers for building JSON HTTP responses.
 enum JSONResponse {
 
     static func success(_ data: Any? = nil) -> FlyingFox.HTTPResponse {
@@ -84,16 +81,12 @@ enum JSONResponse {
 
 // MARK: - Route Handlers
 
-/// Health check handler — lightweight, does not need `@MainActor`.
 struct HealthHandler: HTTPHandler {
     func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
         return JSONResponse.success(["status": "healthy"])
     }
 }
 
-/// Configure handler — switches the target app at runtime.
-/// Must run on `@MainActor` because it accesses XCUIApplication.
-@MainActor
 struct ConfigureHandler: HTTPHandler {
     let context: RunnerContext
 
@@ -104,20 +97,22 @@ struct ConfigureHandler: HTTPHandler {
             return JSONResponse.error("Expected: {\"targetBundleId\": \"com.apple.Preferences\"}")
         }
 
-        context.targetBundleId = bundleId
-        context.targetApp = XCUIApplication(bundleIdentifier: bundleId)
+        await onMain {
+            context.targetBundleId = bundleId
+            context.targetApp = XCUIApplication(bundleIdentifier: bundleId)
+        }
         NSLog("[BrowseRunner] Target app switched to: %@", bundleId)
         return JSONResponse.success(["configured": bundleId])
     }
 }
 
-/// Tree handler — builds the full accessibility tree.
-@MainActor
 struct TreeHandler: HTTPHandler {
     let context: RunnerContext
 
     func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
-        let tree = TreeBuilder.buildTree(from: context.targetApp)
+        let tree = await onMain {
+            TreeBuilder.buildTree(from: context.targetApp)
+        }
         guard let data = try? JSONEncoder().encode(tree),
               let dict = try? JSONSerialization.jsonObject(with: data) else {
             return JSONResponse.error("Failed to encode tree")
@@ -126,8 +121,6 @@ struct TreeHandler: HTTPHandler {
     }
 }
 
-/// Action handler — performs an action on an element by tree path.
-@MainActor
 struct ActionRouteHandler: HTTPHandler {
     let context: RunnerContext
 
@@ -136,22 +129,17 @@ struct ActionRouteHandler: HTTPHandler {
         guard let req = try? JSONDecoder().decode(ActionRequest.self, from: body) else {
             return JSONResponse.error("Invalid request body. Expected: {\"path\":[0,1],\"actionName\":\"tap\"}")
         }
-        let result = ActionHandler.performAction(
-            app: context.targetApp,
-            path: req.path,
-            actionName: req.actionName
-        )
+        let result = await onMain {
+            ActionHandler.performAction(app: context.targetApp, path: req.path, actionName: req.actionName)
+        }
         if let ok = result["success"] as? Bool, ok {
             return JSONResponse.success(result)
         } else {
-            let msg = result["error"] as? String ?? "Action failed"
-            return JSONResponse.error(msg)
+            return JSONResponse.error(result["error"] as? String ?? "Action failed")
         }
     }
 }
 
-/// Set-value handler — sets text on an element by tree path.
-@MainActor
 struct SetValueRouteHandler: HTTPHandler {
     let context: RunnerContext
 
@@ -160,22 +148,17 @@ struct SetValueRouteHandler: HTTPHandler {
         guard let req = try? JSONDecoder().decode(SetValueRequest.self, from: body) else {
             return JSONResponse.error("Invalid request body. Expected: {\"path\":[0,1],\"value\":\"text\"}")
         }
-        let result = ActionHandler.setValue(
-            app: context.targetApp,
-            path: req.path,
-            value: req.value
-        )
+        let result = await onMain {
+            ActionHandler.setValue(app: context.targetApp, path: req.path, value: req.value)
+        }
         if let ok = result["success"] as? Bool, ok {
             return JSONResponse.success(result)
         } else {
-            let msg = result["error"] as? String ?? "Set value failed"
-            return JSONResponse.error(msg)
+            return JSONResponse.error(result["error"] as? String ?? "Set value failed")
         }
     }
 }
 
-/// Type handler — types text via the keyboard.
-@MainActor
 struct TypeRouteHandler: HTTPHandler {
     let context: RunnerContext
 
@@ -184,18 +167,17 @@ struct TypeRouteHandler: HTTPHandler {
         guard let req = try? JSONDecoder().decode(TypeRequest.self, from: body) else {
             return JSONResponse.error("Invalid request body. Expected: {\"text\":\"hello\"}")
         }
-        let result = ActionHandler.typeText(app: context.targetApp, text: req.text)
+        let result = await onMain {
+            ActionHandler.typeText(app: context.targetApp, text: req.text)
+        }
         if let ok = result["success"] as? Bool, ok {
             return JSONResponse.success(result)
         } else {
-            let msg = result["error"] as? String ?? "Type failed"
-            return JSONResponse.error(msg)
+            return JSONResponse.error(result["error"] as? String ?? "Type failed")
         }
     }
 }
 
-/// Press handler — presses a named key.
-@MainActor
 struct PressRouteHandler: HTTPHandler {
     let context: RunnerContext
 
@@ -204,18 +186,17 @@ struct PressRouteHandler: HTTPHandler {
         guard let req = try? JSONDecoder().decode(PressRequest.self, from: body) else {
             return JSONResponse.error("Invalid request body. Expected: {\"key\":\"return\"}")
         }
-        let result = ActionHandler.pressKey(app: context.targetApp, key: req.key)
+        let result = await onMain {
+            ActionHandler.pressKey(app: context.targetApp, key: req.key)
+        }
         if let ok = result["success"] as? Bool, ok {
             return JSONResponse.success(result)
         } else {
-            let msg = result["error"] as? String ?? "Press key failed"
-            return JSONResponse.error(msg)
+            return JSONResponse.error(result["error"] as? String ?? "Press key failed")
         }
     }
 }
 
-/// Screenshot handler — captures and saves a screenshot.
-@MainActor
 struct ScreenshotRouteHandler: HTTPHandler {
     let context: RunnerContext
 
@@ -224,29 +205,24 @@ struct ScreenshotRouteHandler: HTTPHandler {
         guard let req = try? JSONDecoder().decode(ScreenshotRequest.self, from: body) else {
             return JSONResponse.error("Invalid request body. Expected: {\"outputPath\":\"/tmp/shot.png\"}")
         }
-        let result = ScreenshotHandler.captureScreenshot(
-            app: context.targetApp,
-            outputPath: req.outputPath
-        )
+        let result = await onMain {
+            ScreenshotHandler.captureScreenshot(app: context.targetApp, outputPath: req.outputPath)
+        }
         if let ok = result["success"] as? Bool, ok {
             return JSONResponse.success(result)
         } else {
-            let msg = result["error"] as? String ?? "Screenshot failed"
-            return JSONResponse.error(msg)
+            return JSONResponse.error(result["error"] as? String ?? "Screenshot failed")
         }
     }
 }
 
-/// State handler — captures lightweight state snapshot.
-@MainActor
 struct StateRouteHandler: HTTPHandler {
     let context: RunnerContext
 
     func handleRequest(_ request: FlyingFox.HTTPRequest) async throws -> FlyingFox.HTTPResponse {
-        let state = StateHandler.captureState(
-            app: context.targetApp,
-            bundleId: context.targetBundleId
-        )
+        let state = await onMain {
+            StateHandler.captureState(app: context.targetApp, bundleId: context.targetBundleId)
+        }
         guard let data = try? JSONEncoder().encode(state),
               let dict = try? JSONSerialization.jsonObject(with: data) else {
             return JSONResponse.error("Failed to encode state")
@@ -257,9 +233,6 @@ struct StateRouteHandler: HTTPHandler {
 
 // MARK: - Runner Context
 
-/// Shared mutable context holding the target app and bundle ID.
-/// Accessed from @MainActor handlers via MainActor.run inside each handler.
-/// Marked @unchecked Sendable because all real access is serialized on the main thread.
 final class RunnerContext: @unchecked Sendable {
     var targetApp: XCUIApplication
     var targetBundleId: String

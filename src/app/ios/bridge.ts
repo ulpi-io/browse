@@ -160,12 +160,12 @@ async function runnerRequest<T>(
 ): Promise<T> {
   const url = `http://127.0.0.1:${port}${endpoint}`;
   const options: RequestInit = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: body ? 'POST' : 'GET',
     signal: AbortSignal.timeout(30_000),
   };
 
   if (body) {
+    options.headers = { 'Content-Type': 'application/json' };
     options.body = JSON.stringify(body);
   }
 

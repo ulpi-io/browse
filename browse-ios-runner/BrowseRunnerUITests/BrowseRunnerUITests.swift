@@ -4,15 +4,22 @@ final class BrowseRunnerUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = true
+        executionTimeAllowance = 86400
     }
 
-    func testRunServer() async throws {
+    /// Synchronous test that keeps the main thread alive via RunLoop.
+    /// The FlyingFox server runs in a detached Task on a background thread.
+    /// XCUITest API calls hop to the main thread via DispatchQueue.main +
+    /// withCheckedContinuation (the `onMain` helper in RunnerServer.swift).
+    /// RunLoop.current.run(until:) drains the main dispatch queue each iteration.
+    func testRunServer() throws {
         let portString = ProcessInfo.processInfo.environment["BROWSE_RUNNER_PORT"] ?? "9820"
         let port = UInt16(portString) ?? 9820
 
         let envBundleId = ProcessInfo.processInfo.environment["BROWSE_TARGET_BUNDLE_ID"]
         let targetBundleId = envBundleId ?? "io.ulpi.browse-ios-runner"
 
+        // Setup on main thread (synchronous — no actor issues)
         let hostApp = XCUIApplication()
         hostApp.launch()
 
@@ -37,7 +44,17 @@ final class BrowseRunnerUITests: XCTestCase {
         server.route("/screenshot", handler: ScreenshotRouteHandler(context: context))
         server.route("/state", handler: StateRouteHandler(context: context))
 
-        NSLog("[BrowseRunner] Server starting on port %u, target: %@", port, targetBundleId)
-        try await server.start()
+        NSLog("[BrowseRunner] Starting server on port %u, target: %@", port, targetBundleId)
+
+        // Start FlyingFox on a background thread
+        Task.detached {
+            try await server.start()
+        }
+
+        // Pump the main RunLoop forever — this is what allows
+        // DispatchQueue.main.async blocks (from onMain) to execute.
+        while true {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
     }
 }

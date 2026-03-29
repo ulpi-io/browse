@@ -232,6 +232,7 @@ export async function startIOS(opts: StartOptions = {}): Promise<SimServiceState
     '-sdk', 'iphonesimulator', '-destination', `id=${sim.udid}`,
     '-derivedDataPath', '.build',
     'CODE_SIGN_IDENTITY=', 'CODE_SIGNING_ALLOWED=NO',
+    '-test-timeouts-enabled', 'NO',
   ], {
     cwd: runnerDir,
     stdio: ['ignore', 'ignore', 'ignore'],
