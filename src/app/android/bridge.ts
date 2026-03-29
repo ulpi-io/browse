@@ -14,6 +14,10 @@
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename_bridge = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename_bridge);
 import type {
   AndroidDriverProtocol,
   RawAndroidNode,

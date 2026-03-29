@@ -8,6 +8,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DRIVER_PORT = 7779;
 
@@ -124,19 +127,32 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
     await stop();
   }
 
-  // Find device — auto-install adb if missing
+  // Find device — auto-install adb if missing, auto-start emulator if no device
   log('Finding Android device...');
   const { ensureAndroidBridge, createAndroidBridge, AdbNotFoundError, installAdb } = await import('./bridge');
   let serial: string;
   try {
     serial = await ensureAndroidBridge(opts.device);
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof AdbNotFoundError) {
       log('adb not found. Attempting to install...');
       const installed = await installAdb(log);
       if (!installed) throw err;
-      // Retry after install
-      serial = await ensureAndroidBridge(opts.device);
+      // Retry — may still fail if no device
+      try {
+        serial = await ensureAndroidBridge(opts.device);
+      } catch (retryErr: any) {
+        if (retryErr.message?.includes('No booted Android device')) {
+          const { ensureEmulator } = await import('./emulator');
+          serial = await ensureEmulator(log);
+        } else {
+          throw retryErr;
+        }
+      }
+    } else if (err.message?.includes('No booted Android device')) {
+      // adb exists but no device — start emulator
+      const { ensureEmulator } = await import('./emulator');
+      serial = await ensureEmulator(log);
     } else {
       throw err;
     }
@@ -149,6 +165,28 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
       encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'],
     }).trim() || serial;
   } catch {}
+
+  // Build driver APK if not found
+  const driverApkDir = path.resolve(__dirname, '../../../browse-android');
+  const apkPath = path.join(driverApkDir, 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk');
+  if (!fs.existsSync(apkPath) && fs.existsSync(path.join(driverApkDir, 'gradlew'))) {
+    log('Building Android driver APK...');
+    try {
+      // Ensure JAVA_HOME and ANDROID_HOME are set for gradle
+      const { findSdkRoot, ensureJavaHome } = await import('./emulator');
+      ensureJavaHome();
+      if (!process.env.ANDROID_HOME) {
+        const sdkRoot = findSdkRoot();
+        if (sdkRoot) process.env.ANDROID_HOME = sdkRoot;
+      }
+      execSync('./gradlew :app:assembleDebug :app:assembleDebugAndroidTest', {
+        cwd: driverApkDir, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+      });
+      log('APK built.');
+    } catch (err: any) {
+      log(`APK build failed: ${err.message?.split('\n')[0]}`);
+    }
+  }
 
   const targetApp = opts.app || 'com.android.settings';
   log(`Starting driver for ${targetApp}...`);
