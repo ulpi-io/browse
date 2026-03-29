@@ -8,3 +8,7 @@ bun.lock
 .playwright-mcp/
 .claude/projects/
 .claude/worktrees/
+browse-android/.gradle/
+browse-android/app/build/
+browse-android/local.properties
+browse-ax/.build/
