@@ -36,21 +36,31 @@ export function assignRefs(
     return interactiveRoles.has(node.role) || node.actions.length > 0 || node.editable;
   }
 
-  function walk(node: AppNode, depth: number): void {
-    const shouldRef = !interactive || isInteractive(node);
+  // Roles that are just layout containers — skip unless they have a label or are interactive
+  const layoutRoles = new Set([
+    'AXGroup', 'AXScrollArea', 'AXList',
+  ]);
+
+  function walk(node: AppNode, depth: number, parentClickable = false): void {
+    const shouldRef = !interactive || isInteractive(node) || (parentClickable && !!(node.label || node.value));
     const label = node.label || node.value || '';
     const refId = `@e${refCounter}`;
 
-    if (shouldRef && (label || node.role !== 'AXGroup')) {
+    // Show nodes that have a label, are non-layout roles, or are interactive
+    const isLayout = layoutRoles.has(node.role);
+    const show = shouldRef && (label || !isLayout || node.actions.length > 0);
+
+    if (show) {
       refMap.set(refId, { path: node.path, role: node.role, label });
-      const roleName = node.role.replace(/^AX/, '').toLowerCase();
+      const roleName = node.role.replace(/^AX(Android:)?/, '').toLowerCase();
       const displayLabel = label ? ` "${label}"` : '';
       lines.push(`${refId} [${roleName}]${displayLabel}`);
       refCounter++;
     }
 
+    const clickable = node.actions.some(a => a === 'AXPress' || a === 'AXScroll');
     for (const child of node.children) {
-      walk(child, depth + 1);
+      walk(child, depth + 1, clickable || parentClickable);
     }
   }
 
