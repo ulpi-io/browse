@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.3.3
+
+**Publish fixes:**
+
+- `browse enable android|ios|macos|all` — one command to verify/build native drivers
+- Pre-built binaries ship in `bin/` (browse-ax, Android APKs, iOS runner source)
+- `enable` checks pre-built first, only builds from source if missing
+- Fixed native binary path resolution for npm global installs (dev vs bundled paths)
+- `build:all` script builds all native components alongside Node.js bundle
+- Package includes iOS runner source, Android APKs, macOS browse-ax binary
+
 ## v2.3.0
 
 **Simulator lifecycle and zero-setup native app automation:**
