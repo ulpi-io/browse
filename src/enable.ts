@@ -37,14 +37,61 @@ async function enableAndroid(): Promise<void> {
     // "No booted device" is fine — we just need adb installed
   }
 
-  // 2. Java + SDK + emulator + system image + AVD
-  const { ensureEmulator } = await import('./app/android/emulator');
+  // 2. Java + SDK + emulator + system image + AVD (install only, don't start emulator)
+  const { ensureJavaHome, findSdkRoot, installSdk, installSystemImage, createAvd } = await import('./app/android/emulator');
+
+  // Java
+  ensureJavaHome();
   try {
-    // This installs everything but doesn't start the emulator — we just need the setup
-    // We'll catch the "no device" error since we're not starting one
-    await ensureEmulator(log, false);
+    execSync('java -version', { stdio: 'ignore', timeout: 5_000 });
+    log('Java: available');
   } catch {
-    // Expected — no device to connect to, but all components are installed
+    log('Java not found. Run: brew install openjdk@21');
+  }
+
+  // SDK
+  let sdkRoot = findSdkRoot();
+  if (!sdkRoot) {
+    sdkRoot = await installSdk(log);
+  }
+  if (sdkRoot) {
+    log(`SDK: ${sdkRoot}`);
+
+    // Accept licenses
+    const sdkMgr = [
+      path.join(sdkRoot, 'cmdline-tools/latest/bin/sdkmanager'),
+      path.join(sdkRoot, 'bin/sdkmanager'),
+    ].find(p => fs.existsSync(p));
+
+    if (sdkMgr) {
+      try { execSync(`yes | "${sdkMgr}" --licenses`, { stdio: 'ignore', timeout: 60_000, shell: '/bin/bash' }); } catch {}
+
+      // Install emulator + build-tools + platform + system image
+      const components = ['emulator', 'platform-tools', 'platforms;android-35', 'build-tools;35.0.0', 'system-images;android-35;google_apis;arm64-v8a'];
+      for (const comp of components) {
+        try {
+          execSync(`"${sdkMgr}" --install "${comp}"`, { stdio: 'ignore', timeout: 300_000 });
+        } catch {}
+      }
+      log('SDK components: installed');
+
+      // AVD
+      const avdMgr = [
+        path.join(sdkRoot, 'cmdline-tools/latest/bin/avdmanager'),
+        path.join(sdkRoot, 'bin/avdmanager'),
+      ].find(p => fs.existsSync(p));
+
+      if (avdMgr) {
+        try {
+          const avds = execSync(`"${avdMgr}" list avd -c`, { encoding: 'utf-8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+          if (!avds.includes('browse_default')) {
+            createAvd(sdkRoot, avdMgr, log);
+          } else {
+            log('AVD browse_default: exists');
+          }
+        } catch {}
+      }
+    }
   }
 
   // 3. Build driver APK
