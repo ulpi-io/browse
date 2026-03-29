@@ -19,7 +19,7 @@
   "bin": {
     "browse": "bin/browse"
   },
-  "description": "Fast headless browser CLI — persistent Chromium daemon via Playwright.",
+  "description": "Fast headless browser and native app automation CLI for AI coding agents. Android, iOS, and macOS.",
   "engines": {
     "node": ">=18.0.0"
   },

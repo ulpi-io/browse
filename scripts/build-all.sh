@@ -1,52 +1,137 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build Node.js bundle via esbuild
+# Build all browse components:
+#   1. Node.js bundle (esbuild)
+#   2. macOS AX bridge (Swift)
+#   3. Android driver APK (Gradle)
+#   4. iOS runner source (copy for on-device build)
+
 OUTDIR="dist"
-ENTRY="src/cli.ts"
+BINDIR="bin"
 
-mkdir -p "$OUTDIR"
+mkdir -p "$OUTDIR" "$BINDIR"
 
-echo "Building ${OUTDIR}/browse.js..."
-npx esbuild "$ENTRY" \
-  --bundle \
-  --platform=node \
-  --target=node18 \
-  --outfile="$OUTDIR/browse.js" \
-  --external:playwright \
-  --external:playwright-core \
-  --external:better-sqlite3 \
-  --external:electron \
-  --external:chromium-bidi
+# ─── 1. Node.js bundle ──────────────────────────────────────────
 
-echo "  → $(wc -c < "$OUTDIR/browse.js" | tr -d ' ') bytes"
+echo "=== Node.js bundle ==="
+npm run build
+echo "  → $OUTDIR/browse.cjs ($(wc -c < "$OUTDIR/browse.cjs" | tr -d ' ') bytes)"
 
-# Build Android instrumentation APK (if Android SDK and gradle available)
-ANDROID_DIR="browse-android"
-ANDROID_APK_SRC="$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-ANDROID_APK_DST="bin/browse-android.apk"
+# ─── 2. macOS AX bridge (Swift) ─────────────────────────────────
 
-if [ -d "$ANDROID_DIR" ] && command -v java >/dev/null 2>&1; then
+AX_DIR="browse-ax"
+AX_BIN="$BINDIR/browse-ax"
+
+if [ -d "$AX_DIR" ] && [ "$(uname)" = "Darwin" ]; then
   echo ""
-  echo "Building Android instrumentation APK..."
-  if [ -f "$ANDROID_DIR/gradlew" ]; then
-    (cd "$ANDROID_DIR" && ./gradlew :app:assembleDebugAndroidTest --no-daemon -q 2>&1) && {
-      if [ -f "$ANDROID_APK_SRC" ]; then
-        cp "$ANDROID_APK_SRC" "$ANDROID_APK_DST"
-        echo "  → $ANDROID_APK_DST ($(wc -c < "$ANDROID_APK_DST" | tr -d ' ') bytes)"
-      else
-        echo "  ⚠ APK not found at $ANDROID_APK_SRC (build may have failed)"
-      fi
-    } || {
-      echo "  ⚠ Android build failed (requires Android SDK). Skipping."
-    }
+  echo "=== macOS AX bridge ==="
+  if [ -f "$AX_DIR/Package.swift" ]; then
+    (cd "$AX_DIR" && swift build -c release 2>&1 | tail -1)
+    AX_BUILD="$AX_DIR/.build/release/browse-ax"
+    if [ -f "$AX_BUILD" ]; then
+      cp "$AX_BUILD" "$AX_BIN"
+      echo "  → $AX_BIN ($(wc -c < "$AX_BIN" | tr -d ' ') bytes)"
+    else
+      echo "  ⚠ browse-ax binary not found after build"
+    fi
   else
-    echo "  ⚠ gradlew not found in $ANDROID_DIR. Skipping."
+    echo "  ⚠ Package.swift not found in $AX_DIR. Skipping."
   fi
 else
   echo ""
-  echo "Skipping Android APK (no Android SDK or browse-android/ not found)"
+  echo "Skipping macOS AX bridge (not macOS or $AX_DIR/ not found)"
 fi
 
+# ─── 3. Android driver APK ──────────────────────────────────────
+
+ANDROID_DIR="browse-android"
+ANDROID_APP_APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+ANDROID_TEST_APK="$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+ANDROID_APP_DST="$BINDIR/browse-android-app.apk"
+ANDROID_TEST_DST="$BINDIR/browse-android.apk"
+
+if [ -d "$ANDROID_DIR" ] && [ -f "$ANDROID_DIR/gradlew" ]; then
+  echo ""
+  echo "=== Android driver APK ==="
+
+  # Ensure JAVA_HOME is set for Homebrew openjdk
+  if [ -z "${JAVA_HOME:-}" ]; then
+    for jdk in /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+               /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+               /opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home; do
+      if [ -d "$jdk" ]; then
+        export JAVA_HOME="$jdk"
+        export PATH="$jdk/bin:$PATH"
+        break
+      fi
+    done
+  fi
+
+  # Ensure ANDROID_HOME is set
+  if [ -z "${ANDROID_HOME:-}" ]; then
+    for sdk in "$HOME/Library/Android/sdk" \
+               /opt/homebrew/share/android-commandlinetools \
+               "$HOME/Android/Sdk"; do
+      if [ -d "$sdk" ]; then
+        export ANDROID_HOME="$sdk"
+        break
+      fi
+    done
+  fi
+
+  if command -v java >/dev/null 2>&1 && [ -n "${ANDROID_HOME:-}" ]; then
+    (cd "$ANDROID_DIR" && ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon -q 2>&1) && {
+      if [ -f "$ANDROID_APP_APK" ] && [ -f "$ANDROID_TEST_APK" ]; then
+        cp "$ANDROID_APP_APK" "$ANDROID_APP_DST"
+        cp "$ANDROID_TEST_APK" "$ANDROID_TEST_DST"
+        echo "  → $ANDROID_APP_DST ($(wc -c < "$ANDROID_APP_DST" | tr -d ' ') bytes)"
+        echo "  → $ANDROID_TEST_DST ($(wc -c < "$ANDROID_TEST_DST" | tr -d ' ') bytes)"
+      else
+        echo "  ⚠ APK files not found after build"
+      fi
+    } || {
+      echo "  ⚠ Android build failed. Skipping."
+    }
+  else
+    echo "  ⚠ Java or ANDROID_HOME not found. Skipping."
+    echo "    Install: brew install openjdk@21 android-platform-tools"
+  fi
+else
+  echo ""
+  echo "Skipping Android APK ($ANDROID_DIR/ not found or no gradlew)"
+fi
+
+# ─── 4. iOS runner source ───────────────────────────────────────
+
+IOS_DIR="browse-ios-runner"
+IOS_DST="$BINDIR/browse-ios-runner"
+
+if [ -d "$IOS_DIR" ]; then
+  echo ""
+  echo "=== iOS runner source ==="
+  # Copy source files needed for on-device build (xcodebuild runs at sim start time)
+  rm -rf "$IOS_DST"
+  mkdir -p "$IOS_DST"
+  cp -R "$IOS_DIR/BrowseRunnerApp" "$IOS_DST/"
+  cp -R "$IOS_DIR/BrowseRunnerUITests" "$IOS_DST/"
+  cp "$IOS_DIR/project.yml" "$IOS_DST/"
+  if [ -f "$IOS_DIR/build.sh" ]; then
+    cp "$IOS_DIR/build.sh" "$IOS_DST/"
+  fi
+  FILE_COUNT=$(find "$IOS_DST" -type f | wc -l | tr -d ' ')
+  echo "  → $IOS_DST/ ($FILE_COUNT files)"
+else
+  echo ""
+  echo "Skipping iOS runner ($IOS_DIR/ not found)"
+fi
+
+# ─── Summary ────────────────────────────────────────────────────
+
 echo ""
-echo "Run with: node $OUTDIR/browse.js"
+echo "=== Build complete ==="
+echo "Contents of $BINDIR/:"
+ls -lh "$BINDIR/" 2>/dev/null || echo "  (empty)"
+echo ""
+echo "Contents of $OUTDIR/:"
+ls -lh "$OUTDIR/"
