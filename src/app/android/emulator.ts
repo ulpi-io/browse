@@ -15,20 +15,22 @@ import * as path from 'path';
 
 const DEFAULT_AVD_NAME = 'browse_default';
 
-/** Ensure JAVA_HOME is set for child processes. Homebrew openjdk needs this. */
+/** Ensure JAVA_HOME is set for child processes. Prefers JDK 21 (Android-compatible). */
 export function ensureJavaHome(): void {
   if (process.env.JAVA_HOME) return;
-  const brewJdk = '/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home';
-  if (fs.existsSync(brewJdk)) {
-    process.env.JAVA_HOME = brewJdk;
-    process.env.PATH = `${brewJdk}/bin:${process.env.PATH}`;
-    return;
-  }
-  // Intel Mac
-  const intelJdk = '/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home';
-  if (fs.existsSync(intelJdk)) {
-    process.env.JAVA_HOME = intelJdk;
-    process.env.PATH = `${intelJdk}/bin:${process.env.PATH}`;
+  // Prefer versioned JDK 21 (Android-compatible LTS), then generic openjdk
+  const candidates = [
+    '/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home',
+    '/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home',
+    '/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home',
+    '/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home',
+  ];
+  for (const jdk of candidates) {
+    if (fs.existsSync(jdk)) {
+      process.env.JAVA_HOME = jdk;
+      process.env.PATH = `${jdk}/bin:${process.env.PATH}`;
+      return;
+    }
   }
 }
 const DEFAULT_API_LEVEL = '35';
@@ -272,8 +274,8 @@ export async function ensureEmulator(log: Log): Promise<string> {
         throw new Error('Java is required for Android SDK.\nInstall Homebrew (https://brew.sh) then: brew install --cask temurin');
       }
       log('Installing Java (required by Android SDK)...');
-      // Try openjdk first (formula, no cask quarantine), then temurin
-      const javaFormulas = ['openjdk', 'temurin'];
+      // Install JDK 21 (latest LTS, required by Android Gradle Plugin)
+      const javaFormulas = ['openjdk@21', 'temurin@21'];
       for (const formula of javaFormulas) {
         try {
           const cmd = formula === 'openjdk' ? `brew install ${formula}` : `brew install --cask ${formula}`;
@@ -281,20 +283,9 @@ export async function ensureEmulator(log: Log): Promise<string> {
         } catch {
           // May exit non-zero even on success
         }
-        // openjdk needs to be symlinked for system java
-        if (formula === 'openjdk') {
-          try {
-            execSync('sudo ln -sfn /opt/homebrew/opt/openjdk/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk.jdk', {
-              stdio: 'ignore', timeout: 10_000,
-            });
-          } catch {
-            // May need explicit PATH instead — set JAVA_HOME
-            const jdkPath = '/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home';
-            if (fs.existsSync(jdkPath)) {
-              process.env.JAVA_HOME = jdkPath;
-              process.env.PATH = `${jdkPath}/bin:${process.env.PATH}`;
-            }
-          }
+        // Set JAVA_HOME for versioned openjdk installs
+        if (formula.startsWith('openjdk')) {
+          ensureJavaHome();
         }
         if (hasJava()) break;
       }
@@ -340,14 +331,15 @@ export async function ensureEmulator(log: Log): Promise<string> {
   }
 
   if (!emulatorBin && sdkManager) {
-    log('Installing Android emulator...');
+    log('Installing Android emulator and build tools...');
     try {
-      execSync(`"${sdkManager}" --install "emulator" "platform-tools" "platforms;android-${DEFAULT_API_LEVEL}"`, {
-        stdio: ['pipe', 'pipe', 'pipe'], timeout: 300_000,
-      });
+      execSync(
+        `"${sdkManager}" --install "emulator" "platform-tools" "platforms;android-${DEFAULT_API_LEVEL}" "build-tools;${DEFAULT_API_LEVEL}.0.0"`,
+        { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300_000 },
+      );
       emulatorBin = findEmulator(sdkRoot);
     } catch (err: any) {
-      log(`Emulator install output: ${err.message?.slice(0, 200)}`);
+      log(`SDK install output: ${err.message?.slice(0, 200)}`);
     }
   }
 

@@ -179,12 +179,23 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
         const sdkRoot = findSdkRoot();
         if (sdkRoot) process.env.ANDROID_HOME = sdkRoot;
       }
-      execSync('./gradlew :app:assembleDebug :app:assembleDebugAndroidTest', {
+      execSync('./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace', {
         cwd: driverApkDir, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
       });
       log('APK built.');
     } catch (err: any) {
-      log(`APK build failed: ${err.message?.split('\n')[0]}`);
+      const stdout = err.stdout?.toString() || '';
+      const stderr = err.stderr?.toString() || '';
+      const combined = stdout + '\n' + stderr;
+      // Find meaningful error lines (skip stack traces)
+      const lines = combined.split('\n');
+      const errorLines = lines.filter((l: string) =>
+        !l.startsWith('\tat ') && !l.startsWith('	at ') &&
+        (l.includes('error') || l.includes('Error') || l.includes('FAILURE') ||
+         l.includes('Could not') || l.includes('wrong') || l.includes('Cannot') ||
+         l.includes('SDK') || l.includes('missing'))
+      );
+      log(`APK build failed:\n${errorLines.slice(0, 10).join('\n') || lines.slice(0, 15).join('\n')}`);
     }
   }
 
