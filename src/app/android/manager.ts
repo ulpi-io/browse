@@ -108,7 +108,7 @@ function deriveActions(raw: RawAndroidNode): string[] {
  * and the server can treat both platforms identically.
  */
 export class AndroidAppManager implements AutomationTarget {
-  readonly targetType = 'android-app';
+  readonly targetType = 'app';
 
   private bridge: AndroidDriverProtocol;
   private packageName: string;
@@ -197,9 +197,18 @@ export class AndroidAppManager implements AutomationTarget {
     return `Typed "${text}"`;
   }
 
-  /** Swipe on an element or the screen in a direction */
+  /** Swipe/scroll on an element or the screen in a direction */
   async swipe(direction: string, ref?: string): Promise<string> {
-    const actionName = `swipe${direction.charAt(0).toUpperCase()}${direction.slice(1).toLowerCase()}`;
+    // Android uses scrollForward/scrollBackward accessibility actions
+    const actionMap: Record<string, string> = {
+      up: 'scrollForward',
+      down: 'scrollBackward',
+      left: 'scrollForward',
+      right: 'scrollBackward',
+    };
+    const actionName = actionMap[direction.toLowerCase()];
+    if (!actionName) throw new Error(`Invalid swipe direction: ${direction}. Use up/down/left/right.`);
+
     if (ref) {
       const { path, label } = this.resolveRef(ref);
       const result = await this.bridge.action(path, actionName);

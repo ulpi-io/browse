@@ -478,14 +478,13 @@ export function registerReadDefinitions(registry: CommandRegistry): void {
       spec,
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
-        // App target dispatch
+        // App target dispatch — use duck typing since multiple manager classes exist
         if (ctx.target.targetType === 'app') {
           if (!appReadCommands.has(spec.name)) {
             throw new Error(`Command '${spec.name}' not available for app targets. Use 'text' or 'snapshot' instead.`);
           }
-          const { AppManager } = await import('../app/manager');
-          const app = ctx.target as InstanceType<typeof AppManager>;
-          if (spec.name === 'text') return app.text();
+          const t = ctx.target as any;
+          if (spec.name === 'text' && typeof t.text === 'function') return t.text();
           throw new Error(`Unhandled app read command: ${spec.name}`);
         }
         const bt = ctx.target as BrowserTarget;

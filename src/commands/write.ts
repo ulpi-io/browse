@@ -1032,7 +1032,7 @@ export function registerWriteDefinitions(registry: CommandRegistry): void {
       spec,
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
-        if (ctx.target.targetType === 'app' || ctx.target.targetType === 'ios-app' || ctx.target.targetType === 'android-app') {
+        if (ctx.target.targetType === 'app') {
           if (!appWriteCommands.has(spec.name)) {
             throw new Error(`Command '${spec.name}' not available for app targets. Supported: tap, fill, type, press, swipe.`);
           }

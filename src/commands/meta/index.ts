@@ -119,7 +119,7 @@ export function registerMetaDefinitions(registry: CommandRegistry): void {
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
         // App target dispatch for supported meta commands
-        if (ctx.target.targetType === 'app' || ctx.target.targetType === 'android-app' || ctx.target.targetType === 'ios-app') {
+        if (ctx.target.targetType === 'app') {
           if (!appMetaCommands.has(spec.name)) {
             throw new Error(`Command '${spec.name}' not available for app targets. Use 'snapshot', 'text', 'tap', 'fill', 'type', 'press', or 'screenshot'.`);
           }
