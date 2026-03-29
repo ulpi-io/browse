@@ -9,6 +9,10 @@ import type { BrowserTarget } from '../../browser/target';
 import type { SessionManager, Session } from '../../session/manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename_sim = fileURLToPath(import.meta.url);
+const __dirname_sim = path.dirname(__filename_sim);
 
 const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
 const SIM_STATE_FILE = path.join(LOCAL_DIR, 'sim-state.json');
@@ -16,6 +20,7 @@ const SIM_STATE_FILE = path.join(LOCAL_DIR, 'sim-state.json');
 interface SimState {
   platform: string;
   device?: string;
+  app?: string;
   port: number;
   pid?: number;
   startedAt: string;
@@ -46,7 +51,7 @@ export async function handleSimCommand(
 ): Promise<string> {
   const sub = args[0];
   if (!sub || !['start', 'stop', 'status'].includes(sub)) {
-    throw new Error('Usage: browse sim start [--platform ios|android] [--device <name>] | stop | status');
+    throw new Error('Usage: browse sim start --platform ios|android [--device <name>] [--app <bundleId>] | stop | status');
   }
 
   if (sub === 'status') {
@@ -88,17 +93,20 @@ export async function handleSimCommand(
   const subArgs = args.slice(1);
   let platform = 'ios'; // default
   let device: string | undefined;
+  let appBundleId: string | undefined;
 
   for (let i = 0; i < subArgs.length; i++) {
     if (subArgs[i] === '--platform' && subArgs[i + 1]) {
       platform = subArgs[++i];
     } else if (subArgs[i] === '--device' && subArgs[i + 1]) {
       device = subArgs[++i];
+    } else if (subArgs[i] === '--app' && subArgs[i + 1]) {
+      appBundleId = subArgs[++i];
     }
   }
 
   if (platform !== 'ios' && platform !== 'android') {
-    throw new Error('Usage: browse sim start --platform ios|android [--device <name>]');
+    throw new Error('Usage: browse sim start --platform ios|android [--device <name>] [--app <bundleId>]');
   }
 
   // Check if already running
@@ -113,13 +121,13 @@ export async function handleSimCommand(
   }
 
   if (platform === 'ios') {
-    return startIOS(device);
+    return startIOS(device, appBundleId);
   } else {
     return startAndroid(device);
   }
 }
 
-async function startIOS(device?: string): Promise<string> {
+async function startIOS(device?: string, appBundleId?: string): Promise<string> {
   const { listSimulators, resolveSimulator, bootSimulator } = await import('../../app/ios/controller');
   const { spawn } = await import('child_process');
   const port = 9820;
@@ -145,22 +153,35 @@ async function startIOS(device?: string): Promise<string> {
   console.error(`[browse] Booting ${simName}...`);
   await bootSimulator(udid).catch(() => {}); // already booted is OK
 
-  // Build runner if needed
-  const runnerDir = path.resolve(__dirname, '../../../browse-ios-runner');
-  if (!fs.existsSync(path.join(runnerDir, 'BrowseRunner.xcodeproj'))) {
+  // Build runner
+  const runnerDir = path.resolve(__dirname_sim, '../../../browse-ios-runner');
+  const { execSync } = await import('child_process');
+
+  if (!fs.existsSync(path.join(runnerDir, 'BrowseRunner.xcodeproj', 'project.pbxproj'))) {
     console.error('[browse] Generating Xcode project...');
-    const { execSync } = await import('child_process');
     execSync('xcodegen generate --spec project.yml', { cwd: runnerDir, stdio: 'pipe' });
   }
 
+  console.error('[browse] Building iOS runner (this may take a moment on first run)...');
+  execSync(
+    `xcodebuild build-for-testing -project BrowseRunner.xcodeproj -scheme BrowseRunnerApp -sdk iphonesimulator -destination "id=${udid}" -derivedDataPath .build CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO -quiet`,
+    { cwd: runnerDir, stdio: 'pipe', timeout: 120000 },
+  );
+
   // Start xcodebuild test in background
-  console.error('[browse] Starting iOS runner...');
-  const proc = spawn('xcodebuild', [
+  const targetApp = appBundleId || 'io.ulpi.browse-ios-runner';
+  console.error(`[browse] Starting iOS runner (target: ${targetApp})...`);
+  const xcodebuildArgs = [
     'test', '-project', 'BrowseRunner.xcodeproj', '-scheme', 'BrowseRunnerApp',
     '-sdk', 'iphonesimulator', '-destination', `id=${udid}`,
     '-derivedDataPath', '.build',
     'CODE_SIGN_IDENTITY=', 'CODE_SIGNING_ALLOWED=NO',
-  ], {
+  ];
+  // Pass target app bundle ID as test environment variable
+  if (appBundleId) {
+    xcodebuildArgs.push(`-testEnvironmentVariable`, `BROWSE_TARGET_BUNDLE_ID=${appBundleId}`);
+  }
+  const proc = spawn('xcodebuild', xcodebuildArgs, {
     cwd: runnerDir,
     stdio: ['ignore', 'ignore', 'pipe'],
     detached: true,
@@ -174,7 +195,7 @@ async function startIOS(device?: string): Promise<string> {
     try {
       const resp = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) });
       if (resp.ok) {
-        writeSimState({ platform: 'ios', device: simName, port, pid: proc.pid, startedAt: new Date().toISOString() });
+        writeSimState({ platform: 'ios', device: simName, port, pid: proc.pid, startedAt: new Date().toISOString(), app: targetApp });
         return `iOS simulator ready: ${simName} (port ${port})`;
       }
     } catch {}

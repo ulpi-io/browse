@@ -430,7 +430,7 @@ export const SAFE_TO_RETRY = new Set([
 
 // Commands that are inherently long-running (reload + analysis + detection).
 // These get a 120s HTTP timeout instead of the default 30s.
-const LONG_RUNNING = new Set(['perf-audit']);
+const LONG_RUNNING = new Set(['perf-audit', 'sim']);
 
 // Commands that return static data independent of page state.
 // Safe to retry even after a server restart (no "blank page" issue).
@@ -921,6 +921,13 @@ export async function main() {
   if (args[0] === 'install-skill') {
     const { installSkill } = await import('./install-skill');
     installSkill(args[1]);
+    return;
+  }
+
+  // sim start/stop/status — handled directly in CLI, not through the HTTP server
+  if (args[0] === 'sim') {
+    const { handleSimCLI } = await import('./sim-cli');
+    await handleSimCLI(args.slice(1));
     return;
   }
 

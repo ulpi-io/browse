@@ -86,6 +86,24 @@ final class BrowseRunnerUITests: XCTestCase {
             return .success(["status": "healthy"])
         }
 
+        // POST /configure — set the target app bundle ID at runtime
+        server.route("/configure") { [weak self] request in
+            guard let self = self else { return .error("Runner deallocated") }
+            guard let body = request.body,
+                  let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                  let bundleId = json["targetBundleId"] as? String else {
+                return .error("Expected: {\"targetBundleId\": \"com.apple.Preferences\"}")
+            }
+
+            self.targetBundleId = bundleId
+            if bundleId != "io.ulpi.browse-ios-runner" {
+                self.targetApp = XCUIApplication(bundleIdentifier: bundleId)
+                self.targetApp.launch()
+            }
+            NSLog("[BrowseRunner] Target app switched to: %@", bundleId)
+            return .success(["configured": bundleId])
+        }
+
         // POST /tree — full accessibility tree
         server.route("/tree") { [weak self] _ in
             guard let self = self else { return .error("Runner deallocated") }

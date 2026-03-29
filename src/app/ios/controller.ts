@@ -95,13 +95,26 @@ export async function listSimulators(filter?: string): Promise<SimulatorInfo[]> 
  * Find a booted simulator, or the first available one.
  * If udid is provided, returns that specific simulator.
  */
-export async function resolveSimulator(udid?: string): Promise<SimulatorInfo> {
+export async function resolveSimulator(identifier?: string): Promise<SimulatorInfo> {
   const all = await listSimulators();
 
-  if (udid) {
-    const match = all.find(s => s.udid === udid);
-    if (!match) throw new Error(`Simulator with UDID ${udid} not found or not available`);
-    return match;
+  if (identifier) {
+    // Try UDID first, then name match
+    const byUdid = all.find(s => s.udid === identifier);
+    if (byUdid) return byUdid;
+    const byName = all.filter(s => s.name === identifier && s.isAvailable);
+    if (byName.length === 1) return byName[0];
+    if (byName.length > 1) {
+      // Prefer booted, then first
+      const booted = byName.find(s => s.state === 'Booted');
+      if (booted) return booted;
+      return byName[0];
+    }
+    // Fuzzy: contains match
+    const fuzzy = all.filter(s => s.name.includes(identifier) && s.isAvailable);
+    if (fuzzy.length === 1) return fuzzy[0];
+    if (fuzzy.length > 1) return fuzzy.find(s => s.state === 'Booted') || fuzzy[0];
+    throw new Error(`Simulator '${identifier}' not found. Run: xcrun simctl list devices available`);
   }
 
   // Prefer a booted simulator
