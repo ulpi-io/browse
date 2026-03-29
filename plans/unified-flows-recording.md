@@ -106,7 +106,7 @@ Add a `lifecycle?: CommandLifecycle` field to `CommandContext` in `src/automatio
 
 Note: `src/mcp/server.ts` also constructs a lifecycle but does not currently support recording. It should also pass its lifecycle into context for forward-compatibility, even though MCP recording is not the target of this plan.
 
-**Files:** `src/automation/command.ts`, `src/server.ts`
+**Files:** `src/automation/command.ts`, `src/server.ts`, `src/mcp/server.ts`
 
 **Type:** feature
 **Effort:** S
@@ -183,7 +183,7 @@ const { output } = await executeCommand(step.command, step.args, {
 
 Extract a shared `executeFlowSteps()` helper (currently duplicated between `flow <file>` at lines 222-256 and `flow run <name>` at lines 136-169).
 
-**Recursive flow rule:** `flow run` inside a flow is allowed with a depth cap of 10. Track depth via a module-level counter incremented on entry, decremented on exit. If depth exceeds 10, reject with `"flow nesting depth exceeded (max 10)"`. This prevents infinite recursion while allowing legitimate multi-level flows.
+**Recursive flow rule:** `flow run` inside a flow is allowed with a depth cap of 10. Track depth via a `depth` parameter on `executeFlowSteps()` (default 0, incremented per nested call). If depth exceeds 10, reject with `"flow nesting depth exceeded (max 10)"`. Do NOT use a module-level counter — that is not safe in a multi-session server where concurrent sessions would share state.
 
 For `retry` (line 274) and `watch` (line 334): add runtime guard `if (!('getPage' in target)) throw new Error('retry/watch requires a browser target')`.
 
@@ -366,7 +366,7 @@ Test chain dispatch through `executeCommand()`, recording of chain sub-steps, an
 
 **Agent:** nodejs-cli-senior-engineer
 
-**Depends on:** TASK-006, TASK-008, TASK-009
+**Depends on:** TASK-006, TASK-007, TASK-008, TASK-009
 **Priority:** P2
 
 ---

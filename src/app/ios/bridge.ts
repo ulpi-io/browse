@@ -25,8 +25,6 @@ import {
   checkXcodeTools,
   resolveSimulator,
   bootSimulator,
-  isAppInstalled,
-  launchApp,
   screenshotSimulator,
 } from './controller';
 
@@ -75,50 +73,25 @@ export async function ensureIOSBridge(udid?: string): Promise<{
 // ─── Runner Management ──────────────────────────────────────────
 
 /**
- * Ensure the runner app is installed and running in the simulator.
- * Launches it with the target app's bundle ID as an environment variable
- * so the runner knows which app to instrument.
+ * Ensure the runner is available — delegates to the shared sim-service.
+ * This is the single entry point for runner lifecycle, whether called from
+ * sim start, target factory, or direct bridge usage.
  */
 export async function ensureRunnerApp(
   udid: string,
   targetBundleId: string,
   port: number,
 ): Promise<void> {
-  // Check if runner is installed
-  const installed = await isAppInstalled(udid, RUNNER_BUNDLE_ID);
-  if (!installed) {
-    throw new Error(
-      `browse-ios-runner is not installed in simulator ${udid}.\n` +
-      'Build and install it with:\n' +
-      '  cd browse-ios-runner && xcodebuild -scheme BrowseRunner -destination "id=<UDID>" install\n' +
-      'Or see browse-ios-runner/README.md for details.',
-    );
+  const { checkHealth, startIOS } = await import('./sim-service');
+
+  // If runner is already healthy, just reconfigure the target
+  if (await checkHealth(port)) {
+    await configureRunnerTarget(port, targetBundleId);
+    return;
   }
 
-  // Launch runner with the target bundle ID and port
-  await launchApp(udid, RUNNER_BUNDLE_ID, {
-    BROWSE_TARGET_BUNDLE_ID: targetBundleId,
-    BROWSE_RUNNER_PORT: String(port),
-  });
-
-  // Wait for the runner's HTTP server to become available
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const resp = await fetch(`http://127.0.0.1:${port}/health`, {
-        signal: AbortSignal.timeout(2000),
-      });
-      if (resp.ok) return;
-    } catch {
-      // Not ready yet
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  throw new Error(
-    `browse-ios-runner did not start within 15 seconds on port ${port}.\n` +
-    'Check the simulator logs: xcrun simctl spawn <UDID> log stream --process BrowseRunner',
-  );
+  // Runner not running — start through the shared service
+  await startIOS({ app: targetBundleId });
 }
 
 // ─── Tree Conversion ────────────────────────────────────────────
