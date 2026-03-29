@@ -131,7 +131,6 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
       } else {
         return existing;
       }
-      return existing;
     }
     log('Cleaning up stale driver...');
     await stop();
@@ -214,13 +213,18 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
   // Launch the target app before starting the driver
   log(`Launching ${targetApp}...`);
   try {
-    execSync(`adb -s ${serial} shell monkey -p ${targetApp} -c android.intent.category.LAUNCHER 1`, {
+    execSync(`adb -s ${serial} shell am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p ${targetApp}`, {
       stdio: 'pipe', timeout: 10_000,
     });
   } catch {
-    // App might not have a launcher activity — that's OK
+    // Fallback for apps without standard launcher activity
+    try {
+      execSync(`adb -s ${serial} shell monkey -p ${targetApp} -c android.intent.category.LAUNCHER 1`, {
+        stdio: 'pipe', timeout: 10_000,
+      });
+    } catch {}
   }
-  await new Promise(r => setTimeout(r, 2000)); // wait for app to settle
+  await sleep(2000);
 
   log('Starting driver...');
   await createAndroidBridge(serial, targetApp);
