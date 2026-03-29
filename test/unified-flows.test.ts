@@ -800,6 +800,44 @@ describe('Unified workflow: recursion protection', () => {
     // withFlowDepth increments before and decrements after
     expect(flows).toMatch(/flowDepthMap\.set\([^,]+,\s*current \+ 1\)/);
   });
+
+  test('depth guard uses >= (reject at maxDepth, allow maxDepth-1)', () => {
+    const flows = readSrc('commands/meta/flows.ts');
+    // The check must be `depth >= maxDepth` not `depth > maxDepth`.
+    // With >= : depth 0..9 allowed (10 levels), depth 10 rejected.
+    // With >  : depth 0..10 allowed (11 levels), depth 11 rejected — off by one.
+    expect(flows).toMatch(/if\s*\(\s*depth\s*>=\s*maxDepth\s*\)/);
+    expect(flows).not.toMatch(/if\s*\(\s*depth\s*>\s*maxDepth\s*\)/);
+  });
+
+  test('runtime: BROWSE_MAX_FLOW_DEPTH=1 allows depth-0 flow via executeCommand', async () => {
+    // With maxDepth=1: depth 0 < 1 → allowed. If a nested flow ran, depth 1 >= 1 → rejected.
+    const origMax = process.env.BROWSE_MAX_FLOW_DEPTH;
+    process.env.BROWSE_MAX_FLOW_DEPTH = '1';
+    try {
+      // A 1-step flow with the 'url' command (meta, target-neutral)
+      const flowYaml = '- url: null\n';
+      const tmpFile = path.join(os.tmpdir(), `depth-test-${Date.now()}.yaml`);
+      fs.writeFileSync(tmpFile, flowYaml);
+      try {
+        await ensureDefinitionsRegistered();
+        const { output } = await executeCommand('flow', [tmpFile], {
+          context: {
+            args: [tmpFile],
+            target: bm,
+            buffers: new SessionBuffers(),
+          },
+        });
+        expect(output).toContain('Flow complete');
+        expect(output).toContain('1/1 steps passed');
+      } finally {
+        try { fs.unlinkSync(tmpFile); } catch {}
+      }
+    } finally {
+      if (origMax !== undefined) process.env.BROWSE_MAX_FLOW_DEPTH = origMax;
+      else delete process.env.BROWSE_MAX_FLOW_DEPTH;
+    }
+  });
 });
 
 // ─── Meta handler: handleFlowsCommand accepts AutomationTarget ──
