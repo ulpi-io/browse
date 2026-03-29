@@ -54,16 +54,16 @@ enum ActionHandler {
             element.press(forDuration: 1.0)
 
         case "swipeup":
-            element.swipeUp()
+            swipeTarget(for: element, in: app).swipeUp()
 
         case "swipedown":
-            element.swipeDown()
+            swipeTarget(for: element, in: app).swipeDown()
 
         case "swipeleft":
-            element.swipeLeft()
+            swipeTarget(for: element, in: app).swipeLeft()
 
         case "swiperight":
-            element.swipeRight()
+            swipeTarget(for: element, in: app).swipeRight()
 
         case "twofingertap":
             element.twoFingerTap()
@@ -80,6 +80,26 @@ enum ActionHandler {
             ]
         }
         return ["success": true]
+    }
+
+    // MARK: - Swipe Target Resolution
+
+    /// When swiping on the app root (XCUIApplication), find the first scrollable
+    /// descendant so the swipe actually scrolls content (e.g. WebView, ScrollView, Table).
+    /// Falls back to the original element if no scrollable descendant is found.
+    private static func swipeTarget(for element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
+        // Only apply smart resolution when the target is the root app element
+        guard element.elementType == .application else { return element }
+
+        // Prioritized list of scrollable element types
+        let scrollableTypes: [XCUIElement.ElementType] = [.webView, .scrollView, .table, .collectionView]
+        for type in scrollableTypes {
+            let match = app.descendants(matching: type).firstMatch
+            if match.exists {
+                return match
+            }
+        }
+        return element
     }
 
     // MARK: - Set Value
