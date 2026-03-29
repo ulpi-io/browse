@@ -197,6 +197,20 @@ export class AndroidAppManager implements AutomationTarget {
     return `Typed "${text}"`;
   }
 
+  /** Swipe on an element or the screen in a direction */
+  async swipe(direction: string, ref?: string): Promise<string> {
+    const actionName = `swipe${direction.charAt(0).toUpperCase()}${direction.slice(1).toLowerCase()}`;
+    if (ref) {
+      const { path, label } = this.resolveRef(ref);
+      const result = await this.bridge.action(path, actionName);
+      if (!result.success) throw new Error(result.error ?? `Swipe ${direction} failed`);
+      return `Swiped ${direction} on ${ref}${label ? ` "${label}"` : ''}`;
+    }
+    const result = await this.bridge.action([0], actionName);
+    if (!result.success) throw new Error(result.error ?? `Swipe ${direction} failed`);
+    return `Swiped ${direction}`;
+  }
+
   /** Press a named key */
   async pressKey(key: string): Promise<string> {
     const result = await this.bridge.press(key);

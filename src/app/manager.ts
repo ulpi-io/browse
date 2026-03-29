@@ -98,6 +98,29 @@ export class AppManager implements AutomationTarget {
     return `Typed "${text}"`;
   }
 
+  /** Swipe on an element or the window in a direction */
+  async swipe(direction: string, ref?: string): Promise<string> {
+    const actionMap: Record<string, string> = {
+      up: 'AXScrollUpByPage',
+      down: 'AXScrollDownByPage',
+      left: 'AXScrollLeftByPage',
+      right: 'AXScrollRightByPage',
+    };
+    const actionName = actionMap[direction.toLowerCase()];
+    if (!actionName) throw new Error(`Invalid swipe direction: ${direction}. Use up/down/left/right.`);
+
+    if (ref) {
+      const { path, label } = this.resolveRef(ref);
+      const result = await this.bridge.action(path, actionName);
+      if (!result.success) throw new Error(result.error || `Swipe ${direction} failed`);
+      return `Swiped ${direction} on ${ref}${label ? ` "${label}"` : ''}`;
+    }
+    // No ref — scroll the first scroll area (path [] = window root)
+    const result = await this.bridge.action([], actionName);
+    if (!result.success) throw new Error(result.error || `Swipe ${direction} failed`);
+    return `Swiped ${direction}`;
+  }
+
   /** Press a key */
   async pressKey(key: string): Promise<string> {
     const result = await this.bridge.press(key);
