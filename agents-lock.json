@@ -1,0 +1,1265 @@
+{
+  "version": 2,
+  "agents": {
+    "devops-aws-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/devops-aws-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/devops-aws-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/devops-aws-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "devops-aws-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/devops-aws-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/devops-aws-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/devops-aws-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "devops-docker-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/devops-docker-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/devops-docker-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/devops-docker-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "devops-docker-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/devops-docker-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/devops-docker-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/devops-docker-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "expo-react-native-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/expo-react-native-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/expo-react-native-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/expo-react-native-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "expo-react-native-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/expo-react-native-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/expo-react-native-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/expo-react-native-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "express-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/express-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/express-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/express-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "express-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/express-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/express-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/express-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "go-cli-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/go-cli-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/go-cli-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/go-cli-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "go-cli-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/go-cli-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/go-cli-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/go-cli-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "go-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/go-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/go-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/go-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "go-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/go-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/go-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/go-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "ios-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/ios-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/ios-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/ios-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "ios-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/ios-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/ios-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/ios-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "laravel-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/laravel-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/laravel-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/laravel-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "laravel-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/laravel-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/laravel-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/laravel-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "macos-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/macos-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/macos-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/macos-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "macos-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/macos-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/macos-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/macos-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "nextjs-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/nextjs-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/nextjs-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/nextjs-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "nextjs-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/nextjs-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/nextjs-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/nextjs-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "nodejs-cli-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/nodejs-cli-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/nodejs-cli-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/nodejs-cli-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "nodejs-cli-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/nodejs-cli-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/nodejs-cli-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/nodejs-cli-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "python-fastapi-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/python-fastapi-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/python-fastapi-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/python-fastapi-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "python-fastapi-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/python-fastapi-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/python-fastapi-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/python-fastapi-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "python-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/python-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/python-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/python-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "python-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/python-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/python-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/python-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "react-vite-tailwind-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/react-vite-tailwind-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/react-vite-tailwind-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/react-vite-tailwind-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "react-vite-tailwind-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/react-vite-tailwind-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/react-vite-tailwind-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/react-vite-tailwind-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    },
+    "rust-senior-engineer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/rust-senior-engineer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/rust-senior-engineer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/rust-senior-engineer.json",
+          "format": "json"
+        }
+      }
+    },
+    "rust-senior-engineer-reviewer": {
+      "source": "github.com/ulpi-io/agents",
+      "sourceType": "github",
+      "computedHash": "c34efe2a385fd25b257d778c24ef9ba16836d683a6b754d17f903a300e22bd10",
+      "sourceUrl": "https://github.com/ulpi-io/agents.git",
+      "agentPath": "agents/AGENT.md",
+      "agentFolderHash": "127ddaf3f12093e7bb51109e7b35eabe411f2c22",
+      "installs": {
+        "amp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cline": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "codex": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "cursor": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "kimi-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.agents/agents/rust-senior-engineer-reviewer",
+          "format": "none"
+        },
+        "warp": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/AGENTS.md",
+          "format": "agents-md"
+        },
+        "claude-code": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.claude/agents/rust-senior-engineer-reviewer.md",
+          "format": "flat-md"
+        },
+        "kiro-cli": {
+          "path": "/Users/ciprian/work_cip/browse/browse_cli/.kiro/agents/rust-senior-engineer-reviewer.json",
+          "format": "json"
+        }
+      }
+    }
+  }
+}

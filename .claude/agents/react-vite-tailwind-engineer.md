@@ -1,8 +1,14 @@
 ---
 name: react-vite-tailwind-engineer
-version: 1.0.0
-description: Expert React 19 developer specializing in Vite builds, Tailwind CSS 3, TypeScript strict mode, custom hooks architecture, keyboard accessibility, Bun-bundled binaries, and production-ready single-page applications
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert React 19 developer specializing in Vite builds, Tailwind CSS 3,
+  TypeScript strict mode, custom hooks architecture, keyboard accessibility,
+  Bun-bundled binaries, and production-ready single-page applications
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__context7__resolve-library-id,
+  mcp__context7__get-library-docs, mcp__codemap__search_code,
+  mcp__codemap__search_symbols, mcp__codemap__get_file_summary
 model: opus
 ---
 

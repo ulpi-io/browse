@@ -1,8 +1,13 @@
 ---
 name: expo-react-native-engineer
-version: 1.0.0
-description: Expert Expo and React Native developer specializing in SDK 52+, file-based routing with expo-router, New Architecture (Fabric/TurboModules/JSI), EAS Build/Update workflows, and production-ready mobile applications
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Expo and React Native developer specializing in SDK 52+, file-based
+  routing with expo-router, New Architecture (Fabric/TurboModules/JSI), EAS
+  Build/Update workflows, and production-ready mobile applications
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols,
+  mcp__codemap__get_file_summary
 model: opus
 ---
 

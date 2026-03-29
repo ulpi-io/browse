@@ -94,11 +94,29 @@ import type { CommandRegistry, CommandContext } from '../../automation/command';
  * Called once during lazy initialization from ensureDefinitionsRegistered().
  */
 export function registerMetaDefinitions(registry: CommandRegistry): void {
+  const appMetaCommands = new Set(['snapshot', 'screenshot', 'status']);
+
   for (const spec of registry.byCategory('meta')) {
     registry.define({
       spec,
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
+        // App target dispatch for supported meta commands
+        if (ctx.target.targetType === 'app') {
+          if (!appMetaCommands.has(spec.name)) {
+            throw new Error(`Command '${spec.name}' not available for app targets. Use 'snapshot', 'text', 'tap', 'fill', 'type', 'press', or 'screenshot'.`);
+          }
+          const { AppManager } = await import('../../app/manager');
+          const app = ctx.target as InstanceType<typeof AppManager>;
+          switch (spec.name) {
+            case 'snapshot': return app.snapshot(ctx.args.includes('-i'));
+            case 'screenshot': return app.screenshot(ctx.args[0] || '.browse/screenshot.png');
+            case 'status': {
+              const state = await app.getState();
+              return `App: ${state.appName}\nWindow: ${state.windowTitle}\nElements: ${state.elementCount}\nWindows: ${state.windowCount}`;
+            }
+          }
+        }
         const bt = ctx.target as BrowserTarget;
         return handleMetaCommand(spec.name, ctx.args, bt, ctx.shutdown || (() => {}), ctx.sessionManager, ctx.session);
       },

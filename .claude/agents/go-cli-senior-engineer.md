@@ -1,8 +1,14 @@
 ---
 name: go-cli-senior-engineer
-version: 1.0.0
-description: Expert Go CLI developer specializing in Cobra, Bubble Tea, Viper, lipgloss, charmbracelet TUI libraries, GoReleaser, and production-ready command-line tools
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Go CLI developer specializing in Cobra, Bubble Tea, Viper, lipgloss,
+  charmbracelet TUI libraries, GoReleaser, and production-ready command-line
+  tools
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__context7__resolve-library-id,
+  mcp__context7__get-library-docs, mcp__codemap__search_code,
+  mcp__codemap__search_symbols, mcp__codemap__get_file_summary
 model: opus
 ---
 

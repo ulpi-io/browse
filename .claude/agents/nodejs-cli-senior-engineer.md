@@ -1,8 +1,14 @@
 ---
 name: nodejs-cli-senior-engineer
-version: 1.0.0
-description: Expert Node.js CLI developer specializing in TypeScript CLI patterns, commander.js, chalk, inquirer, ora, Pino logging, and production-ready command-line tools
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Node.js CLI developer specializing in TypeScript CLI patterns,
+  commander.js, chalk, inquirer, ora, Pino logging, and production-ready
+  command-line tools
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__context7__resolve-library-id,
+  mcp__context7__get-library-docs, mcp__codemap__search_code,
+  mcp__codemap__search_symbols, mcp__codemap__get_file_summary
 model: opus
 ---
 

@@ -470,11 +470,24 @@ import type { CommandRegistry, CommandContext } from '../automation/command';
  * Called once during lazy initialization from ensureDefinitionsRegistered().
  */
 export function registerReadDefinitions(registry: CommandRegistry): void {
+  // App-supported read commands
+  const appReadCommands = new Set(['text']);
+
   for (const spec of registry.byCategory('read')) {
     registry.define({
       spec,
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
+        // App target dispatch
+        if (ctx.target.targetType === 'app') {
+          if (!appReadCommands.has(spec.name)) {
+            throw new Error(`Command '${spec.name}' not available for app targets. Use 'text' or 'snapshot' instead.`);
+          }
+          const { AppManager } = await import('../app/manager');
+          const app = ctx.target as InstanceType<typeof AppManager>;
+          if (spec.name === 'text') return app.text();
+          throw new Error(`Unhandled app read command: ${spec.name}`);
+        }
         const bt = ctx.target as BrowserTarget;
         return handleReadCommand(spec.name, ctx.args, bt, ctx.buffers);
       },

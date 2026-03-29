@@ -1025,11 +1025,27 @@ import type { CommandRegistry, CommandContext } from '../automation/command';
  * Called once during lazy initialization from ensureDefinitionsRegistered().
  */
 export function registerWriteDefinitions(registry: CommandRegistry): void {
+  const appWriteCommands = new Set(['click', 'tap', 'fill', 'type', 'press']);
+
   for (const spec of registry.byCategory('write')) {
     registry.define({
       spec,
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
+        if (ctx.target.targetType === 'app') {
+          if (!appWriteCommands.has(spec.name)) {
+            throw new Error(`Command '${spec.name}' not available for app targets. Supported: tap, fill, type, press.`);
+          }
+          const { AppManager } = await import('../app/manager');
+          const app = ctx.target as InstanceType<typeof AppManager>;
+          switch (spec.name) {
+            case 'click':
+            case 'tap': return app.tap(ctx.args[0]);
+            case 'fill': return app.fill(ctx.args[0], ctx.args.slice(1).join(' '));
+            case 'type': return app.typeText(ctx.args.join(' '));
+            case 'press': return app.pressKey(ctx.args[0]);
+          }
+        }
         const bt = ctx.target as BrowserTarget;
         return handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
       },

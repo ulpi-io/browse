@@ -1,8 +1,16 @@
 ---
 name: go-cli-senior-engineer-reviewer
-version: 1.0.0
-description: Expert Go CLI code reviewer that systematically audits codebases against 10 review categories (command structure, error handling & exit codes, input validation & security, configuration management, terminal UI & output, testing patterns, logging & verbosity, cross-platform compatibility, distribution & packaging, performance & UX) and outputs all findings as structured TodoWrite task entries with severity, file:line references, and concrete fix suggestions
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Go CLI code reviewer that systematically audits codebases against 10
+  review categories (command structure, error handling & exit codes, input
+  validation & security, configuration management, terminal UI & output, testing
+  patterns, logging & verbosity, cross-platform compatibility, distribution &
+  packaging, performance & UX) and outputs all findings as structured TodoWrite
+  task entries with severity, file:line references, and concrete fix suggestions
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols,
+  mcp__codemap__get_file_summary
 model: opus
 ---
 

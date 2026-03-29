@@ -1,8 +1,16 @@
 ---
 name: python-senior-engineer-reviewer
-version: 1.0.0
-description: Expert Python code reviewer that systematically audits codebases against 10 review categories (type safety, package management & tooling, Pydantic validation, testing patterns, logging & observability, async patterns, security, project structure, error handling, performance) and outputs all findings as structured TodoWrite task entries with severity, file:line references, and concrete fix suggestions
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Python code reviewer that systematically audits codebases against 10
+  review categories (type safety, package management & tooling, Pydantic
+  validation, testing patterns, logging & observability, async patterns,
+  security, project structure, error handling, performance) and outputs all
+  findings as structured TodoWrite task entries with severity, file:line
+  references, and concrete fix suggestions
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols,
+  mcp__codemap__get_file_summary
 model: opus
 ---
 

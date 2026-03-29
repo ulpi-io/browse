@@ -162,17 +162,15 @@ export function createAppTargetFactory(appName: string): SessionTargetFactory {
       const { AppManager } = await import('../app/manager');
       const bridgePath = await ensureMacOSBridge();
 
-      // Resolve PID from app name
+      // Resolve PID from app name — use -o (oldest) to get the main process, not helpers
       const { execSync } = await import('child_process');
       let pid: number;
       try {
-        const output = execSync(`pgrep -x "${appName}"`, { encoding: 'utf-8' }).trim();
-        const pids = output.split('\n').filter(Boolean).map(Number);
-        if (pids.length === 0) throw new Error(`App '${appName}' is not running`);
-        if (pids.length > 1) throw new Error(`Multiple processes match '${appName}': PIDs ${pids.join(', ')}. Use a more specific name.`);
-        pid = pids[0];
+        const output = execSync(`pgrep -xo "${appName}"`, { encoding: 'utf-8' }).trim();
+        pid = parseInt(output, 10);
+        if (isNaN(pid)) throw new Error(`App '${appName}' is not running`);
       } catch (err: any) {
-        if (err.message.includes('is not running') || err.message.includes('Multiple')) throw err;
+        if (err.message.includes('is not running')) throw err;
         throw new Error(`App '${appName}' is not running`);
       }
 

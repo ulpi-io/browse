@@ -1,8 +1,13 @@
 ---
 name: python-senior-engineer
-version: 1.0.0
-description: Expert Python 3.12+ developer specializing in modern tooling (uv, ruff), Pydantic v2 validation, pytest testing, structlog logging, async patterns, and production-ready application architecture
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Python 3.12+ developer specializing in modern tooling (uv, ruff),
+  Pydantic v2 validation, pytest testing, structlog logging, async patterns, and
+  production-ready application architecture
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__codemap__search_code, mcp__codemap__search_symbols,
+  mcp__codemap__get_file_summary
 model: opus
 ---
 

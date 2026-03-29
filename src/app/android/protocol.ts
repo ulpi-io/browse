@@ -87,8 +87,9 @@ export interface AndroidDriverProtocol {
 
   /**
    * Perform an accessibility action on a node identified by its path.
-   * Common action names: "click", "longClick", "accessibilityFocus",
-   * "clearAccessibilityFocus", "select", "clearSelection", "expand", "collapse".
+   * Supported actions: "click", "longClick", "focus", "clearFocus",
+   * "select", "clearSelection", "scrollForward", "scrollBackward",
+   * "expand", "collapse".
    */
   action(path: number[], actionName: string): Promise<{ success: boolean; error?: string }>;
 
@@ -106,8 +107,9 @@ export interface AndroidDriverProtocol {
 
   /**
    * Press a named key via UiDevice.pressKeyCode().
-   * Supported keys: ENTER, BACK, HOME, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT,
-   * TAB, SPACE, DEL, FORWARD_DEL.
+   * Supported keys: ENTER, RETURN, BACK, HOME, DPAD_UP, DPAD_DOWN, DPAD_LEFT,
+   * DPAD_RIGHT, TAB, SPACE, DEL, BACKSPACE, FORWARD_DEL, DELETE, ESCAPE, ESC,
+   * MENU, SEARCH, VOLUME_UP, VOLUME_DOWN, CAMERA, POWER.
    */
   press(key: string): Promise<{ success: boolean; error?: string }>;
 

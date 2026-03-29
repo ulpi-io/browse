@@ -32,8 +32,9 @@ const DRIVER_PACKAGE = 'io.ulpi.browse.driver';
 const DRIVER_TEST_PACKAGE = `${DRIVER_PACKAGE}.test`;
 const DRIVER_RUNNER = 'androidx.test.runner.AndroidJUnitRunner';
 const DRIVER_PORT = 7779;
-const DRIVER_HEALTH_TIMEOUT_MS = 10_000;
+const DRIVER_HEALTH_TIMEOUT_MS = 15_000;
 const DRIVER_HEALTH_POLL_MS = 250;
+const INSTRUMENTATION_MAX_RETRIES = 2;
 
 /** Path to the prebuilt driver APK, relative to this file */
 function resolveDriverApkPath(): string {
@@ -67,6 +68,7 @@ function resolveDriverApkPath(): string {
 function adbExec(serial: string, ...args: string[]): string {
   return execSync(['adb', '-s', serial, ...args].join(' '), {
     encoding: 'utf-8',
+    timeout: 30_000,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 }
@@ -88,7 +90,7 @@ function adbExecSafe(serial: string, ...args: string[]): string | null {
 export async function ensureAndroidBridge(serial?: string): Promise<string> {
   // 1. adb must be on PATH
   try {
-    execSync('adb version', { stdio: 'ignore' });
+    execSync('adb version', { stdio: 'ignore', timeout: 5_000 });
   } catch {
     throw new Error(
       'adb not found. Install Android SDK platform-tools and add to PATH.\n' +
@@ -97,8 +99,7 @@ export async function ensureAndroidBridge(serial?: string): Promise<string> {
   }
 
   // 2. Find device
-  const resolved = resolveDevice(serial);
-  return resolved;
+  return resolveDevice(serial);
 }
 
 /**
@@ -107,7 +108,7 @@ export async function ensureAndroidBridge(serial?: string): Promise<string> {
  * Otherwise, pick the single booted device/emulator.
  */
 function resolveDevice(serial?: string): string {
-  const output = execSync('adb devices', { encoding: 'utf-8' });
+  const output = execSync('adb devices', { encoding: 'utf-8', timeout: 5_000 });
   const lines = output
     .split('\n')
     .slice(1) // skip "List of devices attached" header
@@ -119,6 +120,15 @@ function resolveDevice(serial?: string): string {
     .map((l) => l.split('\t')[0].trim());
 
   if (booted.length === 0) {
+    // Check if devices exist but aren't "device" state
+    const others = lines.filter((l) => !l.endsWith('\tdevice'));
+    if (others.length > 0) {
+      const states = others.map((l) => l.replace('\t', ' (') + ')').join(', ');
+      throw new Error(
+        `Android devices found but not ready: ${states}\n` +
+        'Wait for the device to finish booting, or check USB debugging authorization.',
+      );
+    }
     throw new Error(
       'No booted Android device or emulator found.\n' +
       'Start an emulator (Android Studio) or connect a device with USB debugging.',
@@ -138,7 +148,7 @@ function resolveDevice(serial?: string): string {
   if (booted.length > 1) {
     throw new Error(
       `Multiple Android devices connected: ${booted.join(', ')}.\n` +
-      'Pass a serial explicitly: createAndroidBridge(serial, packageName)',
+      'Specify which device to use with: --device <serial>',
     );
   }
 
@@ -151,50 +161,114 @@ function resolveDevice(serial?: string): string {
  * Create an Android bridge protocol for a target package.
  *
  * Steps:
- *   1. Install the driver APK (if not already installed / version differs)
- *   2. Start the instrumentation service on-device
- *   3. Forward port 7779 to localhost
- *   4. Wait for /health to respond
- *   5. Return the AndroidDriverProtocol implementation
+ *   1. Verify target app is installed on device
+ *   2. Install the driver APK (if not already installed)
+ *   3. Kill any stale driver instrumentation
+ *   4. Start the instrumentation service on-device
+ *   5. Forward port 7779 to localhost
+ *   6. Wait for /health to respond
+ *   7. Return the AndroidDriverProtocol implementation
  */
 export async function createAndroidBridge(
   serial: string,
   packageName: string,
 ): Promise<AndroidDriverProtocol> {
+  // Verify target app is installed
+  verifyAppInstalled(serial, packageName);
+
   // Install driver APK
   const apkPath = resolveDriverApkPath();
   installDriverApk(serial, apkPath);
 
-  // Start instrumentation (fire-and-forget — stays running until killed)
-  startInstrumentation(serial, packageName);
+  // Kill any stale instrumentation from a previous session
+  killStaleInstrumentation(serial);
 
-  // Forward port
+  // Forward port first (before instrumentation, so it's ready when server starts)
   forwardPort(serial, DRIVER_PORT);
 
-  // Wait for the driver to be ready
-  await waitForHealth(DRIVER_PORT, DRIVER_HEALTH_TIMEOUT_MS, DRIVER_HEALTH_POLL_MS);
+  // Start instrumentation with retry
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= INSTRUMENTATION_MAX_RETRIES; attempt++) {
+    try {
+      startInstrumentation(serial, packageName);
+      await waitForHealth(DRIVER_PORT, DRIVER_HEALTH_TIMEOUT_MS, DRIVER_HEALTH_POLL_MS);
+      return buildProtocol(serial, DRIVER_PORT);
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < INSTRUMENTATION_MAX_RETRIES) {
+        // Kill and retry
+        killStaleInstrumentation(serial);
+        await new Promise((r) => setTimeout(r, 1_000));
+      }
+    }
+  }
 
-  return buildProtocol(serial, DRIVER_PORT);
+  // Clean up forwarding on failure
+  cleanupForward(serial, DRIVER_PORT);
+  throw lastError ?? new Error('Failed to start Android driver');
 }
 
 // ─── Setup helpers ────────────────────────────────────────────────
 
+function verifyAppInstalled(serial: string, packageName: string): void {
+  const result = adbExecSafe(serial, 'shell', 'pm', 'list', 'packages', packageName);
+  if (!result || !result.includes(`package:${packageName}`)) {
+    throw new Error(
+      `App '${packageName}' is not installed on device ${serial}.\n` +
+      `Install it first, e.g.: adb -s ${serial} install path/to/app.apk`,
+    );
+  }
+}
+
 function installDriverApk(serial: string, apkPath: string): void {
+  // Validate the APK file exists and isn't empty
+  try {
+    const stat = fs.statSync(apkPath);
+    if (stat.size < 1024) {
+      throw new Error(`APK file appears corrupt (${stat.size} bytes): ${apkPath}`);
+    }
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      throw new Error(`APK file not found: ${apkPath}`);
+    }
+    throw err;
+  }
+
   // Check if already installed
   const installed = adbExecSafe(serial, 'shell', 'pm', 'list', 'packages', DRIVER_TEST_PACKAGE);
   if (installed && installed.includes(DRIVER_TEST_PACKAGE)) {
     return; // Already installed — skip reinstall for speed
   }
 
+  // Install both the app and test APK
+  // Need the app APK for the instrumentation target
+  const appApkPath = apkPath.replace('-androidTest', '');
+  if (fs.existsSync(appApkPath)) {
+    try {
+      adbExec(serial, 'install', '-t', '-r', `"${appApkPath}"`);
+    } catch {
+      // App APK install failed — may already be installed, continue
+    }
+  }
+
   try {
     // -t allows test APKs
     adbExec(serial, 'install', '-t', '-r', `"${apkPath}"`);
   } catch (err: any) {
+    const msg = err.message || '';
+    if (msg.includes('INSTALL_FAILED_ALREADY_EXISTS')) return;
     throw new Error(
-      `Failed to install browse-android driver APK: ${err.message}\n` +
-      `APK path: ${apkPath}`,
+      `Failed to install browse-android driver APK: ${msg}\n` +
+      `APK path: ${apkPath}\n` +
+      'Ensure the device has enough storage and USB debugging is enabled.',
     );
   }
+}
+
+function killStaleInstrumentation(serial: string): void {
+  // Kill any running browse driver instrumentation
+  adbExecSafe(serial, 'shell', 'am', 'force-stop', DRIVER_TEST_PACKAGE);
+  adbExecSafe(serial, 'shell', 'am', 'force-stop', DRIVER_PACKAGE);
 }
 
 function startInstrumentation(serial: string, targetPackage: string): void {
@@ -217,24 +291,37 @@ function forwardPort(serial: string, port: number): void {
   try {
     adbExec(serial, 'forward', `tcp:${port}`, `tcp:${port}`);
   } catch (err: any) {
-    throw new Error(`adb forward failed: ${err.message}`);
+    throw new Error(
+      `adb port forwarding failed: ${err.message}\n` +
+      `Ensure no other process is using port ${port}.`,
+    );
   }
+}
+
+function cleanupForward(serial: string, port: number): void {
+  adbExecSafe(serial, 'forward', '--remove', `tcp:${port}`);
 }
 
 async function waitForHealth(port: number, timeoutMs: number, pollMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  let lastError = '';
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`);
       if (res.ok) return;
-    } catch {
-      // Not ready yet — keep polling
+      lastError = `HTTP ${res.status}`;
+    } catch (err: any) {
+      lastError = err.code || err.message || 'connection failed';
     }
     await new Promise((r) => setTimeout(r, pollMs));
   }
   throw new Error(
-    `Android driver did not become ready within ${timeoutMs}ms.\n` +
-    'Check adb logcat for errors: adb logcat -s BrowseDriver',
+    `Android driver did not become ready within ${timeoutMs}ms (last: ${lastError}).\n` +
+    'Troubleshooting:\n' +
+    '  1. Check logcat: adb logcat -s BrowseDriver\n' +
+    '  2. Verify port forwarding: adb forward --list\n' +
+    '  3. Ensure target app is in foreground\n' +
+    '  4. Try: browse doctor --platform android',
   );
 }
 

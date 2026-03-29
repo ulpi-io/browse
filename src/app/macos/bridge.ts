@@ -8,7 +8,11 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 import type { AppNode, AppState, BridgeResult, AppBridgeProtocol } from '../types';
+
+const __filename_bridge = fileURLToPath(import.meta.url);
+const __dirname_bridge = path.dirname(__filename_bridge);
 
 /**
  * Resolve the browse-ax binary path.
@@ -16,14 +20,14 @@ import type { AppNode, AppState, BridgeResult, AppBridgeProtocol } from '../type
  */
 export function resolveBridgePath(): string {
   // 1. Local dev build
-  const localBuild = path.resolve(__dirname, '../../../browse-ax/.build/release/browse-ax');
+  const localBuild = path.resolve(__dirname_bridge, '../../../browse-ax/.build/release/browse-ax');
   if (fs.existsSync(localBuild)) return localBuild;
 
-  const localDebug = path.resolve(__dirname, '../../../browse-ax/.build/debug/browse-ax');
+  const localDebug = path.resolve(__dirname_bridge, '../../../browse-ax/.build/debug/browse-ax');
   if (fs.existsSync(localDebug)) return localDebug;
 
   // 2. Installed alongside package
-  const installed = path.resolve(__dirname, '../../bin/browse-ax');
+  const installed = path.resolve(__dirname_bridge, '../../bin/browse-ax');
   if (fs.existsSync(installed)) return installed;
 
   // 3. Lazy download location

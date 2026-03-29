@@ -1,8 +1,14 @@
 ---
 name: express-senior-engineer
-version: 1.0.0
-description: Expert Express.js developer specializing in TypeScript, middleware architecture, RESTful APIs, queue systems with Bull, production-ready Node.js applications with Pino logging, and enterprise-grade server-side development
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite, WebFetch, WebSearch, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__codemap__search_code, mcp__codemap__search_symbols, mcp__codemap__get_file_summary
+description: >-
+  Expert Express.js developer specializing in TypeScript, middleware
+  architecture, RESTful APIs, queue systems with Bull, production-ready Node.js
+  applications with Pino logging, and enterprise-grade server-side development
+tools: >-
+  Read, Write, Edit, Bash, Glob, Grep, Task, BashOutput, KillShell, TodoWrite,
+  WebFetch, WebSearch, mcp__context7__resolve-library-id,
+  mcp__context7__get-library-docs, mcp__codemap__search_code,
+  mcp__codemap__search_symbols, mcp__codemap__get_file_summary
 model: opus
 ---
 
