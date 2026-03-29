@@ -604,23 +604,40 @@ async function start() {
           const device = req.headers.get('x-browse-device') || '';
           let sessionId: string;
           if (appName) {
-            sessionId = `app:${appName}`;
-            // Lazily register a platform-appropriate target factory for this app session
-            if (!sessionManager!.hasAppFactory(sessionId)) {
-              if (platform === 'ios') {
+            if (platform === 'ios') {
+              // iOS: single shared session — all apps share one runner, reconfigure target on switch
+              sessionId = `ios-app`;
+              if (!sessionManager!.hasAppFactory(sessionId)) {
                 const { createIOSTargetFactory } = await import('./session/target-factory');
                 sessionManager!.setAppFactory(
                   sessionId,
                   createIOSTargetFactory(appName, device || undefined),
                 );
-              } else if (platform === 'android') {
+              }
+              // If session already exists with a different app, reconfigure the runner
+              const existingSession = sessionManager!.getExisting(sessionId);
+              if (existingSession) {
+                const mgr = existingSession.manager as any;
+                if (mgr?.getBundleId && mgr.getBundleId() !== appName) {
+                  const { configureTarget } = await import('./app/ios/sim-service');
+                  const port = parseInt(process.env.BROWSE_RUNNER_PORT || '', 10) || 9820;
+                  await configureTarget(port, appName);
+                  mgr.reconfigureTarget(appName);
+                }
+              }
+            } else if (platform === 'android') {
+              sessionId = `app:${appName}`;
+              if (!sessionManager!.hasAppFactory(sessionId)) {
                 const { createAndroidTargetFactory } = await import('./session/target-factory');
                 sessionManager!.setAppFactory(
                   sessionId,
                   createAndroidTargetFactory(appName, device || undefined),
                 );
-              } else {
-                // Default: macOS app automation
+              }
+            } else {
+              sessionId = `app:${appName}`;
+              // Default: macOS app automation
+              if (!sessionManager!.hasAppFactory(sessionId)) {
                 const { createAppTargetFactory } = await import('./session/target-factory');
                 sessionManager!.setAppFactory(sessionId, createAppTargetFactory(appName));
               }

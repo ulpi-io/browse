@@ -168,6 +168,8 @@ export async function stop(): Promise<string> {
 export interface StartOptions {
   device?: string;
   app?: string;
+  /** Open the Simulator window so the user can see it (default: headless) */
+  visible?: boolean;
   /** Callback for progress messages (default: stderr) */
   log?: (msg: string) => void;
 }
@@ -181,6 +183,11 @@ export async function startIOS(opts: StartOptions = {}): Promise<SimServiceState
   if (existing) {
     const healthy = await checkHealth(existing.port);
     if (healthy) {
+      // Open Simulator.app window if --visible (even if already running)
+      if (opts.visible) {
+        const { execSync: execSyncVis } = await import('child_process');
+        try { execSyncVis('open -a Simulator', { stdio: 'pipe', timeout: 5000 }); } catch {}
+      }
       // Reconfigure target if different app
       if (opts.app && existing.app !== opts.app) {
         log(`Switching target to ${opts.app}...`);
@@ -208,6 +215,12 @@ export async function startIOS(opts: StartOptions = {}): Promise<SimServiceState
   if (sim.state !== 'Booted') {
     log(`Booting ${sim.name}...`);
     await bootSimulator(sim.udid);
+  }
+
+  // Open Simulator.app window if --visible
+  if (opts.visible) {
+    const { execSync: execSyncVis } = await import('child_process');
+    try { execSyncVis('open -a Simulator', { stdio: 'pipe', timeout: 5000 }); } catch {}
   }
 
   // Build runner if needed

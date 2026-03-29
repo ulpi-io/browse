@@ -9,9 +9,12 @@ export async function handleSimCLI(args: string[]): Promise<void> {
   const sub = args[0];
 
   if (!sub || sub === '--help') {
-    console.log('Usage: browse sim start --platform ios [--device <name>] [--app <bundleId>]');
+    console.log('Usage: browse sim start --platform ios [--device <name>] [--app <bundleId>] [--visible]');
     console.log('       browse sim stop');
     console.log('       browse sim status');
+    console.log('');
+    console.log('Flags:');
+    console.log('  --visible    Open the Simulator window (default: headless/background)');
     return;
   }
 
@@ -38,11 +41,13 @@ export async function handleSimCLI(args: string[]): Promise<void> {
     let platform = 'ios';
     let device: string | undefined;
     let app: string | undefined;
+    let visible = false;
 
     for (let i = 1; i < args.length; i++) {
       if (args[i] === '--platform' && args[i + 1]) platform = args[++i];
       else if (args[i] === '--device' && args[i + 1]) device = args[++i];
       else if (args[i] === '--app' && args[i + 1]) app = args[++i];
+      else if (args[i] === '--visible') visible = true;
     }
 
     if (platform !== 'ios') {
@@ -51,7 +56,7 @@ export async function handleSimCLI(args: string[]): Promise<void> {
     }
 
     const { startIOS } = await import('./app/ios/sim-service');
-    const state = await startIOS({ device, app });
+    const state = await startIOS({ device, app, visible });
     console.log(`iOS simulator ready: ${state.device} (target: ${state.app})`);
     return;
   }

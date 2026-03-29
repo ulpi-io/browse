@@ -54,16 +54,20 @@ enum ActionHandler {
             element.press(forDuration: 1.0)
 
         case "swipeup":
-            swipeTarget(for: element, in: app).swipeUp()
+            let upTarget = swipeTarget(for: element, in: app)
+            coordinateSwipe(upTarget, direction: "up")
 
         case "swipedown":
-            swipeTarget(for: element, in: app).swipeDown()
+            let downTarget = swipeTarget(for: element, in: app)
+            coordinateSwipe(downTarget, direction: "down")
 
         case "swipeleft":
-            swipeTarget(for: element, in: app).swipeLeft()
+            let leftTarget = swipeTarget(for: element, in: app)
+            coordinateSwipe(leftTarget, direction: "left")
 
         case "swiperight":
-            swipeTarget(for: element, in: app).swipeRight()
+            let rightTarget = swipeTarget(for: element, in: app)
+            coordinateSwipe(rightTarget, direction: "right")
 
         case "twofingertap":
             element.twoFingerTap()
@@ -100,6 +104,25 @@ enum ActionHandler {
             }
         }
         return element
+    }
+
+    /// Perform a coordinate-based swipe on the given element.
+    /// Uses XCUICoordinate press-and-drag which reliably scrolls WebViews
+    /// and other content that doesn't respond to element.swipeUp().
+    private static func coordinateSwipe(_ element: XCUIElement, direction: String) {
+        // Swipe across the middle 60% of the element for a reliable scroll
+        let start: CGVector
+        let end: CGVector
+        switch direction {
+        case "up":    start = CGVector(dx: 0.5, dy: 0.75); end = CGVector(dx: 0.5, dy: 0.25)
+        case "down":  start = CGVector(dx: 0.5, dy: 0.25); end = CGVector(dx: 0.5, dy: 0.75)
+        case "left":  start = CGVector(dx: 0.75, dy: 0.5); end = CGVector(dx: 0.25, dy: 0.5)
+        case "right": start = CGVector(dx: 0.25, dy: 0.5); end = CGVector(dx: 0.75, dy: 0.5)
+        default: element.swipeUp(); return
+        }
+        let startCoord = element.coordinate(withNormalizedOffset: start)
+        let endCoord = element.coordinate(withNormalizedOffset: end)
+        startCoord.press(forDuration: 0.05, thenDragTo: endCoord)
     }
 
     // MARK: - Set Value

@@ -18,7 +18,7 @@ export async function handleSimCommand(
 ): Promise<string> {
   const sub = args[0];
   if (!sub || !['start', 'stop', 'status'].includes(sub)) {
-    throw new Error('Usage: browse sim start --platform ios [--device <name>] [--app <bundleId>] | stop | status');
+    throw new Error('Usage: browse sim start --platform ios [--device <name>] [--app <bundleId>] [--visible] | stop | status');
   }
 
   if (sub === 'status') {
@@ -38,11 +38,13 @@ export async function handleSimCommand(
   let platform = 'ios';
   let device: string | undefined;
   let app: string | undefined;
+  let visible = false;
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--platform' && args[i + 1]) platform = args[++i];
     else if (args[i] === '--device' && args[i + 1]) device = args[++i];
     else if (args[i] === '--app' && args[i + 1]) app = args[++i];
+    else if (args[i] === '--visible') visible = true;
   }
 
   if (platform !== 'ios') {
@@ -50,6 +52,6 @@ export async function handleSimCommand(
   }
 
   const { startIOS } = await import('../../app/ios/sim-service');
-  const state = await startIOS({ device, app });
+  const state = await startIOS({ device, app, visible });
   return `iOS simulator ready: ${state.device} (target: ${state.app})`;
 }

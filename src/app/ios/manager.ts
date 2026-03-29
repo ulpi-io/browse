@@ -208,6 +208,19 @@ export class IOSAppManager implements AutomationTarget {
     return this.udid;
   }
 
+  /**
+   * Reconfigure this manager to target a different app without restarting the runner.
+   * Called by the server when --app changes within the shared iOS session.
+   */
+  reconfigureTarget(newBundleId: string): void {
+    this.bundleId = newBundleId;
+    // Recreate the bridge pointing to the new target
+    this.bridge = createIOSBridge(this.udid, newBundleId, this.port);
+    // Clear stale refs from the old app
+    this.refMap.clear();
+    this.lastSnapshot = null;
+  }
+
   // ─── iOS-specific methods ─────────────────────────────────────
 
   /**

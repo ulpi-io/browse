@@ -74,6 +74,14 @@ export class SessionManager {
   }
 
   /**
+   * Get an existing session without creating one.
+   * Returns undefined if the session doesn't exist.
+   */
+  getExisting(sessionId: string): Session | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  /**
    * Get an existing session or create a new one.
    * Creating a session uses the target factory to provision a new automation target.
    * If an app factory is registered for this session ID, it takes precedence.
