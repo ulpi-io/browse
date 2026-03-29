@@ -92,14 +92,63 @@ export async function ensureAndroidBridge(serial?: string): Promise<string> {
   try {
     execSync('adb version', { stdio: 'ignore', timeout: 5_000 });
   } catch {
-    throw new Error(
-      'adb not found. Install Android SDK platform-tools and add to PATH.\n' +
-      'https://developer.android.com/tools/releases/platform-tools',
-    );
+    throw new AdbNotFoundError();
   }
 
   // 2. Find device
   return resolveDevice(serial);
+}
+
+/**
+ * Attempt to install Android platform-tools automatically.
+ * On macOS, uses Homebrew. Returns true if install succeeded.
+ */
+export async function installAdb(log?: (msg: string) => void): Promise<boolean> {
+  const print = log || ((msg: string) => process.stderr.write(`[browse] ${msg}\n`));
+
+  if (process.platform === 'darwin') {
+    // Check for Homebrew
+    try {
+      execSync('brew --version', { stdio: 'ignore', timeout: 5_000 });
+    } catch {
+      print('Homebrew not found. Install it first: https://brew.sh');
+      print('Then run: brew install android-platform-tools');
+      return false;
+    }
+
+    print('Installing Android platform-tools via Homebrew...');
+    try {
+      execSync('brew install android-platform-tools', {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 120_000,
+      });
+      // Verify it worked
+      execSync('adb version', { stdio: 'ignore', timeout: 5_000 });
+      print('adb installed successfully.');
+      return true;
+    } catch (err: any) {
+      print(`Homebrew install failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  // Linux — direct download
+  print('Install Android platform-tools:');
+  print('  curl -LO https://dl.google.com/android/repository/platform-tools-latest-linux.zip');
+  print('  unzip platform-tools-latest-linux.zip');
+  print('  export PATH="$PWD/platform-tools:$PATH"');
+  return false;
+}
+
+/** Sentinel error so sim-service can catch it and offer install */
+export class AdbNotFoundError extends Error {
+  constructor() {
+    super(
+      'adb not found. Install Android SDK platform-tools and add to PATH.\n' +
+      'https://developer.android.com/tools/releases/platform-tools',
+    );
+    this.name = 'AdbNotFoundError';
+  }
 }
 
 /**

@@ -124,10 +124,23 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
     await stop();
   }
 
-  // Find device
+  // Find device — auto-install adb if missing
   log('Finding Android device...');
-  const { ensureAndroidBridge, createAndroidBridge } = await import('./bridge');
-  const serial = await ensureAndroidBridge(opts.device);
+  const { ensureAndroidBridge, createAndroidBridge, AdbNotFoundError, installAdb } = await import('./bridge');
+  let serial: string;
+  try {
+    serial = await ensureAndroidBridge(opts.device);
+  } catch (err) {
+    if (err instanceof AdbNotFoundError) {
+      log('adb not found. Attempting to install...');
+      const installed = await installAdb(log);
+      if (!installed) throw err;
+      // Retry after install
+      serial = await ensureAndroidBridge(opts.device);
+    } else {
+      throw err;
+    }
+  }
 
   // Get device name
   let deviceName = serial;
