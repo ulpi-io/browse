@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.2.0
+
+**Project-local extensibility** — custom rules, detections, and flows from project config:
+
+- Custom audit rules — load declarative JSON rules from `.browse/rules/*.json` or `browse.json` `rulePaths`
+  - `metric-threshold`: perf-audit metrics (e.g., LCP must be under 2000ms)
+  - `selector-count`: a11y-audit DOM validation (e.g., max images without alt)
+  - Configurable severity (critical/warning), evaluated alongside built-in checks
+- Custom detection signatures — load from `.browse/detections/*.json` or `browse.json` `detectionPaths`
+  - Define `detect` JS expression, optional `versionExpr`, custom category
+  - Results included in `detect` output alongside built-in framework/SaaS fingerprints
+- Saved flows — `flow save <name>` / `flow run <name>` / `flow list` from `.browse/flows/` or `browse.json` `flowPaths`
+- `browse.json` config: `detectionPaths`, `rulePaths`, `flowPaths`, `startupFlows`
+
+## v2.1.0
+
+**Workflow commands and SDK mode:**
+
+- `flow <file.yaml>` — execute YAML automation scripts with steps, variables, conditionals
+- `retry` — retry last failed command with backoff until condition met
+- `watch` — watch DOM element for changes, optionally trigger callback
+- SDK mode (`src/sdk.ts`) — programmatic API for embedding browse in Node.js applications
+  - `createBrowser()` returns direct Playwright access — no HTTP server
+  - Methods: `goto`, `text`, `html`, `click`, `fill`, `type`, `press`, `snapshot`, `screenshot`, `evaluate`, `close`
+
 ## v2.0.0
 
 **Native app automation** — automate Android, iOS, and macOS apps through the same CLI:
@@ -45,15 +70,6 @@
 **Build pipeline:**
 - `scripts/build-all.sh` builds Android instrumentation APK alongside Node.js bundle
 - APK auto-resolved from local build, installed package, or lazy-download location
-
-## v2.1.0
-
-**Workflow commands and SDK mode:**
-- `flow <file.yaml>` — execute YAML automation scripts with steps, variables, conditionals
-- `retry` — retry last failed command
-- `watch <ms>` — auto-retry with delay
-- SDK mode — programmatic API for embedding browse in Node.js applications
-- Custom audit rules — JSON-declarative metric-threshold and selector-count rules
 
 ## v1.7.0
 
