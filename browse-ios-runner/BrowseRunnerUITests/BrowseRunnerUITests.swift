@@ -68,10 +68,13 @@ final class BrowseRunnerUITests: XCTestCase {
 
         NSLog("[BrowseRunner] Server started on port %u, target app: %@", port, targetBundleId)
 
-        // Block forever — the server runs on its own dispatch queue.
+        // Keep the main thread alive and responsive using RunLoop.
+        // This allows DispatchQueue.main.async callbacks from the HTTP server
+        // to execute (XCUITest APIs require main thread access).
         // The test will be terminated externally when no longer needed.
-        let semaphore = DispatchSemaphore(value: 0)
-        semaphore.wait()
+        while true {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))
+        }
     }
 
     // MARK: - Route Registration

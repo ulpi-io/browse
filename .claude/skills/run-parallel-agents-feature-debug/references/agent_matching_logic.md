@@ -310,17 +310,19 @@ This document provides detailed rules, patterns, and edge cases for matching fea
 
 ---
 
-### ios-macos-senior-engineer
+### ios-senior-engineer
 
 **Primary Expertise:**
 
+- Native iOS and iPadOS application development
 - Swift and SwiftUI development
+- UIKit interoperability and mobile interaction patterns
 - Xcode project management
 - Swift Package Manager (SPM)
 - AVFoundation (audio/video)
 - StoreKit (in-app purchases)
 - Core Data and SwiftData
-- iOS and macOS app development
+- XCTest, UI testing, and simulator debugging
 
 **Technology Indicators:**
 
@@ -335,13 +337,44 @@ This document provides detailed rules, patterns, and edge cases for matching fea
 - "Create SwiftUI view for..."
 - "Implement StoreKit purchase for..."
 - "Add AVFoundation player for..."
-- "Build macOS menu bar app for..."
+- "Fix XCTest or simulator issue for..."
 
 **Edge Cases:**
 
-- Objective-C project → Use `ios-macos-senior-engineer` (Swift/ObjC interop is common)
-- Cross-platform mobile (iOS + Android) → Use `expo-react-native-engineer` if React Native, or split: `ios-macos-senior-engineer` for iOS
+- Objective-C project → Use `ios-macos-senior-engineer` (Swift/ObjC interop and older Apple-platform code are a better fit there)
+- Cross-platform mobile (iOS + Android) → Use `expo-react-native-engineer` if React Native, or split: `ios-senior-engineer` for iOS and `android-senior-engineer` for Android native
+- macOS / AppKit / Cocoa / menu bar / desktop windowing → Use `ios-macos-senior-engineer`
 - watchOS / tvOS → Use `ios-macos-senior-engineer` (closest Apple platform agent)
+
+---
+
+### ios-macos-senior-engineer
+
+**Primary Expertise:**
+
+- macOS AppKit and desktop SwiftUI applications
+- Cocoa, AppKit, NSWindow, NSApplication, status bar/menu bar apps
+- Shared Apple-platform code spanning iOS and macOS
+- Objective-C interoperability and older Apple-platform codebases
+
+**Technology Indicators:**
+
+- File extensions: `*.swift`, `*.m`, `*.mm`, `*.storyboard`, `*.xib`
+- Framework files: `Package.swift`, `*.xcodeproj`, `*.xcworkspace`, `Podfile`
+- Code patterns: `import AppKit`, `import Cocoa`, `NSApplication`, `NSWindow`, `NSStatusBar`
+
+**Common Task Patterns:**
+
+- "Build macOS menu bar app for..."
+- "Fix AppKit window lifecycle..."
+- "Debug Cocoa desktop crash..."
+- "Implement shared Apple platform package..."
+
+**Edge Cases:**
+
+- Pure iPhone/iPad app → Use `ios-senior-engineer`
+- UIKit / WidgetKit / App Intents / simulator issues → Use `ios-senior-engineer`
+- React Native / Expo → Use `expo-react-native-engineer`
 
 ---
 
@@ -373,7 +406,7 @@ This document provides detailed rules, patterns, and edge cases for matching fea
 
 **Edge Cases:**
 
-- Pure React Native without Expo → Use `expo-react-native-engineer` (still closest mobile agent)
+- Pure React Native without Expo → Use `expo-react-native-engineer` (still closest cross-platform mobile agent)
 - Web-only React → Use `nextjs-senior-engineer` or `react-vite-tailwind-engineer`
 - Flutter mobile app → Use `expo-react-native-engineer` for mobile expertise or `general-purpose`
 
@@ -482,7 +515,8 @@ This document provides detailed rules, patterns, and edge cases for matching fea
    - If user says "Next.js page", match to `nextjs-senior-engineer`
    - If user says "FastAPI endpoint", match to `fastapi-senior-engineer`
    - If user says "Go service", match to `go-senior-engineer`
-   - If user says "iOS app", match to `ios-macos-senior-engineer`
+   - If user says "iOS app", match to `ios-senior-engineer`
+   - If user says "macOS app", match to `ios-macos-senior-engineer`
    - If user says "Docker setup", match to `devops-docker-senior-engineer`
 
 2. **Analyze file paths** (if provided)
@@ -496,7 +530,8 @@ This document provides detailed rules, patterns, and edge cases for matching fea
    - `app.json` + `expo` dependency → Expo React Native
    - `go.mod` + `cobra` dependency → Go CLI
    - `go.mod` (no cobra) → Go
-   - `Package.swift` or `*.xcodeproj` → iOS/macOS
+   - `Package.swift` or `*.xcodeproj` + iOS/mobile indicators → `ios-senior-engineer`
+   - `Package.swift` or `*.xcodeproj` + AppKit/Cocoa/macOS indicators → `ios-macos-senior-engineer`
    - `pyproject.toml` with `fastapi` → FastAPI
    - `manage.py` or `pyproject.toml` with `django` → Python
    - `cdk.json` or `*.tf` → DevOps AWS
@@ -510,7 +545,8 @@ This document provides detailed rules, patterns, and edge cases for matching fea
    - `@app.get()`, `Depends()` → FastAPI
    - `cobra.Command{}` → Go CLI
    - `http.HandleFunc` → Go
-   - `import SwiftUI` → iOS/macOS
+   - `import SwiftUI` or `import UIKit` → `ios-senior-engineer` unless macOS-specific indicators are present
+   - `import AppKit` or `import Cocoa` → `ios-macos-senior-engineer`
    - `@Injectable()`, `@Controller()` → Express (NestJS)
    - `app.use()`, `express.Router()` → Express
 
@@ -545,7 +581,7 @@ When a task requires multiple agent types:
 
 - User: "Build iOS app and Go backend API"
 - Split into:
-  - iOS app → `ios-macos-senior-engineer`
+  - iOS app → `ios-senior-engineer`
   - Backend API → `go-senior-engineer`
 
 **Scenario 5: Infra + App**
@@ -581,8 +617,9 @@ When a task requires multiple agent types:
 | `*.py` (generic)                         | `python-senior-engineer`         | Medium     |
 | `*.go` + `cobra` dependency              | `go-cli-senior-engineer`         | High       |
 | `*.go` + `go.mod` (no cobra)             | `go-senior-engineer`             | High       |
-| `*.swift` + `*.xcodeproj`               | `ios-macos-senior-engineer`      | High       |
-| `*.swift` + `Package.swift`             | `ios-macos-senior-engineer`      | High       |
+| `*.swift` + `*.xcodeproj`               | `ios-senior-engineer`            | High       |
+| `*.swift` + `Package.swift`             | `ios-senior-engineer`            | Medium     |
+| `*.swift` + `import AppKit` / `Cocoa`   | `ios-macos-senior-engineer`      | High       |
 | `Dockerfile` / `docker-compose.yml`      | `devops-docker-senior-engineer`  | High       |
 | `cdk.json` / `*.tf` / `template.yaml`   | `devops-aws-senior-engineer`     | High       |
 | `*.dart` + `pubspec.yaml`               | `expo-react-native-engineer`     | Low        |

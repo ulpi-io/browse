@@ -340,7 +340,7 @@ This document provides detailed rules, patterns, and edge cases for matching fea
 **Edge Cases:**
 
 - Objective-C project → Use `ios-macos-senior-engineer` (Swift/ObjC interop is common)
-- Cross-platform mobile (iOS + Android) → Use `expo-react-native-engineer` if React Native, or split: `ios-macos-senior-engineer` for iOS
+- Cross-platform mobile (iOS + Android) → Use `expo-react-native-engineer` if React Native, or split: `ios-macos-senior-engineer` for iOS and `android-senior-engineer` for Android native
 - watchOS / tvOS → Use `ios-macos-senior-engineer` (closest Apple platform agent)
 
 ---
@@ -373,7 +373,7 @@ This document provides detailed rules, patterns, and edge cases for matching fea
 
 **Edge Cases:**
 
-- Pure React Native without Expo → Use `expo-react-native-engineer` (still closest mobile agent)
+- Pure React Native without Expo → Use `expo-react-native-engineer` (still closest cross-platform mobile agent)
 - Web-only React → Use `nextjs-senior-engineer` or `react-vite-tailwind-engineer`
 - Flutter mobile app → Use `expo-react-native-engineer` for mobile expertise or `general-purpose`
 

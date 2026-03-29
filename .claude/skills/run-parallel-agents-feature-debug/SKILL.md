@@ -135,7 +135,9 @@ For each independent problem cluster, determine the best agent type:
 - **FastAPI issues** → `fastapi-senior-engineer`
 - **Go backend issues** → `go-senior-engineer`
 - **Go CLI issues** → `go-cli-senior-engineer`
-- **iOS/macOS, Swift issues** → `ios-macos-senior-engineer`
+- **Android native, Kotlin, instrumentation issues** → `android-senior-engineer`
+- **iOS native, UIKit/SwiftUI mobile, XCTest issues** → `ios-senior-engineer`
+- **macOS native, AppKit/Cocoa, desktop Swift issues** → `ios-macos-senior-engineer`
 - **Expo mobile bugs** → `expo-react-native-engineer`
 - **AWS infrastructure issues** → `devops-aws-senior-engineer`
 - **Docker/container issues** → `devops-docker-senior-engineer`
@@ -149,7 +151,7 @@ Jest/Vitest frontend tests → Next.js or React/Vite/Tailwind
 Express middleware/routing errors → Express
 pytest/unittest failures → Python or FastAPI
 go test failures → Go
-Swift/Xcode build errors → iOS/macOS
+Swift/Xcode build errors → iOS or macOS (default to `ios-senior-engineer` unless macOS-specific indicators are present)
 TypeScript compilation errors → Match to framework
 Runtime errors → Match to where error occurs
 Performance issues → Match to affected component
@@ -420,7 +422,8 @@ Quick reference for matching debugging tasks to agents:
 | `fastapi-senior-engineer`           | FastAPI endpoint failures, async DB issues            | Pydantic validation, dependency injection, ASGI errors          |
 | `go-senior-engineer`                | Go test failures, service bugs, API errors            | Go panics, goroutine leaks, interface mismatches                |
 | `go-cli-senior-engineer`            | Go CLI tool failures, flag parsing bugs               | Cobra errors, flag conflicts, output formatting                 |
-| `ios-macos-senior-engineer`         | Swift/Xcode build failures, SwiftUI bugs              | Swift compiler errors, runtime crashes, UI layout issues        |
+| `ios-senior-engineer`               | iOS/Xcode build failures, UIKit/SwiftUI mobile bugs   | Swift compiler errors, XCTest failures, simulator/runtime bugs  |
+| `ios-macos-senior-engineer`         | macOS/AppKit build failures, desktop SwiftUI bugs     | AppKit/Cocoa errors, menu bar/window bugs, desktop crashes      |
 | `expo-react-native-engineer`        | Mobile crashes, navigation bugs, native module errors | React Native errors, Expo module issues, platform-specific bugs |
 | `devops-aws-senior-engineer`        | Infrastructure failures, deployment issues            | CDK synth errors, CloudFormation failures, IAM issues           |
 | `devops-docker-senior-engineer`     | Container build/run failures, compose issues          | Dockerfile errors, network issues, volume mount failures        |

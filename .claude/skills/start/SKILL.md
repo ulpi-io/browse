@@ -102,6 +102,7 @@ See `references/skill_discovery_patterns.md` for comprehensive skill discovery c
 | FastAPI, async DB, JWT auth      | `fastapi-senior-engineer`      | `*.py`, `fastapi` imports, `uvicorn`   |
 | Go backend, services             | `go-senior-engineer`           | `*.go`, `go.mod`, `go.sum`             |
 | Go CLI tools                     | `go-cli-senior-engineer`       | `*.go`, `cobra` imports, CLI patterns  |
+| Android native, Kotlin, Compose  | `android-senior-engineer`      | `*.kt`, `AndroidManifest.xml`, `build.gradle.kts`, adb/instrumentation |
 | iOS/macOS, Swift, SwiftUI        | `ios-macos-senior-engineer`    | `*.swift`, `Package.swift`, Xcode      |
 | Expo React Native mobile         | `expo-react-native-engineer`   | `*.tsx`, `app.json`, Expo modules      |
 | AWS infrastructure, CDK          | `devops-aws-senior-engineer`   | CDK, CloudFormation, Terraform, AWS    |

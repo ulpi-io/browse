@@ -123,7 +123,21 @@ final class RunnerServer: @unchecked Sendable {
             let response: HTTPResponse
 
             if let request = request, let handler = self.handlers[request.path] {
-                response = handler(request)
+                // Most handlers need XCUITest APIs which are main-thread-only.
+                // Use a semaphore to dispatch and wait (main thread is running a RunLoop, not blocked).
+                if request.path == "/health" {
+                    // Health check is lightweight — can run on any thread
+                    response = handler(request)
+                } else {
+                    var handlerResult: HTTPResponse?
+                    let sem = DispatchSemaphore(value: 0)
+                    DispatchQueue.main.async {
+                        handlerResult = handler(request)
+                        sem.signal()
+                    }
+                    sem.wait()
+                    response = handlerResult!
+                }
             } else if let request = request {
                 response = .error("Not found: \(request.path)", status: 404)
             } else {

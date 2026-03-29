@@ -148,6 +148,7 @@ Every task MUST have an `**Agent:**` field specifying which subagent type will e
 | `fastapi-senior-engineer` | FastAPI specifically, async DB, JWT auth |
 | `go-senior-engineer` | Go backends, services, APIs |
 | `go-cli-senior-engineer` | Go CLI tools, cobra, viper |
+| `android-senior-engineer` | Kotlin, Jetpack Compose, Android native apps, instrumentation, adb/device runtimes |
 | `ios-macos-senior-engineer` | Swift, SwiftUI, Xcode, SPM, AVFoundation, StoreKit |
 | `expo-react-native-engineer` | Expo, React Native mobile apps |
 | `devops-aws-senior-engineer` | AWS, CDK, CloudFormation, Terraform |

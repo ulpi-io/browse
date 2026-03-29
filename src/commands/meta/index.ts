@@ -14,6 +14,7 @@ import { handleAuthCommand } from './auth';
 import { handleSystemCommand } from './system';
 import { handleProfileCommand } from './profile';
 import { handleFlowsCommand } from './flows';
+import { handleSimCommand } from './sim';
 
 // ─── Command routing sets ──────────────────────────────────────────────────
 
@@ -36,6 +37,8 @@ const SYSTEM_COMMANDS = new Set(['status', 'url', 'stop', 'restart', 'chain', 'd
 const PROFILE_COMMANDS = new Set(['profile', 'react-devtools', 'provider']);
 
 const WORKFLOW_COMMANDS = new Set(['flow', 'retry', 'watch']);
+
+const SIM_COMMANDS = new Set(['sim']);
 
 export async function handleMetaCommand(
   command: string,
@@ -80,6 +83,10 @@ export async function handleMetaCommand(
 
   if (WORKFLOW_COMMANDS.has(command)) {
     return handleFlowsCommand(command, args, bm, shutdown, sessionManager, currentSession);
+  }
+
+  if (SIM_COMMANDS.has(command)) {
+    return handleSimCommand(command, args, bm, shutdown, sessionManager, currentSession);
   }
 
   throw new Error(`Unknown meta command: ${command}`);

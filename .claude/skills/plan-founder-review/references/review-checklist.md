@@ -205,7 +205,8 @@ Review the plan file from `plans/<name>.md` against the checks listed below. Be 
   - Python/FastAPI → `python-senior-engineer` or `fastapi-senior-engineer`
   - Node.js API → `express-senior-engineer`
   - CLI tool → `nodejs-cli-senior-engineer`
-  - Mobile → `expo-react-native-engineer`
+  - Android native → `android-senior-engineer`
+  - Expo / React Native mobile → `expo-react-native-engineer`
   - AWS/infra → `devops-aws-senior-engineer`
   - Docker → `devops-docker-senior-engineer`
   - Laravel → `laravel-senior-engineer`
