@@ -147,7 +147,7 @@ async function executeFlowSteps(
 ): Promise<string> {
   const maxDepth = getMaxFlowDepth();
   const depth = getFlowDepth(currentSession);
-  if (depth >= maxDepth) {
+  if (depth > maxDepth) {
     throw new Error(`flow nesting depth exceeded (max ${maxDepth})`);
   }
 
