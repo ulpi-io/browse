@@ -104,8 +104,13 @@ export async function handleSystemCommand(
     }
 
     case 'doctor': {
+      const { execSync } = await import('child_process');
+      const platformArg = args.find(a => a.startsWith('--platform='))?.split('=')[1]
+        || (args.indexOf('--platform') !== -1 ? args[args.indexOf('--platform') + 1] : '');
       const lines: string[] = [];
       lines.push(`Node: ${process.version}`);
+
+      // Browser stack
       try {
         const pw = await import('playwright');
         lines.push(`Playwright: installed`);
@@ -120,17 +125,81 @@ export async function handleSystemCommand(
       }
       lines.push(`Server: running (you're connected)`);
 
-      // App automation bridge check
+      // macOS app bridge
       if (process.platform === 'darwin') {
         try {
           const { ensureMacOSBridge } = await import('../../app/macos/bridge');
           const bridgePath = await ensureMacOSBridge();
-          lines.push(`App bridge: ${bridgePath}`);
+          lines.push(`macOS app bridge: ${bridgePath}`);
         } catch {
-          lines.push(`App bridge: NOT FOUND — build browse-ax or run: cd browse-ax && swift build -c release`);
+          lines.push(`macOS app bridge: NOT FOUND — cd browse-ax && swift build -c release`);
         }
-      } else {
-        lines.push(`App automation: not available (macOS only)`);
+      }
+
+      // Android diagnostics (always shown if --platform android, or on any platform)
+      if (!platformArg || platformArg === 'android') {
+        lines.push('');
+        lines.push('--- Android ---');
+
+        // adb
+        try {
+          const adbVersion = execSync('adb version', { encoding: 'utf-8', timeout: 5000 }).split('\n')[0].trim();
+          lines.push(`adb: ${adbVersion}`);
+        } catch {
+          lines.push('adb: NOT FOUND — install Android SDK platform-tools and add to PATH');
+          lines.push('  https://developer.android.com/tools/releases/platform-tools');
+          if (platformArg === 'android') return lines.join('\n');
+        }
+
+        // Connected devices
+        try {
+          const devicesOut = execSync('adb devices', { encoding: 'utf-8', timeout: 5000 });
+          const deviceLines = devicesOut.split('\n').slice(1).map(l => l.trim()).filter(l => l.length > 0);
+          const booted = deviceLines.filter(l => l.endsWith('\tdevice'));
+          const other = deviceLines.filter(l => !l.endsWith('\tdevice'));
+          if (booted.length > 0) {
+            lines.push(`Devices: ${booted.map(l => l.split('\t')[0]).join(', ')}`);
+          } else {
+            lines.push('Devices: none connected');
+            lines.push('  Start an emulator (Android Studio) or connect a device with USB debugging');
+          }
+          if (other.length > 0) {
+            lines.push(`Not ready: ${other.map(l => l.replace('\t', ' (')).join('), ')}`);
+          }
+        } catch {
+          lines.push('Devices: could not query (adb failed)');
+        }
+
+        // Emulator availability
+        try {
+          execSync('emulator -list-avds', { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] });
+          const avds = execSync('emulator -list-avds', { encoding: 'utf-8', timeout: 5000 }).trim();
+          if (avds) {
+            lines.push(`AVDs: ${avds.split('\n').join(', ')}`);
+          } else {
+            lines.push('AVDs: none configured — create one in Android Studio');
+          }
+        } catch {
+          lines.push('Emulator: not found (optional — only needed to start AVDs from CLI)');
+        }
+
+        // Driver APK
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const localBuild = path.resolve(__dirname, '../../../browse-android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk');
+          const installed = path.resolve(__dirname, '../../bin/browse-android.apk');
+          if (fs.existsSync(localBuild)) {
+            lines.push(`Driver APK: ${localBuild}`);
+          } else if (fs.existsSync(installed)) {
+            lines.push(`Driver APK: ${installed}`);
+          } else {
+            lines.push('Driver APK: NOT FOUND');
+            lines.push('  Build: cd browse-android && ./gradlew :app:assembleDebugAndroidTest');
+          }
+        } catch {
+          lines.push('Driver APK: could not check');
+        }
       }
 
       return lines.join('\n');

@@ -120,6 +120,7 @@ For each independent task, determine the best agent type based on:
 - **FastAPI specifically, async DB, JWT auth** → `fastapi-senior-engineer`
 - **Go backend, services** → `go-senior-engineer`
 - **Go CLI tools** → `go-cli-senior-engineer`
+- **Android native, Kotlin, Jetpack Compose** → `android-senior-engineer`
 - **iOS/macOS, Swift, SwiftUI** → `ios-macos-senior-engineer`
 - **Expo React Native mobile** → `expo-react-native-engineer`
 - **AWS infrastructure, CDK** → `devops-aws-senior-engineer`
@@ -137,6 +138,7 @@ For each independent task, determine the best agent type based on:
 *.py + fastapi imports → FastAPI
 *.py + django/flask/general → Python
 *.go + go.mod → Go
+*.kt + AndroidManifest.xml + build.gradle.kts → Android native
 *.swift + Package.swift or *.xcodeproj → iOS/macOS
 *.tsx + app.json (Expo) → Expo React Native
 Dockerfile + docker-compose.* → Docker

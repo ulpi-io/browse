@@ -187,6 +187,7 @@ Every task MUST have an `**Agent:**` field specifying which subagent type will e
 | `go-senior-engineer` | Go backends, services, APIs |
 | `go-cli-senior-engineer` | Go CLI tools, cobra, viper |
 | `rust-senior-engineer` | Rust systems, storage engines, query layers, CLIs |
+| `android-senior-engineer` | Kotlin, Jetpack Compose, Android native apps, instrumentation, adb/device runtimes |
 | `ios-macos-senior-engineer` | Swift, SwiftUI, Xcode, SPM, AVFoundation, StoreKit |
 | `expo-react-native-engineer` | Expo, React Native mobile apps |
 | `devops-aws-senior-engineer` | AWS, CDK, CloudFormation, Terraform |

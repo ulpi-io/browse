@@ -500,7 +500,54 @@ This document provides comprehensive rules, patterns, and decision trees for mat
 **When NOT to use:**
 
 - Server-side Swift (Vapor) → `general-purpose`
+- Native Android → `android-senior-engineer`
 - Cross-platform mobile → `expo-react-native-engineer`
+
+---
+
+### android-senior-engineer
+
+**Primary Expertise:**
+
+- Native Android development with Kotlin
+- Jetpack Compose and Android Views interoperability
+- Gradle, AndroidX, Room, DataStore, WorkManager
+- adb, instrumentation, UiAutomator, Espresso
+- Android app/tooling runtimes and device-side automation
+- Performance, accessibility, and production-ready Android applications
+
+**Technology Indicators:**
+
+- File extensions: `*.kt`, `*.kts`, `*.java`
+- Framework files: `AndroidManifest.xml`, `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`
+- Directory patterns: `app/src/main/`, `app/src/androidTest/`, `src/androidTest/`
+- Code patterns:
+  - `@Composable`
+  - `androidx.compose`
+  - `androidx.lifecycle.ViewModel`
+  - `AndroidJUnitRunner`
+  - `UiDevice`, `UiAutomation`, `AccessibilityNodeInfo`
+  - `adb`, instrumentation, emulator/device orchestration
+
+**Task Pattern Triggers:**
+
+- "Build Android app feature..."
+- "Create Jetpack Compose screen..."
+- "Implement Android instrumentation..."
+- "Fix adb / emulator / Android driver issue..."
+- "Add UiAutomator flow..."
+- "Build Android native runtime..."
+
+**Confidence Scoring:**
+
+- **High (90-100%):** `AndroidManifest.xml` or Gradle Android project exists, Kotlin/Compose imports, explicit Android native mention
+- **Medium (60-89%):** Kotlin Android files or instrumentation patterns without full project markers
+- **Low (<60%):** Generic Kotlin without Android indicators
+
+**When NOT to use:**
+
+- Expo / React Native → `expo-react-native-engineer`
+- iOS / macOS native → `ios-macos-senior-engineer`
 
 ---
 
@@ -777,6 +824,8 @@ Scan codebase for technology indicators:
 │  └─ Task involves Go API/service? → go-senior-engineer
 ├─ Go CLI detected (go.mod with cobra/viper)
 │  └─ Task involves Go CLI? → go-cli-senior-engineer
+├─ Android native detected (*.kt, AndroidManifest.xml, build.gradle.kts, instrumentation)
+│  └─ Task involves Android native work? → android-senior-engineer
 ├─ iOS/macOS detected (*.swift, *.xcodeproj, Package.swift)
 │  └─ Task involves Apple platform? → ios-macos-senior-engineer
 ├─ Expo/React Native detected (app.json, expo dependency)
@@ -844,6 +893,10 @@ def match_agent(task, codebase_context):
         return "go-cli-senior-engineer"
     if "Go" in task and ("API" in task or "server" in task or "service" in task):
         return "go-senior-engineer"
+    if "Jetpack Compose" in task or "UiAutomator" in task or "AndroidJUnitRunner" in task or "adb" in task:
+        return "android-senior-engineer"
+    if "Android" in task and "Expo" not in task and "React Native" not in task:
+        return "android-senior-engineer"
     if "Swift" in task or "SwiftUI" in task or "iOS" in task or "macOS" in task:
         return "ios-macos-senior-engineer"
     if "Expo" in task or "React Native" in task:
@@ -1295,6 +1348,7 @@ Assistant: *Delegates to expo-react-native-engineer (closest mobile agent)*
 | Flask                  | `python-senior-engineer`       | Closest Python web agent                 |
 | Go (servers/APIs)      | `go-senior-engineer`           |                                          |
 | Go (CLI tools)         | `go-cli-senior-engineer`       |                                          |
+| Android native         | `android-senior-engineer`      | Kotlin, Compose, Gradle, adb, instrumentation |
 | Swift / SwiftUI        | `ios-macos-senior-engineer`    |                                          |
 | iOS / macOS            | `ios-macos-senior-engineer`    |                                          |
 | Expo / React Native    | `expo-react-native-engineer`   |                                          |
@@ -1344,13 +1398,14 @@ Before delegating, verify:
 7. `fastapi-senior-engineer`
 8. `go-senior-engineer`
 9. `go-cli-senior-engineer`
-10. `ios-macos-senior-engineer`
-11. `expo-react-native-engineer`
-12. `devops-aws-senior-engineer`
-13. `devops-docker-senior-engineer`
-14. `general-purpose`
-15. `Plan`
-16. `Explore`
+10. `android-senior-engineer`
+11. `ios-macos-senior-engineer`
+12. `expo-react-native-engineer`
+13. `devops-aws-senior-engineer`
+14. `devops-docker-senior-engineer`
+15. `general-purpose`
+16. `Plan`
+17. `Explore`
 
 **Decision Flow:**
 

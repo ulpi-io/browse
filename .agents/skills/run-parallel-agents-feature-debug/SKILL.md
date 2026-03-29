@@ -140,6 +140,7 @@ For each independent problem cluster, determine the best agent type:
 - **FastAPI issues** → `fastapi-senior-engineer`
 - **Go backend issues** → `go-senior-engineer`
 - **Go CLI issues** → `go-cli-senior-engineer`
+- **Android native, Kotlin, instrumentation issues** → `android-senior-engineer`
 - **iOS/macOS, Swift issues** → `ios-macos-senior-engineer`
 - **Expo mobile bugs** → `expo-react-native-engineer`
 - **AWS infrastructure issues** → `devops-aws-senior-engineer`
