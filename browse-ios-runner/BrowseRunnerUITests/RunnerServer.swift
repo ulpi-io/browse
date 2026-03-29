@@ -99,7 +99,9 @@ struct ConfigureHandler: HTTPHandler {
 
         await onMain {
             context.targetBundleId = bundleId
-            context.targetApp = XCUIApplication(bundleIdentifier: bundleId)
+            let app = XCUIApplication(bundleIdentifier: bundleId)
+            app.activate()
+            context.targetApp = app
         }
         NSLog("[BrowseRunner] Target app switched to: %@", bundleId)
         return JSONResponse.success(["configured": bundleId])
