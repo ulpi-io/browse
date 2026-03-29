@@ -1,0 +1,38 @@
+name: BrowseRunner
+options:
+  bundleIdPrefix: io.ulpi
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5"
+
+targets:
+  BrowseRunnerApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: BrowseRunnerApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.ulpi.browse-ios-runner
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+
+  BrowseRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: BrowseRunnerUITests
+    dependencies:
+      - target: BrowseRunnerApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.ulpi.browse-ios-runner-uitests
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: BrowseRunnerApp

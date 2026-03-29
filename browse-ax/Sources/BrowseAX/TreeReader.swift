@@ -85,16 +85,18 @@ final class TreeReader {
     /// Get the frontmost window element, or nil if none found.
     func getFrontmostWindow() -> AXUIElement? {
         // Try focused window first
-        if let focused = copyAttribute(of: appElement, name: kAXFocusedWindowAttribute) as? AXUIElement {
-            return focused
+        if let focusedRaw = copyAttribute(of: appElement, name: kAXFocusedWindowAttribute) {
+            return (focusedRaw as! AXUIElement)
         }
 
         // Fall back to first AXWindow in children
-        guard let children = copyAttribute(of: appElement, name: kAXChildrenAttribute) as? [AXUIElement] else {
+        guard let childrenRaw = copyAttribute(of: appElement, name: kAXChildrenAttribute),
+              let children = childrenRaw as? [AnyObject] else {
             return nil
         }
 
-        for child in children {
+        for childObj in children {
+            let child = childObj as! AXUIElement
             if let role = copyAttribute(of: child, name: kAXRoleAttribute) as? String,
                role == "AXWindow" {
                 return child

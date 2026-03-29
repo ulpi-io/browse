@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'BrowseRunnerUITests' in project 'BrowseRunner'
+➜ Explicit dependency on target 'BrowseRunnerApp' in project 'BrowseRunner'
+Target 'BrowseRunnerApp' in project 'BrowseRunner' (no dependencies)

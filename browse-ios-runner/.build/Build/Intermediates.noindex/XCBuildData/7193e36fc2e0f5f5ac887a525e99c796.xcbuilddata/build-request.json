@@ -1,0 +1,70 @@
+{
+  "buildCommand" : {
+    "command" : "build",
+    "skipDependencies" : false,
+    "style" : "buildOnly"
+  },
+  "configuredTargets" : [
+    {
+      "guid" : "c888521d705af5082f647a4255f2969eff2856f7cfcbe2ba88d59744d8c1923f"
+    },
+    {
+      "guid" : "c888521d705af5082f647a4255f2969e36010c9bff7e91be25c79fb314ebaada"
+    }
+  ],
+  "containerPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunner.xcodeproj",
+  "continueBuildingAfterErrors" : false,
+  "dependencyScope" : "workspace",
+  "enableIndexBuildArena" : false,
+  "hideShellScriptEnvironment" : false,
+  "parameters" : {
+    "action" : "build",
+    "activeArchitecture" : "undefined_arch",
+    "activeRunDestination" : {
+      "disableOnlyActiveArch" : true,
+      "platform" : "iphonesimulator",
+      "sdk" : "iphonesimulator26.2",
+      "sdkVariant" : "iphonesimulator",
+      "supportedArchitectures" : [
+        "i386",
+        "x86_64"
+      ],
+      "targetArchitecture" : "undefined_arch"
+    },
+    "arenaInfo" : {
+      "buildIntermediatesPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex",
+      "buildProductsPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Products",
+      "derivedDataPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build",
+      "indexDataStoreFolderPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Index.noindex/DataStore",
+      "indexEnableDataStore" : true,
+      "indexPCHPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Index.noindex/PrecompiledHeaders",
+      "pchPath" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/PrecompiledHeaders"
+    },
+    "configurationName" : "Debug",
+    "overrides" : {
+      "commandLine" : {
+        "table" : {
+          "CODE_SIGN_IDENTITY" : "",
+          "CODE_SIGNING_ALLOWED" : "NO",
+          "SDKROOT" : "iphonesimulator26.2"
+        }
+      },
+      "synthesized" : {
+        "table" : {
+          "CLANG_COVERAGE_MAPPING" : "YES",
+          "CLANG_PROFILE_DATA_DIRECTORY" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/ProfileData",
+          "ENABLE_PREVIEWS" : "NO",
+          "ENABLE_XOJIT_PREVIEWS" : "YES",
+          "ONLY_ACTIVE_ARCH" : "YES",
+          "TOOLCHAINS" : "com.apple.dt.toolchain.Metal.32023.864 $(inherited)"
+        }
+      }
+    }
+  },
+  "schemeCommand" : "test",
+  "showNonLoggedProgress" : true,
+  "useDryRun" : false,
+  "useImplicitDependencies" : true,
+  "useLegacyBuildLocations" : false,
+  "useParallelTargets" : true
+}

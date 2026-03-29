@@ -1,0 +1,66 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "browse-ax-arm64-apple-macosx26.0-release.exe": ["<browse-ax-arm64-apple-macosx26.0-release.exe>"]
+  "browse-ax-arm64-apple-macosx26.0-release.module": ["<browse-ax-arm64-apple-macosx26.0-release.module>"]
+  "main": ["<browse-ax-arm64-apple-macosx26.0-release.exe>","<browse-ax-arm64-apple-macosx26.0-release.module>"]
+  "test": ["<browse-ax-arm64-apple-macosx26.0-release.exe>","<browse-ax-arm64-apple-macosx26.0-release.module>"]
+default: "main"
+nodes:
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ActionHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/JSONOutput.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/KeyboardHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ScreenshotHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/StateHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/TreeReader.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/main.swift.o"]
+    outputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax.product/Objects.LinkFileList"
+
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/ActionHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/JSONOutput.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/KeyboardHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/ScreenshotHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/StateHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/TreeReader.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/main.swift"]
+    outputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/sources"]
+    description: "Write auxiliary file /Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/sources"
+
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+
+  "<browse-ax-arm64-apple-macosx26.0-release.exe>":
+    tool: phony
+    inputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax"]
+    outputs: ["<browse-ax-arm64-apple-macosx26.0-release.exe>"]
+
+  "<browse-ax-arm64-apple-macosx26.0-release.module>":
+    tool: phony
+    inputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ActionHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/JSONOutput.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/KeyboardHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ScreenshotHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/StateHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/TreeReader.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/main.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/Modules/browse_ax.swiftmodule"]
+    outputs: ["<browse-ax-arm64-apple-macosx26.0-release.module>"]
+
+  "C.browse-ax-arm64-apple-macosx26.0-release.exe":
+    tool: shell
+    inputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ActionHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/JSONOutput.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/KeyboardHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ScreenshotHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/StateHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/TreeReader.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/main.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax.product/Objects.LinkFileList"]
+    outputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax"]
+    description: "Linking ./.build/arm64-apple-macosx/release/browse-ax"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release","-o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax","-module-name","browse_ax","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-dead_strip","-Xlinker","-alias","-Xlinker","_browse_ax_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse-ax.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx13.0","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.browse-ax-arm64-apple-macosx26.0-release.module":
+    tool: shell
+    inputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/ActionHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/JSONOutput.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/KeyboardHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/ScreenshotHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/StateHandler.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/TreeReader.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/main.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/sources"]
+    outputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ActionHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/JSONOutput.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/KeyboardHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/ScreenshotHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/StateHandler.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/TreeReader.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/main.swift.o","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/Modules/browse_ax.swiftmodule"]
+    description: "Compiling Swift Module 'browse_ax' (7 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","browse_ax","-emit-dependencies","-emit-module","-emit-module-path","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/Modules/browse_ax.swiftmodule","-output-file-map","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/output-file-map.json","-whole-module-optimization","-num-threads","14","-c","@/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/browse_ax.build/sources","-I","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/Modules","-target","arm64-apple-macosx13.0","-whole-module-optimization","-num-threads","14","-serialize-diagnostics","-O","-j14","-DSWIFT_PACKAGE","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/.build/arm64-apple-macosx/release/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","browse_ax_main","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","browse_ax"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Sources/BrowseAX/","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Package.swift","/Users/ciprian/work_cip/browse/browse_cli/browse-ax/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

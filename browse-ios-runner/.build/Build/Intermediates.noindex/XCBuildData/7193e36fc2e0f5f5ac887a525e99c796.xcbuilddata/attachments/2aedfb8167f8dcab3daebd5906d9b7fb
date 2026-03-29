@@ -1,0 +1,79 @@
+{
+  "" : {
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests-primary.dia",
+    "emit-module-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests-primary-emit-module.dia",
+    "pch" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests-primary.swiftdeps"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/ActionHandler.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ActionHandler~partial.swiftmodule"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/BrowseRunnerUITests.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/BrowseRunnerUITests~partial.swiftmodule"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/Models.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/Models~partial.swiftmodule"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/RunnerServer.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/RunnerServer~partial.swiftmodule"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/ScreenshotHandler.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/ScreenshotHandler~partial.swiftmodule"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/StateHandler.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/StateHandler~partial.swiftmodule"
+  },
+  "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/BrowseRunnerUITests/TreeBuilder.swift" : {
+    "const-values" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.swiftconstvalues",
+    "dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.d",
+    "diagnostics" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.dia",
+    "index-unit-output-path" : "/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.o",
+    "llvm-bc" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.bc",
+    "object" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.o",
+    "swift-dependencies" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder.swiftdeps",
+    "swiftmodule" : "/Users/ciprian/work_cip/browse/browse_cli/browse-ios-runner/.build/Build/Intermediates.noindex/BrowseRunner.build/Debug-iphonesimulator/BrowseRunnerUITests.build/Objects-normal/arm64/TreeBuilder~partial.swiftmodule"
+  }
+}

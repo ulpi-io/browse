@@ -84,11 +84,12 @@ enum StateHandler {
 
     /// Find the path of the currently focused element by walking the tree.
     private static func resolveFocusedPath(reader: TreeReader) -> [Int]? {
-        guard let focusedElement = reader.copyAttribute(
+        guard let focusedRaw = reader.copyAttribute(
             of: reader.appElement, name: kAXFocusedUIElementAttribute
-        ) as? AXUIElement else {
+        ) else {
             return nil
         }
+        let focusedElement = focusedRaw as! AXUIElement
 
         // Walk the tree from the window to find the focused element's path
         guard let window = reader.getFrontmostWindow() else { return nil }
