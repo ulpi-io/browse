@@ -119,10 +119,11 @@ guard targetApp != nil else {
     printErrorAndExit("No process with PID \(cliArgs.pid)")
 }
 
-// Check accessibility permission
-guard AXIsProcessTrusted() else {
+// Check accessibility permission — prompt the user if not yet granted
+let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+if !AXIsProcessTrustedWithOptions(options) {
     printErrorAndExit(
-        "Grant Accessibility permission in System Settings > Privacy & Security > Accessibility"
+        "Accessibility permission required. A system dialog should have appeared — grant permission, then retry."
     )
 }
 
