@@ -18,7 +18,7 @@ export async function handleRecordingCommand(
   switch (command) {
     case 'record': {
       const subcommand = args[0];
-      if (!subcommand) throw new Error('Usage: browse record start | stop | status | export browse|replay [path]');
+      if (!subcommand) throw new Error('Usage: browse record start | stop | status | export browse|replay|playwright|flow [path]');
 
       if (subcommand === 'start') {
         if (!currentSession) throw new Error('Recording requires a session context');
@@ -50,7 +50,7 @@ export async function handleRecordingCommand(
       if (subcommand === 'export') {
         if (!currentSession) throw new Error('Recording requires a session context');
         const format = args[1];
-        if (!format) throw new Error('Usage: browse record export browse|replay|playwright [--selectors css,aria,xpath,text] [path]');
+        if (!format) throw new Error('Usage: browse record export browse|replay|playwright|flow [--selectors css,aria,xpath,text] [path]');
 
         // Use active recording or last stopped recording
         const steps = currentSession.recording || currentSession.lastRecording;
@@ -108,6 +108,10 @@ export async function handleRecordingCommand(
     }
 
     case 'har': {
+      if (!('startHarRecording' in target)) {
+        throw new Error('HAR recording requires a browser session.');
+      }
+      const bm = target as BrowserTarget;
       const subcommand = args[0];
       if (!subcommand) throw new Error('Usage: browse har start | browse har stop [path]');
 
@@ -137,6 +141,10 @@ export async function handleRecordingCommand(
     }
 
     case 'video': {
+      if (!('startVideoRecording' in target)) {
+        throw new Error('Video recording requires a browser session.');
+      }
+      const bm = target as BrowserTarget;
       const subcommand = args[0];
       if (!subcommand) throw new Error('Usage: browse video start [dir] | browse video stop | browse video status');
 

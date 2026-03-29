@@ -5,21 +5,64 @@
  * TASK-037: retry  — Retry a command with backoff until a condition is met
  * TASK-038: watch  — Watch for DOM changes and execute a callback command
  * TASK-041: flow save/run/list — Saved flows in .browse/flows/
+ * TASK-005: Routes flow sub-steps through executeCommand() pipeline
  */
 
-import type { BrowserTarget } from '../../browser/target';
+import type { AutomationTarget } from '../../automation/target';
+import type { CommandLifecycle } from '../../automation/events';
 import type { Session } from '../../session/manager';
 import type { SessionManager } from '../../session/manager';
+import type { BrowserTarget } from '../../browser/target';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // ─── Saved Flows Directory ────────────────────────────────────────
 
-const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
-
-/** Returns the .browse/flows/ directory path, creating it if needed */
+/**
+ * Returns the flows directory path, creating it if needed.
+ *
+ * Resolution order:
+ *   1. browse.json `flowPaths` (resolved relative to project root)
+ *   2. BROWSE_LOCAL_DIR/flows (set by server to <project>/.browse/)
+ *   3. <project-root>/.browse/flows (discovered via findProjectRoot)
+ *   4. cwd/.browse/flows (absolute last resort — never /tmp)
+ */
 function getFlowsDir(): string {
-  const dir = path.join(LOCAL_DIR, 'flows');
+  // 1. Config flowPaths (resolved relative to project root)
+  try {
+    const { loadConfig, findProjectRoot } = require('../../config') as typeof import('../../config');
+    const config = loadConfig();
+    const root = findProjectRoot();
+
+    if (config.flowPaths?.length && root) {
+      for (const fp of config.flowPaths) {
+        const abs = path.isAbsolute(fp) ? fp : path.join(root, fp);
+        try { fs.mkdirSync(abs, { recursive: true }); return abs; } catch { /* try next */ }
+      }
+    }
+  } catch { /* config not available — fall through */ }
+
+  // 2. BROWSE_LOCAL_DIR/flows (set by CLI to <project>/.browse/)
+  const localDir = process.env.BROWSE_LOCAL_DIR;
+  if (localDir) {
+    const dir = path.join(localDir, 'flows');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  // 3. .browse/flows from project root
+  try {
+    const { findProjectRoot } = require('../../config') as typeof import('../../config');
+    const root = findProjectRoot();
+    if (root) {
+      const dir = path.join(root, '.browse', 'flows');
+      fs.mkdirSync(dir, { recursive: true });
+      return dir;
+    }
+  } catch { /* fall through */ }
+
+  // 4. Absolute last resort: cwd/.browse/flows (never /tmp)
+  const dir = path.join(process.cwd(), '.browse', 'flows');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -44,13 +87,116 @@ function validateFlowName(name: string): void {
   }
 }
 
+// ─── Flow Depth Tracking (per-session, for nested flow detection) ──
+
+const MAX_FLOW_DEPTH = 10;
+
+/** Per-session flow nesting depth tracker. WeakMap so sessions are GC'd normally. */
+const flowDepthMap = new WeakMap<object, number>();
+
+function getFlowDepth(session: Session | undefined): number {
+  if (!session) return 0;
+  return flowDepthMap.get(session) ?? 0;
+}
+
+async function withFlowDepth<T>(session: Session | undefined, fn: () => Promise<T>): Promise<T> {
+  if (!session) return fn();
+  const current = flowDepthMap.get(session) ?? 0;
+  flowDepthMap.set(session, current + 1);
+  return fn().finally(() => {
+    const now = flowDepthMap.get(session) ?? 1;
+    if (now <= 1) flowDepthMap.delete(session);
+    else flowDepthMap.set(session, now - 1);
+  });
+}
+
+// ─── Shared Flow Step Executor ──────────────────────────────────
+
+/**
+ * Execute a sequence of flow steps through the executeCommand() pipeline.
+ * Shared by `flow <file>` and `flow run <name>`.
+ *
+ * Each sub-step goes through the full executor with lifecycle hooks,
+ * enabling recording, context enrichment, and error shaping.
+ */
+async function executeFlowSteps(
+  steps: Array<{ command: string; args: string[] }>,
+  target: AutomationTarget,
+  shutdown: () => Promise<void> | void,
+  sessionManager: SessionManager | undefined,
+  currentSession: Session | undefined,
+  lifecycle: CommandLifecycle | undefined,
+): Promise<string> {
+  const depth = getFlowDepth(currentSession);
+  if (depth > MAX_FLOW_DEPTH) {
+    throw new Error(`flow nesting depth exceeded (max ${MAX_FLOW_DEPTH})`);
+  }
+
+  const { executeCommand } = await import('../../automation/executor');
+  const { SessionBuffers } = await import('../../network/buffers');
+
+  return withFlowDepth(currentSession, async () => {
+    const results: string[] = [];
+    let passed = 0;
+    const total = steps.length;
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const stepLabel = `${i + 1}/${total}`;
+      const cmdDisplay = step.args.length > 0
+        ? `${step.command} ${step.args.join(' ')}`
+        : step.command;
+
+      try {
+        await executeCommand(step.command, step.args, {
+          context: {
+            args: step.args,
+            target,
+            buffers: currentSession?.buffers ?? new SessionBuffers(),
+            domainFilter: currentSession?.domainFilter,
+            session: currentSession,
+            shutdown,
+            sessionManager,
+            lifecycle,
+          },
+          lifecycle,
+        });
+        passed++;
+        results.push(`\u2713 [${stepLabel}] ${cmdDisplay}`);
+      } catch (err: any) {
+        results.push(`\u2717 [${stepLabel}] ${cmdDisplay} \u2014 FAIL: ${err.message}`);
+        results.push('');
+        results.push(`Flow failed at step ${i + 1}/${total}`);
+        return results.join('\n');
+      }
+    }
+
+    results.push('');
+    results.push(`Flow complete: ${passed}/${total} steps passed`);
+    return results.join('\n');
+  });
+}
+
+// ─── Browser Target Guard ───────────────────────────────────────
+
+/** Assert target is a BrowserTarget and return it typed. Throws on non-browser targets. */
+function requireBrowserTarget(target: AutomationTarget, commandName: string): BrowserTarget {
+  if (!('getPage' in target)) {
+    throw new Error(`${commandName} requires a browser target`);
+  }
+  return target as BrowserTarget;
+}
+
+// ─── Main Handler ───────────────────────────────────────────────
+
 export async function handleFlowsCommand(
   command: string,
   args: string[],
-  bm: BrowserTarget,
+  target: AutomationTarget,
   shutdown: () => Promise<void> | void,
   sessionManager?: SessionManager,
   currentSession?: Session,
+  lifecycle?: CommandLifecycle,
 ): Promise<string> {
   switch (command) {
 
@@ -60,10 +206,10 @@ export async function handleFlowsCommand(
       if (!subOrFile) {
         throw new Error(
           'Usage:\n' +
-          '  browse flow <file.yaml>          — execute a flow file\n' +
-          '  browse flow save <name>          — save current recording as a named flow\n' +
-          '  browse flow run <name>           — execute a saved flow by name\n' +
-          '  browse flow list                 — list saved flows'
+          '  browse flow <file.yaml>          \u2014 execute a flow file\n' +
+          '  browse flow save <name>          \u2014 save current recording as a named flow\n' +
+          '  browse flow run <name>           \u2014 execute a saved flow by name\n' +
+          '  browse flow list                 \u2014 list saved flows'
         );
       }
 
@@ -120,58 +266,14 @@ export async function handleFlowsCommand(
           throw new Error(`Cannot read flow "${name}": ${err.message}`);
         }
 
-        // Delegate to the normal flow execution path by re-entering with a temp file path
-        // But we already have content, so parse and run directly (avoids temp files)
         const { parseFlowYaml } = await import('../../flow-parser');
         const steps = parseFlowYaml(content);
-
-        const { handleReadCommand } = await import('../read');
-        const { handleWriteCommand } = await import('../write');
-        const { registry } = await import('../../automation/registry');
-
-        const results: string[] = [];
-        let passed = 0;
-        const total = steps.length;
-
-        for (let i = 0; i < steps.length; i++) {
-          const step = steps[i];
-          const stepLabel = `${i + 1}/${total}`;
-          const cmdDisplay = step.args.length > 0
-            ? `${step.command} ${step.args.join(' ')}`
-            : step.command;
-
-          try {
-            const spec = registry.get(step.command);
-            if (!spec) throw new Error(`Unknown command: ${step.command}`);
-
-            let result: string;
-            if (spec.category === 'write') {
-              result = await handleWriteCommand(step.command, step.args, bm, currentSession?.domainFilter);
-            } else if (spec.category === 'read') {
-              result = await handleReadCommand(step.command, step.args, bm, currentSession?.buffers);
-            } else {
-              const { handleMetaCommand } = await import('./index');
-              result = await handleMetaCommand(step.command, step.args, bm, shutdown, sessionManager, currentSession);
-            }
-
-            passed++;
-            results.push(`✓ [${stepLabel}] ${cmdDisplay}`);
-          } catch (err: any) {
-            results.push(`✗ [${stepLabel}] ${cmdDisplay} — FAIL: ${err.message}`);
-            results.push('');
-            results.push(`Flow failed at step ${i + 1}/${total}`);
-            return results.join('\n');
-          }
-        }
-
-        results.push('');
-        results.push(`Flow complete: ${passed}/${total} steps passed`);
-        return results.join('\n');
+        return executeFlowSteps(steps, target, shutdown, sessionManager, currentSession, lifecycle);
       }
 
       // ── TASK-041: flow list ────────────────────────────────────
       if (subOrFile === 'list') {
-        const flowsDir = path.join(LOCAL_DIR, 'flows');
+        const flowsDir = getFlowsDir();
         if (!fs.existsSync(flowsDir)) {
           return 'No saved flows (directory does not exist yet)';
         }
@@ -210,64 +312,19 @@ export async function handleFlowsCommand(
 
       const { parseFlowYaml } = await import('../../flow-parser');
       const steps = parseFlowYaml(content);
-
-      const { handleReadCommand } = await import('../read');
-      const { handleWriteCommand } = await import('../write');
-      const { registry } = await import('../../automation/registry');
-
-      const results: string[] = [];
-      let passed = 0;
-      const total = steps.length;
-
-      for (let i = 0; i < steps.length; i++) {
-        const step = steps[i];
-        const stepLabel = `${i + 1}/${total}`;
-        const cmdDisplay = step.args.length > 0
-          ? `${step.command} ${step.args.join(' ')}`
-          : step.command;
-
-        try {
-          const spec = registry.get(step.command);
-          if (!spec) throw new Error(`Unknown command: ${step.command}`);
-
-          let result: string;
-          if (spec.category === 'write') {
-            result = await handleWriteCommand(step.command, step.args, bm, currentSession?.domainFilter);
-          } else if (spec.category === 'read') {
-            result = await handleReadCommand(step.command, step.args, bm, currentSession?.buffers);
-          } else {
-            // Meta command — delegate to the meta handler
-            const { handleMetaCommand } = await import('./index');
-            result = await handleMetaCommand(step.command, step.args, bm, shutdown, sessionManager, currentSession);
-          }
-
-          passed++;
-          results.push(`✓ [${stepLabel}] ${cmdDisplay}`);
-        } catch (err: any) {
-          results.push(`✗ [${stepLabel}] ${cmdDisplay} — FAIL: ${err.message}`);
-          results.push('');
-          results.push(`Flow failed at step ${i + 1}/${total}`);
-          return results.join('\n');
-        }
-      }
-
-      results.push('');
-      results.push(`Flow complete: ${passed}/${total} steps passed`);
-      return results.join('\n');
+      return executeFlowSteps(steps, target, shutdown, sessionManager, currentSession, lifecycle);
     }
 
     // ─── TASK-037: retry ─────────────────────────────────────────
     case 'retry': {
+      const bm = requireBrowserTarget(target, 'retry');
+
       // Parse: retry "command args..." --until "condition" --max N --backoff
       const { command: retryCmd, cmdArgs: retryCmdArgs, until, maxAttempts, backoff } = parseRetryArgs(args);
 
-      const { handleReadCommand } = await import('../read');
-      const { handleWriteCommand } = await import('../write');
-      const { registry } = await import('../../automation/registry');
+      const { executeCommand } = await import('../../automation/executor');
+      const { SessionBuffers } = await import('../../network/buffers');
       const { parseExpectArgs, checkConditions } = await import('../../expect');
-
-      const spec = registry.get(retryCmd);
-      if (!spec) throw new Error(`Unknown command: ${retryCmd}`);
 
       // Parse the until condition as expect args
       const { conditions } = parseExpectArgs(until);
@@ -279,15 +336,20 @@ export async function handleFlowsCommand(
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          // Execute the command
-          if (spec.category === 'write') {
-            await handleWriteCommand(retryCmd, retryCmdArgs, bm, currentSession?.domainFilter);
-          } else if (spec.category === 'read') {
-            await handleReadCommand(retryCmd, retryCmdArgs, bm, buffers);
-          } else {
-            const { handleMetaCommand } = await import('./index');
-            await handleMetaCommand(retryCmd, retryCmdArgs, bm, shutdown, sessionManager, currentSession);
-          }
+          // Execute the command through the shared pipeline
+          await executeCommand(retryCmd, retryCmdArgs, {
+            context: {
+              args: retryCmdArgs,
+              target,
+              buffers: currentSession?.buffers ?? new SessionBuffers(),
+              domainFilter: currentSession?.domainFilter,
+              session: currentSession,
+              shutdown,
+              sessionManager,
+              lifecycle,
+            },
+            lifecycle,
+          });
         } catch (err: any) {
           lastError = err.message;
           // Command failed — check if we should retry
@@ -329,21 +391,23 @@ export async function handleFlowsCommand(
 
     // ─── TASK-038: watch ─────────────────────────────────────────
     case 'watch': {
+      const bm = requireBrowserTarget(target, 'watch');
+
       const { selector, onChange, timeout } = parseWatchArgs(args);
 
       const page = bm.getPage();
 
       // Inject MutationObserver via page.evaluate to watch for changes
       const watchId = `__browse_watch_${Date.now()}`;
-      await page.evaluate(({ selector, watchId }) => {
-        const target = document.querySelector(selector);
-        if (!target) throw new Error(`Element not found: ${selector}`);
+      await page.evaluate(({ selector: sel, watchId: wid }: { selector: string; watchId: string }) => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error(`Element not found: ${sel}`);
 
         // Set a flag when mutation is detected
-        (window as any)[watchId] = { changed: false, summary: '' };
+        (window as any)[wid] = { changed: false, summary: '' };
 
         const observer = new MutationObserver((mutations) => {
-          const info = (window as any)[watchId];
+          const info = (window as any)[wid];
           if (info.changed) return; // Already detected
 
           // Summarize the change
@@ -363,7 +427,7 @@ export async function handleFlowsCommand(
           info.summary = parts.join(', ') || 'mutation detected';
         });
 
-        observer.observe(target, {
+        observer.observe(el, {
           childList: true,
           characterData: true,
           attributes: true,
@@ -371,7 +435,7 @@ export async function handleFlowsCommand(
         });
 
         // Store observer reference for cleanup
-        (window as any)[watchId].observer = observer;
+        (window as any)[wid].observer = observer;
       }, { selector, watchId });
 
       // Poll for change flag
@@ -380,8 +444,8 @@ export async function handleFlowsCommand(
       let changeSummary = '';
 
       while (Date.now() - start < timeout) {
-        const result = await page.evaluate((watchId) => {
-          const info = (window as any)[watchId];
+        const result = await page.evaluate((wid: string) => {
+          const info = (window as any)[wid];
           if (!info) return { changed: false, summary: '' };
           return { changed: info.changed, summary: info.summary };
         }, watchId);
@@ -395,35 +459,36 @@ export async function handleFlowsCommand(
       }
 
       // Cleanup: disconnect the observer
-      await page.evaluate((watchId) => {
-        const info = (window as any)[watchId];
+      await page.evaluate((wid: string) => {
+        const info = (window as any)[wid];
         if (info?.observer) info.observer.disconnect();
-        delete (window as any)[watchId];
+        delete (window as any)[wid];
       }, watchId).catch(() => {});
 
       if (!changeSummary) {
-        throw new Error(`Watch timed out after ${timeout}ms — no changes detected on "${selector}"`);
+        throw new Error(`Watch timed out after ${timeout}ms \u2014 no changes detected on "${selector}"`);
       }
 
-      // If --on-change callback is specified, execute it
+      // If --on-change callback is specified, execute it through the pipeline
       if (onChange) {
-        const { handleReadCommand } = await import('../read');
-        const { handleWriteCommand } = await import('../write');
-        const { registry } = await import('../../automation/registry');
+        const { executeCommand } = await import('../../automation/executor');
+        const { SessionBuffers } = await import('../../network/buffers');
 
         const [callbackCmd, ...callbackArgs] = parseCommandString(onChange);
-        const spec = registry.get(callbackCmd);
-        if (!spec) throw new Error(`Unknown callback command: ${callbackCmd}`);
 
-        let callbackResult: string;
-        if (spec.category === 'write') {
-          callbackResult = await handleWriteCommand(callbackCmd, callbackArgs, bm, currentSession?.domainFilter);
-        } else if (spec.category === 'read') {
-          callbackResult = await handleReadCommand(callbackCmd, callbackArgs, bm, currentSession?.buffers);
-        } else {
-          const { handleMetaCommand } = await import('./index');
-          callbackResult = await handleMetaCommand(callbackCmd, callbackArgs, bm, shutdown, sessionManager, currentSession);
-        }
+        const { output: callbackResult } = await executeCommand(callbackCmd, callbackArgs, {
+          context: {
+            args: callbackArgs,
+            target,
+            buffers: currentSession?.buffers ?? new SessionBuffers(),
+            domainFilter: currentSession?.domainFilter,
+            session: currentSession,
+            shutdown,
+            sessionManager,
+            lifecycle,
+          },
+          lifecycle,
+        });
 
         return `Change detected (${changeSummary})\n${callbackResult}`;
       }

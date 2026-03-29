@@ -3,18 +3,38 @@
  */
 
 import type { BrowserTarget } from '../../browser/target';
+import type { AutomationTarget } from '../../automation/target';
+import type { CommandLifecycle } from '../../automation/events';
 import type { SessionManager, Session } from '../../session/manager';
 
 export async function handleSystemCommand(
   command: string,
   args: string[],
-  bm: BrowserTarget,
+  target: AutomationTarget,
   shutdown: () => Promise<void> | void,
   sessionManager?: SessionManager,
   currentSession?: Session,
+  lifecycle?: CommandLifecycle,
 ): Promise<string> {
   switch (command) {
     case 'status': {
+      if (!('getPage' in target)) {
+        // App target — return basic status
+        const lines = [
+          `Status: healthy`,
+          `Target: ${target.targetType}`,
+          `PID: ${process.pid}`,
+          `Uptime: ${Math.floor(process.uptime())}s`,
+        ];
+        if (sessionManager) {
+          lines.push(`Sessions: ${sessionManager.getSessionCount()}`);
+        }
+        if (currentSession) {
+          lines.push(`Session: ${currentSession.id}`);
+        }
+        return lines.join('\n');
+      }
+      const bm = target as BrowserTarget;
       const page = bm.getPage();
       const tabs = bm.getTabCount();
       const lines = [
@@ -34,7 +54,10 @@ export async function handleSystemCommand(
     }
 
     case 'url': {
-      return bm.getCurrentUrl();
+      if (!('getPage' in target)) {
+        return target.getCurrentLocation();
+      }
+      return (target as BrowserTarget).getCurrentUrl();
     }
 
     case 'stop': {
@@ -62,15 +85,12 @@ export async function handleSystemCommand(
       if (!Array.isArray(commands)) throw new Error('Expected JSON array of commands');
 
       const results: string[] = [];
-      const { handleReadCommand } = await import('../read');
-      const { handleWriteCommand } = await import('../write');
       const { PolicyChecker } = await import('../../security/policy');
+      const { executeCommand } = await import('../../automation/executor');
+      const { SessionBuffers } = await import('../../network/buffers');
 
-      const WRITE_SET = new Set(['goto','back','forward','reload','click','dblclick','fill','select','hover','focus','check','uncheck','type','press','scroll','wait','viewport','cookie','header','useragent','upload','dialog-accept','dialog-dismiss','emulate','drag','keydown','keyup','highlight','download','route','offline','rightclick','tap','swipe','mouse','keyboard','scrollinto','scrollintoview','set','initscript']);
-      const READ_SET  = new Set(['text','html','links','forms','accessibility','js','eval','css','attrs','element-state','dialog','console','network','cookies','storage','perf','devices','value','count','clipboard','box','errors']);
-
-      const sessionBuffers = currentSession?.buffers;
       const policy = new PolicyChecker();
+      const sessionBuffers = currentSession?.buffers ?? new SessionBuffers();
 
       for (const cmd of commands) {
         const [name, ...cmdArgs] = cmd;
@@ -86,15 +106,20 @@ export async function handleSystemCommand(
             continue;
           }
 
-          let result: string;
-          if (WRITE_SET.has(name))      result = await handleWriteCommand(name, cmdArgs, bm, currentSession?.domainFilter);
-          else if (READ_SET.has(name))  result = await handleReadCommand(name, cmdArgs, bm, sessionBuffers);
-          else {
-            // Delegate to the full meta handler — import lazily to avoid circular
-            const { handleMetaCommand } = await import('./index');
-            result = await handleMetaCommand(name, cmdArgs, bm, shutdown, sessionManager, currentSession);
-          }
-          results.push(`[${name}] ${result}`);
+          const { output } = await executeCommand(name, cmdArgs, {
+            context: {
+              args: cmdArgs,
+              target,
+              buffers: sessionBuffers,
+              domainFilter: currentSession?.domainFilter,
+              session: currentSession,
+              shutdown,
+              sessionManager,
+              lifecycle,
+            },
+            lifecycle,
+          });
+          results.push(`[${name}] ${output}`);
         } catch (err: any) {
           results.push(`[${name}] ERROR: ${err.message}`);
         }
