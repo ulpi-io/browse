@@ -453,19 +453,19 @@ This document provides comprehensive rules, patterns, and decision trees for mat
 
 ---
 
-### ios-macos-senior-engineer
+### ios-senior-engineer
 
 **Primary Expertise:**
 
+- Native iOS and iPadOS application development
 - Swift and SwiftUI development
-- iOS and macOS applications
+- UIKit interoperability and mobile interaction patterns
 - Xcode project management
 - Swift Package Manager (SPM)
 - AVFoundation (audio/video)
 - StoreKit (in-app purchases)
 - Core Data and SwiftData
-- UIKit integration
-- Production-ready Apple platform applications
+- XCTest, UI testing, and simulator debugging
 
 **Technology Indicators:**
 
@@ -484,7 +484,6 @@ This document provides comprehensive rules, patterns, and decision trees for mat
 
 - "Build iOS app for..."
 - "Create SwiftUI view for..."
-- "Add macOS feature..."
 - "Implement StoreKit purchase..."
 - "Create AVFoundation player..."
 - "Add Core Data model..."
@@ -493,14 +492,56 @@ This document provides comprehensive rules, patterns, and decision trees for mat
 
 **Confidence Scoring:**
 
-- **High (90-100%):** `*.xcodeproj` or `Package.swift` exists, SwiftUI/UIKit imports, explicit mention
-- **Medium (60-89%):** Swift files with Apple framework imports
-- **Low (<60%):** Generic Swift without Apple platform indicators
+- **High (90-100%):** `*.xcodeproj` or `Package.swift` exists, SwiftUI/UIKit imports, explicit iOS mention
+- **Medium (60-89%):** Swift files with Apple mobile framework imports
+- **Low (<60%):** Generic Swift without platform indicators
 
 **When NOT to use:**
 
 - Server-side Swift (Vapor) → `general-purpose`
 - Native Android → `android-senior-engineer`
+- Cross-platform mobile → `expo-react-native-engineer`
+- macOS / AppKit / Cocoa / desktop windowing → `ios-macos-senior-engineer`
+
+---
+
+### ios-macos-senior-engineer
+
+**Primary Expertise:**
+
+- macOS AppKit and desktop SwiftUI applications
+- Cocoa, AppKit, NSWindow, NSApplication, status bar/menu bar apps
+- Shared Apple-platform code spanning iOS and macOS
+- Objective-C interoperability and older Apple-platform codebases
+
+**Technology Indicators:**
+
+- File extensions: `*.swift`, `*.m`, `*.mm`, `*.storyboard`, `*.xib`
+- Framework files: `Package.swift`, `*.xcodeproj`, `*.xcworkspace`, `Podfile`
+- Code patterns:
+  - `import AppKit`
+  - `import Cocoa`
+  - `NSApplication`
+  - `NSWindow`
+  - `NSStatusBar`
+
+**Task Pattern Triggers:**
+
+- "Add macOS feature..."
+- "Build macOS menu bar app..."
+- "Fix AppKit window lifecycle..."
+- "Debug Cocoa desktop crash..."
+
+**Confidence Scoring:**
+
+- **High (90-100%):** `AppKit` or `Cocoa` imports, explicit macOS/AppKit mention
+- **Medium (60-89%):** Shared Swift package with desktop-specific APIs
+- **Low (<60%):** Generic Swift without platform indicators
+
+**When NOT to use:**
+
+- Pure iPhone/iPad app → `ios-senior-engineer`
+- UIKit / WidgetKit / App Intents / simulator issues → `ios-senior-engineer`
 - Cross-platform mobile → `expo-react-native-engineer`
 
 ---
@@ -547,7 +588,8 @@ This document provides comprehensive rules, patterns, and decision trees for mat
 **When NOT to use:**
 
 - Expo / React Native → `expo-react-native-engineer`
-- iOS / macOS native → `ios-macos-senior-engineer`
+- iOS native → `ios-senior-engineer`
+- macOS native → `ios-macos-senior-engineer`
 
 ---
 
@@ -593,7 +635,8 @@ This document provides comprehensive rules, patterns, and decision trees for mat
 
 **When NOT to use:**
 
-- iOS/macOS native → `ios-macos-senior-engineer`
+- iOS native → `ios-senior-engineer`
+- macOS native → `ios-macos-senior-engineer`
 - Web-only React → `nextjs-senior-engineer` or `react-vite-tailwind-engineer`
 
 ---
@@ -826,8 +869,9 @@ Scan codebase for technology indicators:
 │  └─ Task involves Go CLI? → go-cli-senior-engineer
 ├─ Android native detected (*.kt, AndroidManifest.xml, build.gradle.kts, instrumentation)
 │  └─ Task involves Android native work? → android-senior-engineer
-├─ iOS/macOS detected (*.swift, *.xcodeproj, Package.swift)
-│  └─ Task involves Apple platform? → ios-macos-senior-engineer
+├─ Apple native detected (*.swift, *.xcodeproj, Package.swift)
+│  ├─ UIKit / iOS / iPadOS / simulator indicators? → ios-senior-engineer
+│  └─ AppKit / Cocoa / macOS indicators? → ios-macos-senior-engineer
 ├─ Expo/React Native detected (app.json, expo dependency)
 │  └─ Task involves mobile app? → expo-react-native-engineer
 ├─ Flutter detected (pubspec.yaml, *.dart)
@@ -897,8 +941,10 @@ def match_agent(task, codebase_context):
         return "android-senior-engineer"
     if "Android" in task and "Expo" not in task and "React Native" not in task:
         return "android-senior-engineer"
-    if "Swift" in task or "SwiftUI" in task or "iOS" in task or "macOS" in task:
+    if "AppKit" in task or "Cocoa" in task or "macOS" in task:
         return "ios-macos-senior-engineer"
+    if "Swift" in task or "SwiftUI" in task or "UIKit" in task or "iOS" in task:
+        return "ios-senior-engineer"
     if "Expo" in task or "React Native" in task:
         return "expo-react-native-engineer"
     if "Flutter" in task:
@@ -929,6 +975,8 @@ def match_agent(task, codebase_context):
         return "go-cli-senior-engineer"
     if "go" in frameworks:
         return "go-senior-engineer"
+    if "ios-senior" in frameworks:
+        return "ios-senior-engineer"
     if "ios-macos" in frameworks:
         return "ios-macos-senior-engineer"
     if "expo" in frameworks:
@@ -979,7 +1027,10 @@ def detect_frameworks(codebase_context):
         else:
             frameworks.append("go")
     if any(f in codebase_context for f in [".xcodeproj", "Package.swift", ".swift"]):
-        frameworks.append("ios-macos")
+        if "AppKit" in codebase_context or "Cocoa" in codebase_context or "NSApplication" in codebase_context:
+            frameworks.append("ios-macos")
+        else:
+            frameworks.append("ios-senior")
     if "cdk.json" in codebase_context or ("provider" in codebase_context and "aws" in codebase_context):
         frameworks.append("aws")
     if "Dockerfile" in codebase_context or "docker-compose" in codebase_context:
@@ -1044,7 +1095,8 @@ def detect_frameworks(codebase_context):
 
 - Check if the project is Expo/React Native or native iOS/macOS
 - Expo indicators → `expo-react-native-engineer`
-- Swift/Xcode indicators → `ios-macos-senior-engineer`
+- UIKit / SwiftUI mobile / simulator indicators → `ios-senior-engineer`
+- AppKit / Cocoa / macOS indicators → `ios-macos-senior-engineer`
 
 **Decision:**
 
@@ -1134,7 +1186,7 @@ Ambiguous! Could be:
 - Raw TypeScript → `general-purpose`
 - Raw Python → `python-senior-engineer`
 - Raw Go → `go-senior-engineer`
-- Raw Swift → `ios-macos-senior-engineer`
+- Raw Swift → `ios-senior-engineer` by default; use `ios-macos-senior-engineer` when AppKit/Cocoa/macOS indicators are present
 
 ### Edge Case 5: NestJS Projects
 
@@ -1349,8 +1401,8 @@ Assistant: *Delegates to expo-react-native-engineer (closest cross-platform mobi
 | Go (servers/APIs)      | `go-senior-engineer`           |                                          |
 | Go (CLI tools)         | `go-cli-senior-engineer`       |                                          |
 | Android native         | `android-senior-engineer`      | Kotlin, Compose, Gradle, adb, instrumentation |
-| Swift / SwiftUI        | `ios-macos-senior-engineer`    |                                          |
-| iOS / macOS            | `ios-macos-senior-engineer`    |                                          |
+| Swift / SwiftUI (iOS)  | `ios-senior-engineer`          |                                          |
+| macOS / AppKit / Cocoa | `ios-macos-senior-engineer`    |                                          |
 | Expo / React Native    | `expo-react-native-engineer`   |                                          |
 | Flutter                | `expo-react-native-engineer`   | Closest mobile agent                     |
 | AWS / CDK / Terraform  | `devops-aws-senior-engineer`   |                                          |
@@ -1399,13 +1451,14 @@ Before delegating, verify:
 8. `go-senior-engineer`
 9. `go-cli-senior-engineer`
 10. `android-senior-engineer`
-11. `ios-macos-senior-engineer`
-12. `expo-react-native-engineer`
-13. `devops-aws-senior-engineer`
-14. `devops-docker-senior-engineer`
-15. `general-purpose`
-16. `Plan`
-17. `Explore`
+11. `ios-senior-engineer`
+12. `ios-macos-senior-engineer`
+13. `expo-react-native-engineer`
+14. `devops-aws-senior-engineer`
+15. `devops-docker-senior-engineer`
+16. `general-purpose`
+17. `Plan`
+18. `Explore`
 
 **Decision Flow:**
 

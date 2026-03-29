@@ -121,7 +121,8 @@ For each independent task, determine the best agent type based on:
 - **Go backend, services** → `go-senior-engineer`
 - **Go CLI tools** → `go-cli-senior-engineer`
 - **Android native, Kotlin, Jetpack Compose** → `android-senior-engineer`
-- **iOS/macOS, Swift, SwiftUI** → `ios-macos-senior-engineer`
+- **iOS native, Swift, SwiftUI, UIKit** → `ios-senior-engineer`
+- **macOS native, AppKit, Cocoa** → `ios-macos-senior-engineer`
 - **Expo React Native mobile** → `expo-react-native-engineer`
 - **AWS infrastructure, CDK** → `devops-aws-senior-engineer`
 - **Docker, containers** → `devops-docker-senior-engineer`
@@ -139,7 +140,8 @@ For each independent task, determine the best agent type based on:
 *.py + django/flask/general → Python
 *.go + go.mod → Go
 *.kt + AndroidManifest.xml + build.gradle.kts → Android native
-*.swift + Package.swift or *.xcodeproj → iOS/macOS
+*.swift + UIKit/SwiftUI mobile + Package.swift or *.xcodeproj → iOS native
+*.swift + AppKit/Cocoa + Package.swift or *.xcodeproj → macOS native
 *.tsx + app.json (Expo) → Expo React Native
 Dockerfile + docker-compose.* → Docker
 CDK, CloudFormation, Terraform → AWS DevOps
@@ -334,7 +336,8 @@ Quick reference for matching tasks to agents:
 | `fastapi-senior-engineer`           | FastAPI, async DB, JWT auth                       | `*.py`, `fastapi` imports, `uvicorn`         |
 | `go-senior-engineer`                | Go backends, services, APIs                       | `*.go`, `go.mod`, `go.sum`                   |
 | `go-cli-senior-engineer`            | Go CLI tools, cobra, viper                        | `*.go`, `cobra` imports, CLI patterns        |
-| `ios-macos-senior-engineer`         | Swift, SwiftUI, Xcode, SPM, StoreKit             | `*.swift`, `Package.swift`, `*.xcodeproj`    |
+| `ios-senior-engineer`               | iOS Swift, SwiftUI, UIKit, StoreKit              | `*.swift`, UIKit/SwiftUI mobile, Xcode       |
+| `ios-macos-senior-engineer`         | macOS Swift, AppKit, Cocoa, desktop SwiftUI      | `*.swift`, AppKit/Cocoa, `*.xcodeproj`       |
 | `expo-react-native-engineer`        | Expo mobile apps, cross-platform                  | `*.tsx`, `app.json`, Expo modules            |
 | `devops-aws-senior-engineer`        | AWS infrastructure, CDK, CloudFormation           | CDK, CloudFormation, Terraform, AWS          |
 | `devops-docker-senior-engineer`     | Docker, Docker Compose, containerization          | `Dockerfile`, `docker-compose.*`             |
