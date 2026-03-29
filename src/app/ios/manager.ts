@@ -155,6 +155,22 @@ export class IOSAppManager implements AutomationTarget {
     return `Typed "${text}"`;
   }
 
+  /** Swipe on an element or screen in a direction. */
+  async swipe(direction: string, ref?: string): Promise<string> {
+    this.requireBridge();
+    const actionName = `swipe${direction.charAt(0).toUpperCase()}${direction.slice(1).toLowerCase()}`;
+    if (ref) {
+      const { path, label } = this.resolveRef(ref);
+      const result = await this.bridge!.action(path, actionName);
+      if (!result.success) throw new Error(result.error || `Swipe ${direction} failed`);
+      return `Swiped ${direction} on ${ref}${label ? ` "${label}"` : ''}`;
+    }
+    // No ref — swipe on the root element (whole screen)
+    const result = await this.bridge!.action([0], actionName);
+    if (!result.success) throw new Error(result.error || `Swipe ${direction} failed`);
+    return `Swiped ${direction}`;
+  }
+
   /** Press a key. */
   async pressKey(key: string): Promise<string> {
     this.requireBridge();

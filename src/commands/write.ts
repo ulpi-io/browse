@@ -1025,25 +1025,35 @@ import type { CommandRegistry, CommandContext } from '../automation/command';
  * Called once during lazy initialization from ensureDefinitionsRegistered().
  */
 export function registerWriteDefinitions(registry: CommandRegistry): void {
-  const appWriteCommands = new Set(['click', 'tap', 'fill', 'type', 'press']);
+  const appWriteCommands = new Set(['click', 'tap', 'fill', 'type', 'press', 'swipe']);
 
   for (const spec of registry.byCategory('write')) {
     registry.define({
       spec,
       mcpArgDecode: spec.mcp?.argDecode,
       execute: async (ctx: CommandContext) => {
-        if (ctx.target.targetType === 'app') {
+        if (ctx.target.targetType === 'app' || ctx.target.targetType === 'ios-app' || ctx.target.targetType === 'android-app') {
           if (!appWriteCommands.has(spec.name)) {
-            throw new Error(`Command '${spec.name}' not available for app targets. Supported: tap, fill, type, press.`);
+            throw new Error(`Command '${spec.name}' not available for app targets. Supported: tap, fill, type, press, swipe.`);
           }
-          const { AppManager } = await import('../app/manager');
-          const app = ctx.target as InstanceType<typeof AppManager>;
+          const t = ctx.target as any;
           switch (spec.name) {
             case 'click':
-            case 'tap': return app.tap(ctx.args[0]);
-            case 'fill': return app.fill(ctx.args[0], ctx.args.slice(1).join(' '));
-            case 'type': return app.typeText(ctx.args.join(' '));
-            case 'press': return app.pressKey(ctx.args[0]);
+            case 'tap':
+              if (typeof t.tap === 'function') return t.tap(ctx.args[0]);
+              break;
+            case 'fill':
+              if (typeof t.fill === 'function') return t.fill(ctx.args[0], ctx.args.slice(1).join(' '));
+              break;
+            case 'type':
+              if (typeof t.typeText === 'function') return t.typeText(ctx.args.join(' '));
+              break;
+            case 'press':
+              if (typeof t.pressKey === 'function') return t.pressKey(ctx.args[0]);
+              break;
+            case 'swipe':
+              if (typeof t.swipe === 'function') return t.swipe(ctx.args[0], ctx.args[1]);
+              break;
           }
         }
         const bt = ctx.target as BrowserTarget;
