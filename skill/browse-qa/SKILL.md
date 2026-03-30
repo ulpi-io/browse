@@ -134,28 +134,59 @@ After testing the stated scenarios, do exploratory testing:
 
 Report any additional findings as bugs, not scenario failures.
 
-### Phase 5: Generate Regression Test
+### Phase 5: Generate Regression Tests
 
-1. **Stop recording:**
-   ```bash
-   browse record stop
-   ```
+For complex features, generate **multiple flow files** — one per logical scenario or user journey. Each should be independently runnable.
 
-2. **Export as flow file:**
-   ```bash
-   browse flow save <descriptive-name>
-   ```
+**Strategy:** Start recording before each scenario group, stop and save after it completes. Then start a new recording for the next group.
 
-3. **Tell the user how to rerun:**
-   ```
-   Regression test saved: .browse/flows/<name>.yaml
+```bash
+# Scenario group 1: Happy path
+browse record start
+# ... execute happy path steps ...
+browse record stop
+browse flow save checkout-happy-path
 
-   Rerun:
-     browse flow run <name>
+# Scenario group 2: Validation errors
+browse record start
+# ... execute validation error steps ...
+browse record stop
+browse flow save checkout-validation-errors
 
-   Run on CI:
-     browse flow .browse/flows/<name>.yaml
-   ```
+# Scenario group 3: Discount codes
+browse record start
+# ... execute discount code steps ...
+browse record stop
+browse flow save checkout-discount-codes
+```
+
+**When to split into multiple flows:**
+- Different user journeys (login → browse → checkout is 3 flows, not 1)
+- Different personas (guest checkout vs logged-in checkout)
+- Different error scenarios (each error type gets its own flow)
+- Different platforms (web flow + iOS flow for the same feature)
+- When a single flow would exceed ~20 steps
+
+**When to keep as one flow:**
+- Simple feature with 1-5 steps
+- Linear flow with no branching
+- Single acceptance criterion
+
+Tell the user how to rerun:
+```
+Regression tests saved:
+  .browse/flows/checkout-happy-path.yaml
+  .browse/flows/checkout-validation-errors.yaml
+  .browse/flows/checkout-discount-codes.yaml
+
+Rerun all:
+  browse flow run checkout-happy-path
+  browse flow run checkout-validation-errors
+  browse flow run checkout-discount-codes
+
+Or run individually:
+  browse flow run checkout-happy-path
+```
 
 ### Phase 6: QA Report
 
@@ -178,10 +209,11 @@ Report any additional findings as bugs, not scenario failures.
 | 1 | [issue found] | High | [description + screenshot] |
 | 2 | [edge case] | Low | [description] |
 
-### Regression Test
-Flow: .browse/flows/<name>.yaml
-Rerun: browse flow run <name>
-Steps recorded: [N]
+### Regression Tests
+| Flow | Steps | Rerun |
+|------|-------|-------|
+| .browse/flows/<name-1>.yaml | [N] | browse flow run <name-1> |
+| .browse/flows/<name-2>.yaml | [N] | browse flow run <name-2> |
 
 ### Screenshots
 [list of screenshots taken during QA]
@@ -199,7 +231,7 @@ Steps recorded: [N]
 4. **Test the unhappy path** — edge cases, errors, and boundaries are where bugs hide.
 5. **Ask when ambiguous** — if the spec doesn't say where to test or what "correct" looks like, ask.
 6. **Name flows after the feature** — `checkout-discount`, `user-registration`, `search-filters`. Not `test1`.
-7. **One flow per feature** — keep regression tests focused and independent.
+7. **Split complex features into multiple flows** — one flow per logical scenario or user journey. A checkout feature might produce `checkout-happy-path.yaml`, `checkout-discount-code.yaml`, `checkout-validation-errors.yaml`. Each flow should be independently runnable.
 8. **Report honestly** — if something doesn't work, say so clearly. Don't gloss over failures.
 
 ## Native App QA
