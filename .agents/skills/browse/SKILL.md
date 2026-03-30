@@ -13,7 +13,47 @@ allowed-tools:
 
 ---
 
-# browse: Persistent Browser for AI Coding Agents
+# browse: Browser & Native App Automation for AI Agents
+
+## Target Decision — ALWAYS check this first
+
+Before running any browse command, decide the correct target:
+
+| User wants to... | Target | Command pattern |
+|---|---|---|
+| Open a URL, test a website, scrape web content | **Browser** (default) | `browse goto <url>` |
+| Test a local dev server (`localhost`) | **Browser** | `browse goto http://localhost:3000` |
+| Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
+| Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
+| Interact with a macOS desktop app (System Settings, TextEdit) | **macOS App** | `browse --app <name> <cmd>` |
+
+**Key rules:**
+- **No `--platform` or `--app` flag** → browser (Chromium). Use `goto` to navigate.
+- **`--app` without `--platform`** → macOS app. App must be running.
+- **`--platform ios --app`** → iOS Simulator. `browse sim start` first.
+- **`--platform android --app`** → Android Emulator. `browse sim start` first.
+- **If unsure which target to use, ASK the user.** Don't guess — wrong target = wasted work.
+
+```bash
+# iOS
+browse sim start --platform ios --app com.apple.Preferences --visible
+browse --platform ios --app com.apple.Preferences snapshot -i
+browse --platform ios --app com.apple.Preferences tap @e3
+
+# Android (auto-installs toolchain on first use)
+browse sim start --platform android --app com.android.settings --visible
+browse --platform android --app com.android.settings snapshot -i
+
+# macOS (no sim needed)
+browse --app "System Settings" snapshot -i
+
+# Enable platforms (run once)
+browse enable all
+```
+
+---
+
+## Browser Quick Start
 
 Persistent headless Chromium daemon. First call auto-starts the server (~3s).
 Every subsequent call: ~100-200ms. Auto-shuts down after 30 min idle.

@@ -13,7 +13,80 @@ allowed-tools:
 
 ---
 
-# browse: Persistent Browser for AI Coding Agents
+# browse: Browser & Native App Automation for AI Agents
+
+## Target Decision — ALWAYS check this first
+
+Before running any browse command, decide the correct target:
+
+| User wants to... | Target | Command pattern |
+|---|---|---|
+| Open a URL, test a website, scrape web content | **Browser** (default) | `browse goto <url>` |
+| Test a local dev server (`localhost`) | **Browser** | `browse goto http://localhost:3000` |
+| Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
+| Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
+| Interact with a macOS desktop app (System Settings, TextEdit) | **macOS App** | `browse --app <name> <cmd>` |
+| Take a screenshot of a native app | **Native app target** | `browse --platform <p> --app <id> screenshot path.png` |
+| Fill a form in a native app | **Native app target** | `browse --platform <p> --app <id> fill @e3 "value"` |
+
+**Key rules:**
+- **No `--platform` or `--app` flag** → browser target (Chromium). Use `goto` to navigate.
+- **`--app` without `--platform`** → macOS app automation. App must be running.
+- **`--platform ios --app`** → iOS Simulator. Use `browse sim start` first if not running.
+- **`--platform android --app`** → Android Emulator. Use `browse sim start` first if not running.
+- **Native app targets do NOT support**: `goto`, `js`, `eval`, `tabs`, `cookies`, `route`, `har`. These are browser-only.
+- **All targets support**: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
+- **If unsure which target to use, ASK the user.** "Should I open this in the browser, or do you want me to use the iOS/Android/macOS app?" Don't guess — wrong target = wasted work.
+
+### Native App Quick Start
+
+```bash
+# iOS — boot simulator, open Settings, interact
+browse sim start --platform ios --app com.apple.Preferences --visible
+browse --platform ios --app com.apple.Preferences snapshot -i
+browse --platform ios --app com.apple.Preferences tap @e3
+
+# Android — boot emulator (auto-installs toolchain), open Settings, interact
+browse sim start --platform android --app com.android.settings --visible
+browse --platform android --app com.android.settings snapshot -i
+browse --platform android --app com.android.settings tap @e3
+
+# macOS — no sim needed, app must be running
+browse --app "System Settings" snapshot -i
+browse --app "System Settings" tap @e5
+
+# Switch app targets (iOS: instant reconfigure, Android: driver restart)
+browse --platform ios --app com.apple.mobilesafari snapshot -i
+browse sim start --platform android --app com.google.android.dialer --visible
+
+# Enable platforms (install dependencies, build drivers — run once)
+browse enable android    # Auto-installs adb, JDK, SDK, emulator, driver
+browse enable ios        # Builds iOS runner (needs Xcode)
+browse enable macos      # Builds browse-ax bridge
+browse enable all        # All platforms
+```
+
+### Common iOS Bundle IDs
+| App | Bundle ID |
+|-----|-----------|
+| Settings | `com.apple.Preferences` |
+| Safari | `com.apple.mobilesafari` |
+| Maps | `com.apple.Maps` |
+| Photos | `com.apple.mobileslideshow` |
+| Calendar | `com.apple.mobilecal` |
+
+### Common Android Package Names
+| App | Package Name |
+|-----|-------------|
+| Settings | `com.android.settings` |
+| Chrome | `com.android.chrome` |
+| Dialer | `com.google.android.dialer` |
+| Messages | `com.google.android.apps.messaging` |
+| Calculator | `com.google.android.calculator` |
+
+---
+
+## Browser Quick Start
 
 Persistent headless Chromium daemon. First call auto-starts the server (~3s).
 Every subsequent call: ~100-200ms. Auto-shuts down after 30 min idle.
