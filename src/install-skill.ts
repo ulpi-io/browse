@@ -35,6 +35,23 @@ const PERMISSIONS = [
   'Bash(browse useragent:*)',
 ];
 
+/** Recursively copy a skill directory (SKILL.md + references/) */
+function copySkillDir(srcDir: string, destDir: string, projectRoot: string): void {
+  fs.mkdirSync(destDir, { recursive: true });
+
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+
+    if (entry.isDirectory()) {
+      copySkillDir(srcPath, destPath, projectRoot);
+    } else if (entry.name.endsWith('.md')) {
+      fs.copyFileSync(srcPath, destPath);
+      console.log(`  ${path.relative(projectRoot, destPath)}`);
+    }
+  }
+}
+
 export function installSkill(targetDir?: string) {
   const dir = targetDir || process.cwd();
 
@@ -46,39 +63,29 @@ export function installSkill(targetDir?: string) {
     process.exit(1);
   }
 
-  // 1. Copy all skill .md files (SKILL.md + supporting reference files)
-  const skillDir = path.join(dir, '.claude', 'skills', 'browse');
-  fs.mkdirSync(skillDir, { recursive: true });
+  // 1. Copy all skills — each subfolder in skill/ becomes a separate skill
+  const skillSourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'skill');
 
-  const skillSourceDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'skill');
-
-  if (!fs.existsSync(skillSourceDir)) {
-    console.error(`Skill directory not found at ${skillSourceDir}`);
+  if (!fs.existsSync(skillSourceRoot)) {
+    console.error(`Skill directory not found at ${skillSourceRoot}`);
     console.error('Is @ulpi/browse installed correctly?');
     process.exit(1);
   }
 
-  const mdFiles = fs.readdirSync(skillSourceDir).filter(f => f.endsWith('.md'));
-  if (mdFiles.length === 0) {
-    console.error(`No .md files found in ${skillSourceDir}`);
+  // Each subfolder (browse/, browse-qa/) is a skill
+  const skillFolders = fs.readdirSync(skillSourceRoot).filter(f =>
+    fs.statSync(path.join(skillSourceRoot, f)).isDirectory()
+  );
+
+  if (skillFolders.length === 0) {
+    console.error(`No skill folders found in ${skillSourceRoot}`);
     process.exit(1);
   }
 
-  for (const file of mdFiles) {
-    fs.copyFileSync(path.join(skillSourceDir, file), path.join(skillDir, file));
-    console.log(`Skill installed: ${path.relative(dir, path.join(skillDir, file))}`);
-  }
-
-  // Copy references/ subdirectory if it exists
-  const refsSourceDir = path.join(skillSourceDir, 'references');
-  if (fs.existsSync(refsSourceDir)) {
-    const refsDestDir = path.join(skillDir, 'references');
-    fs.mkdirSync(refsDestDir, { recursive: true });
-    const refFiles = fs.readdirSync(refsSourceDir).filter(f => f.endsWith('.md'));
-    for (const file of refFiles) {
-      fs.copyFileSync(path.join(refsSourceDir, file), path.join(refsDestDir, file));
-      console.log(`Skill installed: ${path.relative(dir, path.join(refsDestDir, file))}`);
-    }
+  for (const folder of skillFolders) {
+    const srcDir = path.join(skillSourceRoot, folder);
+    const destDir = path.join(dir, '.claude', 'skills', folder);
+    copySkillDir(srcDir, destDir, dir);
   }
 
   // 2. Update .claude/settings.json with permissions
