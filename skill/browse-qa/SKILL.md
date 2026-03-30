@@ -72,9 +72,11 @@ The spec can come from:
 | iOS app, iPhone, iPad, Swift | **iOS Simulator** | `browse sim start --platform ios --app <id> --visible` |
 | Android app, Kotlin, phone | **Android Emulator** | `browse sim start --platform android --app <id> --visible` |
 | macOS app, desktop app | **macOS** | `browse --app <name>` |
-| Ambiguous ("our app", "the app") | **Ask the user** | "Which platform should I test on?" |
+| User has a .app/.ipa build to test | **iOS Simulator** | `browse sim start --platform ios --app ./path/to/App.app --visible` |
+| User has an .apk build to test | **Android Emulator** | `browse sim start --platform android --app ./path/to/app.apk --visible` |
+| Ambiguous ("our app", "the app") | **Ask the user** | "Which platform? Do you have a build file (.app/.ipa/.apk)?" |
 
-**If unsure, always ask.** Don't guess the platform.
+**If unsure, always ask.** Don't guess the platform. If the user has a build artifact, ask for the file path.
 
 ### Phase 3: Execute QA
 
@@ -239,8 +241,17 @@ Or run individually:
 Same workflow, native commands:
 
 ```bash
-# iOS QA session
+# iOS — from bundle ID (app already installed)
 browse sim start --platform ios --app com.example.myapp --visible
+
+# iOS — install from .app or .ipa build file
+browse sim start --platform ios --app ./build/MyApp.app --visible
+browse sim start --platform ios --app ./MyApp.ipa --visible
+
+# Android — install from .apk build file
+browse sim start --platform android --app ./app/build/outputs/apk/debug/app-debug.apk --visible
+
+# Then QA as normal
 browse record start
 browse --platform ios --app com.example.myapp snapshot -i
 browse --platform ios --app com.example.myapp tap @e3
@@ -249,15 +260,6 @@ browse --platform ios --app com.example.myapp press return
 browse --platform ios --app com.example.myapp screenshot .browse/sessions/default/ios-test.png
 browse record stop
 browse flow save ios-feature-qa
-
-# Android QA session
-browse sim start --platform android --app ./app-debug.apk --visible
-browse record start
-browse --platform android --app com.example.myapp snapshot -i
-browse --platform android --app com.example.myapp tap @e3
-browse --platform android --app com.example.myapp swipe up
-browse record stop
-browse flow save android-feature-qa
 ```
 
 ## Examples

@@ -26,8 +26,8 @@ Before running any browse command, decide the correct target:
 | Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
 | Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
 | Interact with a macOS desktop app (System Settings, TextEdit) | **macOS App** | `browse --app <name> <cmd>` |
-| Take a screenshot of a native app | **Native app target** | `browse --platform <p> --app <id> screenshot path.png` |
-| Fill a form in a native app | **Native app target** | `browse --platform <p> --app <id> fill @e3 "value"` |
+| Install and test an iOS .app or .ipa file | **iOS Simulator** | `browse sim start --platform ios --app ./MyApp.app --visible` |
+| Install and test an Android .apk file | **Android Emulator** | `browse sim start --platform android --app ./app.apk --visible` |
 
 **Key rules:**
 - **No `--platform` or `--app` flag** → browser target (Chromium). Use `goto` to navigate.
@@ -267,13 +267,15 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 
 ### Native App Automation
 ```
-browse sim start --platform ios|android --app <id> [--visible]  Start simulator/emulator + app
+browse sim start --platform ios|android --app <id-or-path> [--visible]  Start + install/launch app
 browse sim stop --platform ios|android                          Stop simulator/emulator
 browse sim status --platform ios|android                        Check runner status
 browse --platform ios --app <bundleId> <command>                Target iOS app
 browse --platform android --app <package> <command>             Target Android app
 browse --app <name> <command>                                   Target macOS app
 ```
+
+The `--app` flag accepts a bundle ID, package name, **or file path** (.app/.ipa/.apk). File paths auto-install the app into the simulator/emulator.
 
 Supported commands on all app platforms: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
 macOS also supports modifier combos: `browse --app TextEdit press "cmd+n"`.

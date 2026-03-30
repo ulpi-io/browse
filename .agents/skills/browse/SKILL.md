@@ -26,12 +26,15 @@ Before running any browse command, decide the correct target:
 | Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
 | Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
 | Interact with a macOS desktop app (System Settings, TextEdit) | **macOS App** | `browse --app <name> <cmd>` |
+| Install and test an iOS .app/.ipa build | **iOS Simulator** | `browse sim start --platform ios --app ./MyApp.app --visible` |
+| Install and test an Android .apk build | **Android Emulator** | `browse sim start --platform android --app ./app.apk --visible` |
 
 **Key rules:**
 - **No `--platform` or `--app` flag** → browser (Chromium). Use `goto` to navigate.
 - **`--app` without `--platform`** → macOS app. App must be running.
 - **`--platform ios --app`** → iOS Simulator. `browse sim start` first.
 - **`--platform android --app`** → Android Emulator. `browse sim start` first.
+- **`--app` accepts file paths** — `.app`, `.ipa`, `.apk` files are auto-installed into the simulator/emulator.
 - **If unsure which target to use, ASK the user.** Don't guess — wrong target = wasted work.
 
 ```bash
