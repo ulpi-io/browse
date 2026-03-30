@@ -18,7 +18,7 @@ export async function handleSimCommand(
 ): Promise<string> {
   const sub = args[0];
   if (!sub || !['start', 'stop', 'status'].includes(sub)) {
-    throw new Error('Usage: browse sim start --platform ios|android [--device <name>] [--app <id>] [--visible] | stop | status');
+    throw new Error('Usage: browse sim start --platform ios|android [--device <name>] [--app <id-or-path>] [--visible] | stop | status');
   }
 
   // Parse --platform from args

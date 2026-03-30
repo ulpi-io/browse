@@ -127,6 +127,16 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
   const log = opts.log || ((msg: string) => process.stderr.write(`[browse] ${msg}\n`));
   const port = DRIVER_PORT;
 
+  // Resolve --app file path to package name if needed (defer install until device is ready)
+  let pendingApkInstall: string | null = null;
+  if (opts.app) {
+    const { isAppFilePath } = await import('../resolve-app');
+    if (isAppFilePath(opts.app)) {
+      pendingApkInstall = path.resolve(opts.app);
+      // Don't resolve yet — need device serial first. Mark for install later.
+    }
+  }
+
   // Check if already running
   const existing = readState();
   if (existing) {
@@ -217,6 +227,12 @@ export async function startAndroid(opts: StartOptions = {}): Promise<AndroidServ
       );
       log(`APK build failed:\n${errorLines.slice(0, 10).join('\n') || lines.slice(0, 15).join('\n')}`);
     }
+  }
+
+  // Resolve APK file to package name if needed (now that we have a device)
+  if (pendingApkInstall) {
+    const { resolveAndroidApp } = await import('../resolve-app');
+    opts.app = await resolveAndroidApp(pendingApkInstall, serial, log);
   }
 
   const targetApp = opts.app || 'com.android.settings';

@@ -47,6 +47,10 @@ browse --platform android --app com.android.settings snapshot -i
 # macOS (no sim needed)
 browse --app "System Settings" snapshot -i
 
+# Install and test your own app from a file
+browse sim start --platform ios --app ./build/MyApp.app --visible
+browse sim start --platform android --app ./app-debug.apk --visible
+
 # Enable platforms (run once)
 browse enable all
 ```

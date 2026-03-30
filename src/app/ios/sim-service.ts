@@ -178,6 +178,17 @@ export async function startIOS(opts: StartOptions = {}): Promise<SimServiceState
   const log = opts.log || ((msg: string) => process.stderr.write(`[browse] ${msg}\n`));
   const port = parseInt(process.env.BROWSE_RUNNER_PORT || '', 10) || DEFAULT_PORT;
 
+  // Resolve --app file path to bundle ID if needed
+  if (opts.app) {
+    const { isAppFilePath, resolveIOSApp } = await import('../resolve-app');
+    if (isAppFilePath(opts.app)) {
+      // Need simulator UDID for install — resolve it early
+      const sim = await resolveSimulator(opts.device);
+      if (sim.state !== 'Booted') await bootSimulator(sim.udid);
+      opts.app = await resolveIOSApp(opts.app, sim.udid, log);
+    }
+  }
+
   // Check if already running
   const existing = readState();
   if (existing) {

@@ -55,6 +55,11 @@ browse --platform android --app com.android.settings tap @e3
 browse --app "System Settings" snapshot -i
 browse --app "System Settings" tap @e5
 
+# Install and test your own app from a file
+browse sim start --platform ios --app ./build/MyApp.app --visible   # .app bundle
+browse sim start --platform ios --app ./MyApp.ipa --visible          # .ipa archive
+browse sim start --platform android --app ./app-debug.apk --visible  # .apk file
+
 # Switch app targets (iOS: instant reconfigure, Android: driver restart)
 browse --platform ios --app com.apple.mobilesafari snapshot -i
 browse sim start --platform android --app com.google.android.dialer --visible

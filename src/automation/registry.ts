@@ -790,13 +790,14 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { json: { type: 'boolean', description: 'Return raw JSON instead of formatted text.' } } },
     argDecode: (p) => p.json ? ['--json'] : [],
   } }),
-  m('sim',              'Simulator/emulator lifecycle',                     { usage: 'start|stop|status [--platform ios|android] [--device <name>]', mcp: {
-    description: 'Manage iOS simulator or Android emulator lifecycle. Start boots the simulator/emulator and launches the browse runner. Stop kills the runner and optionally shuts down the device. Status shows the current runner health.',
-    inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Lifecycle action.', enum: ['start', 'stop', 'status'] }, platform: { type: 'string', description: 'Target platform.', enum: ['ios', 'android'] }, device: { type: 'string', description: 'Device name, UDID, or serial.' } }, required: ['action'] },
+  m('sim',              'Simulator/emulator lifecycle',                     { usage: 'start|stop|status [--platform ios|android] [--device <name>] [--app <id-or-path>]', mcp: {
+    description: 'Manage iOS simulator or Android emulator lifecycle. Start boots the simulator/emulator, optionally installs an app from a file path (.app/.ipa/.apk), and launches the browse runner. Stop kills the runner and optionally shuts down the device. Status shows the current runner health.',
+    inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Lifecycle action.', enum: ['start', 'stop', 'status'] }, platform: { type: 'string', description: 'Target platform.', enum: ['ios', 'android'] }, device: { type: 'string', description: 'Device name, UDID, or serial.' }, app: { type: 'string', description: 'Bundle ID, package name, or path to .app/.ipa/.apk file to install and test.' } }, required: ['action'] },
     argDecode: (p) => {
       const args = [String(p.action)];
       if (p.platform) args.push('--platform', String(p.platform));
       if (p.device) args.push('--device', String(p.device));
+      if (p.app) args.push('--app', String(p.app));
       return args;
     },
   } }),

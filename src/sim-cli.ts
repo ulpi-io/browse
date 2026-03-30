@@ -9,11 +9,12 @@ export async function handleSimCLI(args: string[]): Promise<void> {
   const sub = args[0];
 
   if (!sub || sub === '--help') {
-    console.log('Usage: browse sim start --platform ios|android [--device <name>] [--app <id>] [--visible]');
+    console.log('Usage: browse sim start --platform ios|android [--device <name>] [--app <id-or-path>] [--visible]');
     console.log('       browse sim stop [--platform ios|android]');
     console.log('       browse sim status [--platform ios|android]');
     console.log('');
     console.log('Flags:');
+    console.log('  --app        Bundle ID, package name, or path to .app/.ipa/.apk');
     console.log('  --visible    Open the Simulator window (default: headless/background)');
     return;
   }
