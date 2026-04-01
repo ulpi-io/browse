@@ -192,7 +192,7 @@ The compiler is unable to type-check this expression
 - File removed from disk but still referenced in project
 - Complex generic/closure expression exceeding type checker limits
 
-**Agent Match:** `ios-senior-engineer`
+**Agent Match:** `ios-macos-senior-engineer`
 
 ---
 
@@ -362,7 +362,7 @@ Fatal error: Index out of range
 - SwiftUI state mutation during view body evaluation
 - Array index out of bounds
 
-**Agent Match:** `ios-senior-engineer`
+**Agent Match:** `ios-macos-senior-engineer`
 
 ---
 
@@ -552,7 +552,7 @@ Large app bundle size
 4. Monitor JS thread frame rate
 5. Audit native module usage
 
-**Agent Match:** `ios-senior-engineer` or `expo-react-native-engineer`
+**Agent Match:** `ios-macos-senior-engineer` or `expo-react-native-engineer`
 
 ---
 

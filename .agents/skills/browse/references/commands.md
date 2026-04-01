@@ -491,44 +491,6 @@ browse restart                 Kill + restart server
 browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 ```
 
-## Native App Automation (Android, iOS, macOS)
-```
-# Simulator/emulator lifecycle
-browse sim start --platform ios --app <id-or-path> [--visible]      Boot simulator + launch app
-browse sim start --platform android --app <id-or-path> [--visible]  Boot emulator + launch app
-browse sim stop --platform ios|android                              Stop simulator/emulator
-browse sim status --platform ios|android                            Check runner health
-
-# Install and test your own app from a build file
-browse sim start --platform ios --app ./build/MyApp.app --visible    # .app bundle
-browse sim start --platform ios --app ./MyApp.ipa --visible          # .ipa archive
-browse sim start --platform android --app ./app-debug.apk --visible  # .apk file
-
-# iOS commands
-browse --platform ios --app com.apple.Preferences snapshot -i
-browse --platform ios --app com.apple.Preferences tap @e3
-browse --platform ios --app com.apple.Preferences swipe up
-browse --platform ios --app com.apple.Preferences press home
-browse --platform ios --app com.apple.mobilesafari type "url"    # Switch app target
-
-# Android commands
-browse --platform android --app com.android.settings snapshot -i
-browse --platform android --app com.android.settings tap @e3
-browse --platform android --app com.android.settings swipe up
-browse --platform android --app com.android.settings press back
-
-# macOS commands (no sim needed)
-browse --app "System Settings" snapshot -i
-browse --app "System Settings" tap @e5
-browse --app TextEdit press "cmd+n"                              # Modifier combos
-browse --app TextEdit type "Hello world"
-```
-
-The `--app` flag accepts a bundle ID, package name, **or file path** (.app/.ipa/.apk). File paths auto-install the app.
-
-Supported on all platforms: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
-Android auto-installs adb, Java, SDK, emulator on first use. iOS requires Xcode.
-
 ## Handoff (human takeover)
 ```
 browse handoff [reason]        Swap to visible browser for user to solve CAPTCHA/MFA
