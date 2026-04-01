@@ -197,6 +197,34 @@ browse --runtime rebrowser goto https://example.com
 # State list / show
 browse state list
 browse state show mysite
+
+# Native app automation (Android, iOS, macOS)
+browse sim start --platform android --app com.android.settings --visible
+browse sim start --platform ios --app com.apple.Preferences --visible
+browse --platform android --app com.android.settings snapshot -i
+browse --platform ios --app com.apple.Preferences snapshot -i
+browse --app "System Settings" snapshot -i              # macOS
+browse --platform android --app com.android.settings tap @e3
+browse --platform android --app com.android.settings swipe up
+browse --platform android --app com.android.settings press back
+browse --platform ios --app com.apple.mobilesafari type "example.com"
+browse --app TextEdit press "cmd+n"                     # macOS modifier combos
+browse sim stop --platform android
+browse sim stop --platform ios
+
+# Install and test your own app from a file
+browse sim start --platform ios --app ./build/MyApp.app --visible   # .app bundle
+browse sim start --platform ios --app ./MyApp.ipa --visible          # .ipa archive
+browse sim start --platform android --app ./app-debug.apk --visible  # .apk file
+
+# Cloud providers (encrypted API keys, never visible to agents)
+browse provider save browserbase <api-key>
+browse --provider browserbase goto https://example.com
+
+# Performance audit
+browse perf-audit https://example.com
+browse perf-audit save baseline
+browse perf-audit compare baseline
 ```
 
 ## Navigation
@@ -245,15 +273,25 @@ Refs are invalidated on navigation -- run `snapshot` again after `goto`.
 ## Interaction
 ```
 browse click <selector>        Click element (CSS selector or @ref)
+browse click <sel> --if-exists Click only if element exists (no error if missing)
+browse click <sel> --if-visible Click only if element is visible
 browse click <x>,<y>           Click at page coordinates (e.g. 590,461)
 browse rightclick <selector>   Right-click element (context menu)
 browse dblclick <selector>     Double-click element
 browse fill <selector> <value> Fill input field
+browse fill <sel> <val> --if-empty  Fill only if field is empty
 browse select <selector> <val> Select dropdown value
 browse hover <selector>        Hover over element
+browse hover <sel> --if-exists Hover only if element exists
+browse hover <sel> --if-visible Hover only if visible
 browse focus <selector>        Focus element
+browse focus <sel> --if-exists Focus only if element exists
+browse focus <sel> --if-visible Focus only if visible
 browse tap <selector>          Tap element (requires touch context via emulate)
+browse tap <sel> --if-exists   Tap only if element exists
+browse tap <sel> --if-visible  Tap only if visible
 browse check <selector>        Check checkbox
+browse check <sel> --if-unchecked  Check only if not already checked
 browse uncheck <selector>      Uncheck checkbox
 browse drag <src> <tgt>        Drag source to target
 browse type <text>             Type into focused element
@@ -277,6 +315,7 @@ browse wait --fn "expr"        Wait for JavaScript condition
 browse wait --load <state>     Wait for load state
 browse wait --url <pattern>    Wait for URL match
 browse wait --network-idle     Wait for network idle
+browse wait --request <pattern>  Wait for a matching network request
 browse wait --download                    Wait for download, return temp path
 browse wait --download ./report.pdf       Wait and save to path
 browse wait --download 60000              Custom timeout (ms)
@@ -322,6 +361,8 @@ browse element-state <selector> Element state (visible/enabled/checked/focused)
 browse value <selector>        Get input field value
 browse count <selector>        Count matching elements
 browse box <selector>          Get bounding box as JSON {x, y, width, height}
+browse layout <selector>       Get element layout details
+browse request <index|url>     Inspect a captured network request by index or URL pattern
 browse dialog                  Last dialog info or "(no dialog detected)"
 browse console [--clear]       View/clear console messages
 browse errors [--clear]        View/clear page errors (filtered from console)
@@ -444,6 +485,117 @@ browse record stop                     Stop recording, keep steps for export
 browse record status                   Recording state and step count
 browse record export browse [path]     Export as chain-compatible JSON (replay with browse chain)
 browse record export replay [path]    Export as Chrome DevTools Recorder (Playwright/Puppeteer)
+browse record export replay --selectors css,aria [path]  Filter selector types in export
+```
+
+## Native App Automation
+```
+browse sim start --platform ios|android --app <id-or-path> [--visible] [--device <name>]  Start + install/launch app
+browse sim stop --platform ios|android                          Stop simulator/emulator
+browse sim status --platform ios|android                        Check runner status
+browse --platform ios --app <bundleId> <command>                Target iOS app
+browse --platform android --app <package> <command>             Target Android app
+browse --app <name> <command>                                   Target macOS app
+```
+
+The `--app` flag accepts a bundle ID, package name, **or file path** (.app/.ipa/.apk). File paths auto-install the app into the simulator/emulator.
+
+Supported commands on all app platforms: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
+macOS also supports modifier combos: `browse --app TextEdit press "cmd+n"`.
+Android auto-installs adb, Java, SDK, and emulator on first use (macOS via Homebrew).
+
+### Common iOS Bundle IDs
+| App | Bundle ID |
+|-----|-----------|
+| Settings | `com.apple.Preferences` |
+| Safari | `com.apple.mobilesafari` |
+| Maps | `com.apple.Maps` |
+| Photos | `com.apple.mobileslideshow` |
+| Calendar | `com.apple.mobilecal` |
+
+### Common Android Package Names
+| App | Package Name |
+|-----|-------------|
+| Settings | `com.android.settings` |
+| Chrome | `com.android.chrome` |
+| Dialer | `com.google.android.dialer` |
+| Messages | `com.google.android.apps.messaging` |
+| Calculator | `com.google.android.calculator` |
+
+### Platform enablement (run once)
+```
+browse enable android    # Auto-installs adb, JDK, SDK, emulator, driver
+browse enable ios        # Builds iOS runner (needs Xcode)
+browse enable macos      # Builds browse-ax bridge
+browse enable all        # All platforms
+```
+
+## Performance audit
+```
+browse perf-audit [url]                  Full performance audit (Web Vitals, resources, images, fonts, DOM, render-blocking, third-party, stack detection, correlations, recommendations)
+browse perf-audit [url] --no-coverage    Skip JS/CSS coverage collection (faster)
+browse perf-audit [url] --no-detect      Skip framework/SaaS/infrastructure detection
+browse perf-audit [url] --json           Output as structured JSON (for programmatic use)
+browse perf-audit [url] --budget lcp:2500,cls:0.1,tbt:300  Set performance budgets (fail if exceeded)
+browse perf-audit save [name]            Save audit report to .browse/audits/ (auto-names from URL + date if omitted)
+browse perf-audit compare <base> [curr]  Compare saved baseline vs current page or another saved audit (regression detection)
+browse perf-audit list                   List saved audit reports (name, size, date)
+browse perf-audit delete <name>          Delete a saved audit report
+browse detect                            Detect tech stack: frameworks, SaaS platforms, CDN, protocol, compression, caching, DOM complexity, third-party inventory
+browse coverage start                    Start JS/CSS code coverage collection
+browse coverage stop                     Stop collection and report per-file used/unused bytes
+browse initscript set <code>             Inject JS that runs before every page load (pre-navigation observers, mocks, polyfills)
+browse initscript show                   Show current init script
+browse initscript clear                  Remove init script
+```
+
+## API requests
+```
+browse api <method> <url>                          Make HTTP request (GET, POST, PUT, DELETE, etc.)
+browse api <method> <url> --body '{"key":"val"}'   With JSON body
+browse api <method> <url> --header "Auth:Bearer x"  With custom header
+```
+
+## Assertions (expect)
+```
+browse expect --url <pattern>                      Assert current URL matches
+browse expect --text <text>                        Assert text exists on page
+browse expect --visible <selector>                 Assert element is visible
+browse expect --hidden <selector>                  Assert element is hidden
+browse expect --count <selector> <n>               Assert element count
+browse expect --request <pattern>                  Assert a network request was made
+browse expect --timeout 5000                       Custom timeout for assertions (ms)
+```
+
+## Visual & Accessibility audit
+```
+browse visual                  Visual snapshot of the page
+browse a11y-audit              Accessibility audit (WCAG violations, warnings, passes)
+```
+
+## Flows (reusable test sequences)
+```
+browse flow <file.yaml>        Run a flow from a YAML file
+browse flow save <name>        Save recorded commands as a named flow
+browse flow run <name>         Run a saved flow by name
+browse flow list               List saved flows
+```
+
+## Retry & Watch
+```
+browse retry "<cmd>" --until <condition>            Retry a command until condition is met
+browse retry "<cmd>" --until <cond> --max 5         Max retry attempts (default: 10)
+browse retry "<cmd>" --until <cond> --backoff       Exponential backoff between retries
+browse watch "<selector>"                           Watch an element for changes
+browse watch "<sel>" --on-change "<cmd>"            Run command when element changes
+browse watch "<sel>" --timeout 30000                Custom watch timeout (ms)
+```
+
+## Cloud Providers
+```
+browse provider save <name> <key>  Save provider API key (encrypted)
+browse provider list               List saved providers
+browse provider delete <name>      Delete provider key
 ```
 
 ## React DevTools
@@ -461,24 +613,6 @@ browse react-devtools owners <sel>     Parent component chain
 browse react-devtools context <sel>    Context values consumed by component
 ```
 
-## Performance audit
-```
-browse perf-audit [url]                  Full performance audit (Web Vitals, resources, images, fonts, DOM, coverage, stack detection, recommendations)
-browse perf-audit [url] --no-coverage    Skip JS/CSS coverage (faster)
-browse perf-audit [url] --no-detect      Skip framework/SaaS detection
-browse perf-audit [url] --json           Structured JSON output
-browse perf-audit save [name]            Save audit report to .browse/audits/ (auto-names from URL + date)
-browse perf-audit compare <base> [curr]  Compare saved baseline vs current page or another saved audit
-browse perf-audit list                   List saved audit reports
-browse perf-audit delete <name>          Delete a saved audit
-browse detect                            Tech stack fingerprint (frameworks, SaaS, CDN, infra)
-browse coverage start                    Start JS/CSS code coverage collection
-browse coverage stop                     Stop and report per-file used/unused bytes
-browse initscript set <code>             Inject JS before every page load
-browse initscript show                   Show current init script
-browse initscript clear                  Remove init script
-```
-
 ## Server management
 ```
 browse status                  Server health, uptime, session count
@@ -490,6 +624,31 @@ browse stop                    Shutdown server
 browse restart                 Kill + restart server
 browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 ```
+
+## CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--session <id>` | Named session (isolates tabs, refs, cookies — auto-persists on close) |
+| `--profile <name>` | Persistent browser profile (own Chromium, full state) |
+| `--state <path>` | Load state file (cookies/storage) before first command |
+| `--json` | Wrap output as `{success, data, command}` |
+| `--content-boundaries` | Wrap page content in nonce-delimited markers (prompt injection defense) |
+| `--allowed-domains <d,d>` | Block navigation/resources outside allowlist |
+| `--max-output <n>` | Truncate output to N characters |
+| `--headed` | Run browser in headed (visible) mode |
+| `--chrome` | Shortcut for `--runtime chrome --headed` (uses real Chrome, bypasses bot detection) |
+| `--cdp <port>` | Connect to Chrome on a specific debugging port |
+| `--connect` | Auto-discover and connect to a running Chrome instance |
+| `--provider <name>` | Cloud browser provider (browserless, browserbase) |
+| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda, chrome |
+| `--mcp` | Run as MCP server (for Cursor, Windsurf, Cline) |
+| `--context` | Show state changes after commands |
+| `--context delta` | ARIA diff with refs |
+| `--context full` | Complete snapshot with refs after write commands |
+| `--platform <ios\|android>` | Target native app platform |
+| `--app <id-or-path>` | Target app by bundle ID, package name, or file path (.app/.ipa/.apk) |
+| `--device <name>` | Simulator/emulator device name (e.g. "iPhone 15", "Pixel 7") |
 
 ## Handoff (human takeover)
 ```
