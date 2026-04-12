@@ -486,7 +486,7 @@ async function start() {
       if (isShuttingDown) return;
       console.error('[browse] Browser disconnected (profile mode). Shutting down.');
       shutdown();
-    }, runtime.chromium);
+    }, runtime.chromium, runtime.launchOptions);
 
     const outputDir = path.join(LOCAL_DIR, 'sessions', profileName);
     fs.mkdirSync(outputDir, { recursive: true });

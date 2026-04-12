@@ -51,10 +51,11 @@ export async function createPersistentBrowserTarget(
   profileDir: string,
   onCrash: () => void,
   browserType?: import('playwright').BrowserType,
+  extraLaunchOptions?: Record<string, unknown>,
 ): Promise<CreatedTarget> {
   const { BrowserManager } = await import('../browser/manager');
   const bm = new BrowserManager();
-  await bm.launchPersistent(profileDir, onCrash, browserType);
+  await bm.launchPersistent(profileDir, onCrash, browserType, extraLaunchOptions);
   return {
     target: bm,
     getContext: () => bm.getContext(),

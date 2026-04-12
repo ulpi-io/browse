@@ -152,7 +152,14 @@ export async function handleSystemCommand(
       // Camoufox (optional anti-detection runtime)
       try {
         const camoPkg = require('camoufox-js/package.json') as { version?: string };
-        lines.push(`Camoufox: installed (${camoPkg.version ?? 'unknown'})`);
+        // Verify runtime actually loads (binary available)
+        const { findCamoufox } = await import('../../engine/resolver');
+        const available = await findCamoufox();
+        if (available) {
+          lines.push(`Camoufox: installed v${camoPkg.version ?? '?'} (binary ready)`);
+        } else {
+          lines.push(`Camoufox: installed v${camoPkg.version ?? '?'} (binary NOT downloaded — run "npx camoufox-js fetch")`);
+        }
       } catch {
         lines.push(`Camoufox: not installed (optional — npm install camoufox-js for anti-detection browsing)`);
       }

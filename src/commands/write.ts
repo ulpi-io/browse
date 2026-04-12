@@ -9,6 +9,11 @@
 import type { BrowserContext } from 'playwright';
 import type { BrowserTarget } from '../browser/target';
 import { resolveDevice, listDevices } from '../browser/emulation';
+import { expandMacro } from '../browser/macros';
+import { dismissConsentDialog } from '../browser/consent';
+import { isGoogleSearchUrl, isGoogleBlocked, formatGoogleBlockError } from '../browser/detection';
+import { waitForPageReady } from '../browser/readiness';
+import { handleSnapshot } from '../browser/snapshot';
 import type { DomainFilter } from '../security/domain-filter';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
@@ -154,13 +159,32 @@ export async function handleWriteCommand(
 
   switch (command) {
     case 'goto': {
-      const url = args[0];
+      const readyFlag = args.includes('--ready');
+      const filteredGotoArgs = args.filter(a => a !== '--ready');
+      let url = filteredGotoArgs[0];
       if (!url) throw new Error('Usage: browse goto <url>');
+      // TASK-004: Expand search macros (@google, @youtube, etc.)
+      const expanded = expandMacro(url);
+      if (expanded) url = expanded;
       if (domainFilter && !domainFilter.isAllowed(url)) {
         throw new Error(domainFilter.blockedMessage(url));
       }
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULTS.COMMAND_TIMEOUT_MS });
       const status = response?.status() || 'unknown';
+      // Readiness: opt-in via --ready flag or BROWSE_READINESS=1 env var
+      if (readyFlag || process.env.BROWSE_READINESS === '1') {
+        await waitForPageReady(page);
+      }
+      // TASK-005: Auto-dismiss consent dialogs (opt-in via BROWSE_CONSENT_DISMISS=1)
+      if (process.env.BROWSE_CONSENT_DISMISS === '1') {
+        await dismissConsentDialog(page).catch(() => {});  // best-effort, never fail goto
+      }
+      // TASK-006: Detect Google blocks after navigation
+      if (isGoogleSearchUrl(url) || isGoogleSearchUrl(page.url())) {
+        if (await isGoogleBlocked(page)) {
+          return formatGoogleBlockError(page.url());
+        }
+      }
       return `Navigated to ${url} (${status})`;
     }
 
@@ -182,10 +206,23 @@ export async function handleWriteCommand(
     case 'click': {
       const ifExists = args.includes('--if-exists');
       const ifVisible = args.includes('--if-visible');
-      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
+      // TASK-008: Parse --force for click fallback chain (opt-in)
+      const forceMode = args.includes('--force') || process.env.BROWSE_CLICK_FORCE === '1';
+      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible' && a !== '--force');
       const selector = filteredArgs[0];
-      if (!selector) throw new Error('Usage: browse click <selector> [--if-exists] [--if-visible]');
-      const resolved = bm.resolveRef(selector);
+      if (!selector) throw new Error('Usage: browse click <selector> [--if-exists] [--if-visible] [--force]');
+      // TASK-007: Stale ref auto-refresh — if @ref not found, rebuild refs once and retry
+      let resolved: ReturnType<typeof bm.resolveRef>;
+      try {
+        resolved = bm.resolveRef(selector);
+      } catch (refErr: any) {
+        if (selector.startsWith('@') && refErr.message?.includes('not found')) {
+          await handleSnapshot(['-i'], bm);
+          resolved = bm.resolveRef(selector);  // retry once, throw if still not found
+        } else {
+          throw refErr;
+        }
+      }
       const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
       if (ifExists || ifVisible) {
         const count = await locator.count();
@@ -201,9 +238,28 @@ export async function handleWriteCommand(
         } else {
           await page.click(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
         }
-      } catch (err) {
-        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
-        throw err;
+      } catch (err: any) {
+        // TASK-008: Click fallback chain — only when --force or BROWSE_CLICK_FORCE=1
+        if (forceMode && (err.message?.includes('intercepts pointer events') || err.message?.includes('element is covered'))) {
+          try {
+            await locator.click({ force: true, timeout: 3000 });
+          } catch {
+            const box = await locator.boundingBox();
+            if (box) {
+              const x = box.x + box.width / 2;
+              const y = box.y + box.height / 2;
+              await page.mouse.move(x, y);
+              await page.mouse.down();
+              await page.waitForTimeout(50);
+              await page.mouse.up();
+            } else {
+              throw err;  // re-throw original
+            }
+          }
+        } else {
+          if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+          throw err;
+        }
       }
       // Wait briefly for any navigation/DOM update
       await page.waitForLoadState('domcontentloaded').catch(() => {});
@@ -216,7 +272,18 @@ export async function handleWriteCommand(
       const [selector, ...valueParts] = filteredArgs;
       const value = valueParts.join(' ');
       if (!selector) throw new Error('Usage: browse fill <selector> <value> [--if-empty]');
-      const resolved = bm.resolveRef(selector);
+      // TASK-007: Stale ref auto-refresh
+      let resolved: ReturnType<typeof bm.resolveRef>;
+      try {
+        resolved = bm.resolveRef(selector);
+      } catch (refErr: any) {
+        if (selector.startsWith('@') && refErr.message?.includes('not found')) {
+          await handleSnapshot(['-i'], bm);
+          resolved = bm.resolveRef(selector);
+        } else {
+          throw refErr;
+        }
+      }
       if (ifEmpty) {
         const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
         const currentValue = await locator.first().inputValue().catch(() => '');
@@ -254,7 +321,18 @@ export async function handleWriteCommand(
       const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
       const selector = filteredArgs[0];
       if (!selector) throw new Error('Usage: browse hover <selector> [--if-exists] [--if-visible]');
-      const resolved = bm.resolveRef(selector);
+      // TASK-007: Stale ref auto-refresh
+      let resolved: ReturnType<typeof bm.resolveRef>;
+      try {
+        resolved = bm.resolveRef(selector);
+      } catch (refErr: any) {
+        if (selector.startsWith('@') && refErr.message?.includes('not found')) {
+          await handleSnapshot(['-i'], bm);
+          resolved = bm.resolveRef(selector);
+        } else {
+          throw refErr;
+        }
+      }
       const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
       if (ifExists || ifVisible) {
         const count = await locator.count();

@@ -7,6 +7,7 @@
 
 import type { BrowserTarget } from '../browser/target';
 import { listDevices } from '../browser/emulation';
+import { isGoogleBlocked, formatGoogleBlockError } from '../browser/detection';
 import type { SessionBuffers } from '../network/buffers';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
@@ -24,6 +25,10 @@ export async function handleReadCommand(
 
   switch (command) {
     case 'text': {
+      // TASK-006: Warn when Google has blocked the page
+      if (await isGoogleBlocked(page)) {
+        return '[warning: Google has blocked this page]\n' + formatGoogleBlockError(page.url());
+      }
       // TreeWalker-based extraction — never appends to the live DOM,
       // so MutationObservers are not triggered.
       return await evalCtx.evaluate(() => {

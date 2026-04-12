@@ -236,25 +236,30 @@ export class BrowserManager implements BrowserTarget {
    * Data (cookies, localStorage, cache) persists across restarts.
    * The context IS the browser — closing it closes everything.
    */
-  async launchPersistent(profileDir: string, onCrash?: () => void, browserType?: BrowserType) {
+  async launchPersistent(profileDir: string, onCrash?: () => void, browserType?: BrowserType, extraLaunchOptions?: Record<string, unknown>) {
     const launcher = browserType ?? chromium;
+    // Merge runtime-specific launch options (e.g. camoufox args/env/firefoxUserPrefs)
+    const runtimeOpts = extraLaunchOptions ?? {};
+    const baseOpts = {
+      ...runtimeOpts,
+      headless: process.env.BROWSE_HEADED !== '1',
+      viewport: { width: 1920, height: 1080 },
+      ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+      // Concatenate args arrays from both sources
+      args: [...(Array.isArray(runtimeOpts.args) ? runtimeOpts.args as string[] : [])],
+      // Merge env objects (ours take precedence)
+      ...(runtimeOpts.env ? { env: { ...(runtimeOpts.env as Record<string, string>) } } : {}),
+    };
     let context: BrowserContext;
     try {
-      context = await launcher.launchPersistentContext(profileDir, {
-        headless: process.env.BROWSE_HEADED !== '1',
-        viewport: { width: 1920, height: 1080 },
-        ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
-      });
+      context = await launcher.launchPersistentContext(profileDir, baseOpts);
     } catch (err: any) {
       // Profile might be corrupted — delete and retry once
       if (err.message?.includes('Failed to launch') || err.message?.includes('Target closed')) {
         const fs = await import('fs');
         console.error(`[browse] Profile directory corrupted, recreating: ${profileDir}`);
         fs.rmSync(profileDir, { recursive: true, force: true });
-        context = await launcher.launchPersistentContext(profileDir, {
-          headless: process.env.BROWSE_HEADED !== '1',
-          viewport: { width: 1920, height: 1080 },
-        });
+        context = await launcher.launchPersistentContext(profileDir, baseOpts);
       } else {
         throw err;
       }

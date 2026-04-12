@@ -27,6 +27,8 @@ export {
   parseSnapshotArgs,
 } from './snapshot';
 
+export { expandMacro, listMacros } from './macros';
+
 export {
   ensureHook,
   injectHook,
@@ -44,3 +46,9 @@ export {
   getOwners,
   getContext,
 } from './react-devtools';
+
+export { isGoogleSearchUrl, isGoogleBlocked, formatGoogleBlockError } from './detection';
+
+export { dismissConsentDialog } from './consent';
+
+export { waitForPageReady, type ReadinessOptions } from './readiness';
