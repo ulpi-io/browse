@@ -218,6 +218,57 @@ Report:
 - Do not run `browse handoff` without explicit user confirmation.
 - Do not save screenshots outside the browse session directories.
 
+## Runtime Selection
+
+By default, browse uses Chromium via Playwright. Alternative runtimes:
+
+| Runtime | Engine | Use case | Install |
+|---------|--------|----------|---------|
+| `playwright` (default) | Chromium | General browsing, testing | Included |
+| `camoufox` | Firefox (anti-detection) | Sites with bot detection | `npm install camoufox-js && npx camoufox-js fetch` |
+| `rebrowser` | Chromium (stealth) | Alternative stealth approach | `npm install rebrowser-playwright` |
+| `lightpanda` | Lightpanda | Fast headless rendering | See lightpanda.io |
+| `chrome` | System Chrome | Use real Chrome with extensions | Chrome must be installed |
+
+```bash
+browse --runtime camoufox --headed goto https://protected-site.com
+BROWSE_RUNTIME=camoufox browse goto https://example.com
+```
+
+## New Features
+
+### Search Macros
+```bash
+browse goto @google "best coffee beans"    # Google search
+browse goto @youtube "tutorial"            # YouTube search
+browse goto @amazon "laptop"               # Amazon search
+browse goto @reddit "programming"          # Reddit search
+```
+
+All macros: @google, @youtube, @amazon, @reddit, @reddit_subreddit, @wikipedia, @twitter, @yelp, @spotify, @netflix, @linkedin, @instagram, @tiktok, @twitch
+
+### Safety Flags (opt-in features)
+| Flag | Default | What it does |
+|------|---------|-------------|
+| `BROWSE_CONSENT_DISMISS=1` | OFF | Auto-dismiss cookie banners after navigation |
+| `BROWSE_CLICK_FORCE=1` or `--force` | OFF | Force-click through overlay interception |
+| `BROWSE_READINESS=1` or `--ready` | OFF | Wait for hydration after goto |
+| `BROWSE_SERP_FASTPATH=1` or `--serp` | OFF | Google SERP DOM extraction (fast, no refs) |
+| `BROWSE_COMMAND_LOCK=0` | ON | Disable per-session command serialization |
+
+### New Commands
+| Command | Description |
+|---------|------------|
+| `images [sel] [--limit N] [--inline]` | List page images with src/alt/dimensions |
+| `youtube-transcript <url> [--lang en]` | Extract YouTube captions via yt-dlp or browser |
+
+### Snapshot Windowing
+Large snapshots (>80K chars) are automatically paginated:
+```bash
+browse snapshot -i                     # first page
+browse snapshot -i --offset 500        # next page (line offset from previous output)
+```
+
 ## Output Contract
 
 Report:

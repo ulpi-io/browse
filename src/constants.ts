@@ -24,4 +24,10 @@ export const DEFAULTS = {
   COMMAND_LOCK_TIMEOUT_MS: 30_000,
   MAX_CONCURRENT_PER_SESSION: 6,
   CONCURRENCY_QUEUE_TIMEOUT_MS: 30_000,
+  // Safety flags — features that change behavior default OFF (opt-in only)
+  CONSENT_DISMISS: false,        // BROWSE_CONSENT_DISMISS=1 to enable
+  CLICK_FORCE: false,            // BROWSE_CLICK_FORCE=1 to enable (or --force flag)
+  READINESS: false,              // BROWSE_READINESS=1 to enable (or --ready flag)
+  SERP_FASTPATH: false,          // BROWSE_SERP_FASTPATH=1 to enable (or --serp flag)
+  COMMAND_LOCK: true,            // BROWSE_COMMAND_LOCK=0 to disable (escape hatch)
 } as const;

@@ -30,6 +30,18 @@ export interface BrowseConfig {
   flowPaths?: string[];
   /** Maximum flow nesting depth (default: 10) */
   maxFlowDepth?: number;
+  /** Auto-dismiss cookie/consent banners (default: false) */
+  consentDismiss?: boolean;
+  /** Force-click through overlays (default: false) */
+  clickForce?: boolean;
+  /** Wait for page readiness signals before commands (default: false) */
+  readiness?: boolean;
+  /** Enable SERP fast-path extraction (default: false) */
+  serpFastpath?: boolean;
+  /** Enable per-session command lock (default: true) */
+  commandLock?: boolean;
+  /** Tab inactivity timeout in ms (default: 1_800_000) */
+  tabInactivityMs?: number;
 }
 
 /**
