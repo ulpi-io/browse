@@ -103,14 +103,15 @@ export async function handleReadCommand(
         if (!scopeHandle) throw new Error(`Element not found: ${selector}`);
       }
 
-      const images = await evalCtx.evaluate((args: { scope: Node | null; inline: boolean }) => {
+      const images = await evalCtx.evaluate((args: { scope: Node | null; inline: boolean; limit: number }) => {
         const root = (args.scope as Element | null) || document.body;
         const imgs: Array<{ src: string; alt: string; width: number; height: number; dataUrl?: string }> = [];
-        root.querySelectorAll('img').forEach((img: Element) => {
-          const el = img as HTMLImageElement;
+        const allImgs = root.querySelectorAll('img');
+        for (let i = 0; i < allImgs.length && imgs.length < args.limit; i++) {
+          const el = allImgs[i] as HTMLImageElement;
           const src = el.src || el.getAttribute('data-src') || '';
-          if (!src || (src.startsWith('data:image') && src.length < 100)) return; // skip tiny placeholders
-          if (el.naturalWidth <= 1 && el.naturalHeight <= 1) return; // skip tracking pixels
+          if (!src || (src.startsWith('data:image') && src.length < 100)) continue;
+          if (el.naturalWidth <= 1 && el.naturalHeight <= 1) continue;
           const entry: { src: string; alt: string; width: number; height: number; dataUrl?: string } = {
             src,
             alt: el.alt || '',
@@ -130,11 +131,11 @@ export async function handleReadCommand(
             } catch { /* CORS — skip inline for cross-origin */ }
           }
           imgs.push(entry);
-        });
+        }
         return imgs;
-      }, { scope: scopeHandle, inline: inlineMode });
+      }, { scope: scopeHandle, inline: inlineMode, limit });
 
-      const limited = images.slice(0, limit);
+      const limited = images;
       if (limited.length === 0) return 'No images found';
       return limited.map(img => {
         let line = `${img.src} | ${img.alt || '(no alt)'} | ${img.width}x${img.height}`;

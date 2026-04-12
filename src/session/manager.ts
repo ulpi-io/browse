@@ -34,6 +34,8 @@ export interface Session {
   contextLevel: ContextLevel;
   /** When true, write commands auto-wait for page settled signal before returning */
   settleMode: boolean;
+  /** Proxy pool reference — stored for status/inspection by future commands */
+  proxyPool?: import('../proxy').ProxyPool | null;
 }
 
 export class SessionManager {
@@ -46,6 +48,8 @@ export class SessionManager {
   private localDir: string;
   private encryptionKey: Buffer | undefined;
   private reuseContext: boolean;
+  /** Proxy pool — stored so sessions can reference it for status/rotation */
+  proxyPool?: import('../proxy').ProxyPool | null;
 
   constructor(factory: SessionTargetFactory, localDir: string = '/tmp', reuseContext = false) {
     this.factory = factory;
@@ -130,7 +134,7 @@ export class SessionManager {
 
     const buffers = new SessionBuffers();
     const effectiveFactory = this.appFactories.get(sessionId) ?? this.factory;
-    const ct = await effectiveFactory.create(buffers, this.reuseContext && this.sessions.size === 0);
+    const ct = await effectiveFactory.create(buffers, this.reuseContext && this.sessions.size === 0, { sessionId });
 
     // Apply domain filter if allowed domains are specified
     let domainFilter: DomainFilter | null = null;
@@ -168,6 +172,7 @@ export class SessionManager {
       createdAt: Date.now(),
       contextLevel: 'off',
       settleMode: false,
+      proxyPool: this.proxyPool ?? null,
     };
     this.sessions.set(sessionId, session);
     this.targets.set(sessionId, ct);

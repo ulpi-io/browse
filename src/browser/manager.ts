@@ -147,6 +147,9 @@ export class BrowserManager implements BrowserTarget {
   // Whether this instance uses a persistent browser context (profile mode)
   private isPersistent = false;
 
+  // ─── Per-context proxy (survives context recreation) ────
+  private contextProxy: { server: string; username?: string; password?: string } | null = null;
+
   // ─── Handoff state ──────────────────────────────────────
   private isHeaded = false;
   private consecutiveFailures = 0;
@@ -198,15 +201,25 @@ export class BrowserManager implements BrowserTarget {
    * Creates a new BrowserContext on the shared browser.
    * This instance does NOT own the browser — close() only closes the context.
    */
-  async launchWithBrowser(browser: Browser, reuseContext = false) {
+  async launchWithBrowser(
+    browser: Browser,
+    reuseContext = false,
+    contextOptions?: { proxy?: { server: string; username?: string; password?: string } },
+  ) {
     this.browser = browser;
     this.ownsBrowser = false;
+
+    // Store proxy for context recreation (emulateDevice, applyUserAgent)
+    if (contextOptions?.proxy) {
+      this.contextProxy = contextOptions.proxy;
+    }
 
     if (reuseContext) {
       // CDP-connected Chrome: use the existing default context (has user's cookies, extensions)
       const contexts = browser.contexts();
       this.context = contexts[0] || await browser.newContext({
         viewport: { width: 1920, height: 1080 },
+        ...(this.contextProxy ? { proxy: this.contextProxy } : {}),
       });
       await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
       await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
@@ -222,6 +235,7 @@ export class BrowserManager implements BrowserTarget {
       this.context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
         ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+        ...(this.contextProxy ? { proxy: this.contextProxy } : {}),
       });
       await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
       await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
@@ -886,6 +900,11 @@ export class BrowserManager implements BrowserTarget {
 
     // Coverage cannot survive context recreation — reset the flag
     this.coverageActive = false;
+
+    // Preserve proxy across context recreation (emulateDevice, applyUserAgent, etc.)
+    if (this.contextProxy && !contextOptions.proxy) {
+      contextOptions = { ...contextOptions, proxy: this.contextProxy };
+    }
 
     // Auto-inject recordVideo when video recording is active (so emulateDevice/applyUserAgent pass it through)
     if (this.videoRecording && !contextOptions.recordVideo) {

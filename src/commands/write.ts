@@ -179,13 +179,12 @@ export async function handleWriteCommand(
       if (process.env.BROWSE_CONSENT_DISMISS === '1') {
         await dismissConsentDialog(page).catch(() => {});  // best-effort, never fail goto
       }
-      // TASK-006: Detect Google blocks after navigation
-      if (isGoogleSearchUrl(url) || isGoogleSearchUrl(page.url())) {
-        if (await isGoogleBlocked(page)) {
-          return formatGoogleBlockError(page.url());
-        }
-      }
-      return `Navigated to ${url} (${status})`;
+      // TASK-006: Detect Google blocks — prepend warning, preserve response shape
+      const googleWarning = (isGoogleSearchUrl(url) || isGoogleSearchUrl(page.url()))
+        && await isGoogleBlocked(page)
+        ? '\n[warning] ' + formatGoogleBlockError(page.url())
+        : '';
+      return `Navigated to ${url} (${status})${googleWarning}`;
     }
 
     case 'back': {
@@ -1122,7 +1121,32 @@ export function registerWriteDefinitions(registry: CommandRegistry): void {
           }
         }
         const bt = ctx.target as BrowserTarget;
-        return handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
+        let result = await handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
+
+        // Auto-rotate proxy on Google blocks (goto only)
+        if (spec.name === 'goto'
+            && result.includes('[warning]') && result.includes('blocked')
+            && ctx.session?.proxyPool?.canRotateSessions && ctx.sessionManager) {
+          const maxRetries = DEFAULTS.PROXY_MAX_ROTATE_RETRIES;
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            console.log(`[browse] Google block detected, rotating proxy (attempt ${attempt + 1}/${maxRetries})`);
+            // Close current session and recreate — gets new proxy from pool
+            const sessionId = ctx.session.id;
+            await ctx.sessionManager.closeSession(sessionId);
+            const newSession = await ctx.sessionManager.getOrCreate(sessionId);
+            const newBt = newSession.manager as BrowserTarget;
+            result = await handleWriteCommand('goto', ctx.args, newBt, ctx.domainFilter);
+            if (!result.includes('[warning]') || !result.includes('blocked')) {
+              result += '\n[info] Proxy rotated successfully after Google block.';
+              break;
+            }
+          }
+          if (result.includes('[warning]') && result.includes('blocked')) {
+            result += '\n[info] Proxy rotation exhausted — try a different proxy provider or country.';
+          }
+        }
+
+        return result;
       },
     });
   }

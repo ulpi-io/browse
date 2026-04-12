@@ -24,6 +24,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
+import { createProxyPool, type ProxyPool, type ProxyPoolConfig } from './proxy';
 
 function nodeServe(opts: { port: number; hostname: string; fetch: (req: Request) => Promise<Response> }) {
   const server = http.createServer(async (nodeReq, nodeRes) => {
@@ -135,6 +136,7 @@ let sessionManager: SessionManager | null = null;
 let browser: Browser | null = null;
 let profileSession: Session | null = null;
 let activeRuntime: BrowserRuntime | undefined;
+let proxyPool: ProxyPool | null = null;
 let isShuttingDown = false;
 let isRemoteBrowser = false;
 const policyChecker = new PolicyChecker();
@@ -468,6 +470,33 @@ async function start() {
   activeRuntime = runtime;
   console.log(`[browse] Runtime: ${runtime.name}`);
 
+  // ─── Proxy Pool ──────────────────────────────────────────────
+  const proxyStrategy = process.env.BROWSE_PROXY_STRATEGY as 'round_robin' | 'backconnect' | undefined;
+  if (proxyStrategy) {
+    const poolConfig: ProxyPoolConfig = {
+      strategy: proxyStrategy,
+      host: process.env.BROWSE_PROXY_HOST || '',
+      ports: (process.env.BROWSE_PROXY_PORTS || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)),
+      username: process.env.BROWSE_PROXY_USERNAME || '',
+      password: process.env.BROWSE_PROXY_PASSWORD || '',
+      backconnectHost: process.env.BROWSE_PROXY_BACKCONNECT_HOST || '',
+      backconnectPort: parseInt(process.env.BROWSE_PROXY_BACKCONNECT_PORT || '7000', 10),
+      providerName: process.env.BROWSE_PROXY_PROVIDER || 'decodo',
+      country: process.env.BROWSE_PROXY_COUNTRY || '',
+      state: process.env.BROWSE_PROXY_STATE || '',
+      city: process.env.BROWSE_PROXY_CITY || '',
+      sessionDurationMinutes: DEFAULTS.PROXY_SESSION_DURATION_MINUTES,
+    };
+    proxyPool = createProxyPool(poolConfig);
+    if (proxyPool) {
+      console.log(`[browse] Proxy pool: ${proxyPool.mode} (${proxyPool.size} endpoints)`);
+    }
+    // BROWSE_PROXY_STRATEGY takes precedence over legacy BROWSE_PROXY
+    if (process.env.BROWSE_PROXY) {
+      console.log('[browse] Warning: BROWSE_PROXY_STRATEGY takes precedence over BROWSE_PROXY');
+    }
+  }
+
   // ─── Profile Mode vs Session Mode ────────────────────────────
   const profileName = process.env.BROWSE_PROFILE;
 
@@ -563,7 +592,8 @@ async function start() {
 
     const reuseContext = runtime.name === 'chrome';
     const { createBrowserTargetFactory } = await import('./session/target-factory');
-    sessionManager = new SessionManager(createBrowserTargetFactory(browser), LOCAL_DIR, reuseContext);
+    sessionManager = new SessionManager(createBrowserTargetFactory(browser, proxyPool ?? undefined), LOCAL_DIR, reuseContext);
+    if (proxyPool) sessionManager.proxyPool = proxyPool;
   }
 
   const startTime = Date.now();

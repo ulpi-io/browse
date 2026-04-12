@@ -33,14 +33,21 @@ export interface CreatedTarget {
   getTabCount(): number;
 }
 
+/** Options passed to factory.create() for per-session customization */
+export interface TargetCreateOptions {
+  /** The session ID — used by proxy pool to assign per-context proxies */
+  sessionId?: string;
+}
+
 /** Factory interface for creating automation targets within sessions */
 export interface SessionTargetFactory {
   /**
    * Create a new automation target for a session.
    * @param buffers - Per-session buffer container
    * @param reuseContext - Whether to reuse the first browser context (chrome runtime)
+   * @param opts - Optional per-session creation options
    */
-  create(buffers: SessionBuffers, reuseContext: boolean): Promise<CreatedTarget>;
+  create(buffers: SessionBuffers, reuseContext: boolean, opts?: TargetCreateOptions): Promise<CreatedTarget>;
 }
 
 /**
@@ -70,13 +77,33 @@ export async function createPersistentBrowserTarget(
 /**
  * Create the default browser-backed target factory.
  * This preserves the exact same behavior as the pre-factory SessionManager code.
+ *
+ * @param browser - Shared Browser instance for session multiplexing
+ * @param proxyPool - Optional proxy pool; when provided, each new context gets a per-session proxy
  */
-export function createBrowserTargetFactory(browser: Browser): SessionTargetFactory {
+export function createBrowserTargetFactory(
+  browser: Browser,
+  proxyPool?: import('../proxy').ProxyPool,
+): SessionTargetFactory {
   return {
-    async create(buffers: SessionBuffers, reuseContext: boolean): Promise<CreatedTarget> {
+    async create(buffers: SessionBuffers, reuseContext: boolean, opts?: TargetCreateOptions): Promise<CreatedTarget> {
       const { BrowserManager } = await import('../browser/manager');
       const bm = new BrowserManager(buffers);
-      await bm.launchWithBrowser(browser, reuseContext);
+
+      // Get per-context proxy from pool if available
+      let contextOptions: { proxy?: { server: string; username?: string; password?: string } } | undefined;
+      if (proxyPool) {
+        const proxyConfig = proxyPool.getNext(opts?.sessionId);
+        contextOptions = {
+          proxy: {
+            server: proxyConfig.server,
+            ...(proxyConfig.username ? { username: proxyConfig.username } : {}),
+            ...(proxyConfig.password ? { password: proxyConfig.password } : {}),
+          },
+        };
+      }
+
+      await bm.launchWithBrowser(browser, reuseContext, contextOptions);
       return {
         target: bm,
         getContext: () => bm.getContext(),
