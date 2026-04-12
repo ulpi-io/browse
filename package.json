@@ -53,7 +53,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --external:@modelcontextprotocol/sdk --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
+    "build": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --external:@modelcontextprotocol/sdk --external:camoufox-js --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
     "build:all": "bash scripts/build-all.sh",
     "dev": "tsx src/cli.ts",
     "server": "tsx src/server.ts",
@@ -73,6 +73,7 @@
     "vitest": "^3.0.0"
   },
   "optionalDependencies": {
+    "camoufox-js": "^0.9.3",
     "rebrowser-playwright": "^1.52.0"
   }
 }

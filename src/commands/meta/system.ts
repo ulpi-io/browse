@@ -148,6 +148,15 @@ export async function handleSystemCommand(
       } catch {
         lines.push(`Playwright: NOT INSTALLED — run "bun install playwright"`);
       }
+
+      // Camoufox (optional anti-detection runtime)
+      try {
+        const camoPkg = require('camoufox-js/package.json') as { version?: string };
+        lines.push(`Camoufox: installed (${camoPkg.version ?? 'unknown'})`);
+      } catch {
+        lines.push(`Camoufox: not installed (optional — npm install camoufox-js for anti-detection browsing)`);
+      }
+
       lines.push(`Server: running (you're connected)`);
 
       // macOS app bridge

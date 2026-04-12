@@ -24,6 +24,8 @@ export interface BrowserRuntime {
   browser?: Browser;
   /** Cleanup function -- kills spawned process, if any. */
   close?: () => Promise<void>;
+  /** Extra launch options to merge into browser.launch() call (e.g. camoufox Firefox prefs). */
+  launchOptions?: Record<string, unknown>;
 }
 
 type RuntimeLoader = () => Promise<BrowserRuntime>;
@@ -53,6 +55,19 @@ export function findLightpanda(): string | null {
   }
 
   return null;
+}
+
+/**
+ * Check whether camoufox-js is importable.
+ * Returns true if the package is installed, false otherwise.
+ */
+export async function findCamoufox(): Promise<boolean> {
+  try {
+    await import('camoufox-js');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const registry: Record<string, RuntimeLoader> = {
@@ -151,6 +166,19 @@ const registry: Record<string, RuntimeLoader> = {
         child.kill();
       },
     };
+  },
+
+  camoufox: async () => {
+    try {
+      const camou = await import('camoufox-js');
+      const camoufoxOpts = await camou.launchOptions({ headless: true, humanize: true, enable_cache: true });
+      const pw = await import('playwright-core');
+      return { name: 'camoufox', chromium: pw.firefox, launchOptions: camoufoxOpts };
+    } catch {
+      throw new Error(
+        'camoufox-js not installed. Run: npm install camoufox-js'
+      );
+    }
   },
 
   chrome: async () => {

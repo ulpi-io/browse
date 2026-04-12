@@ -50,10 +50,11 @@ export interface SessionTargetFactory {
 export async function createPersistentBrowserTarget(
   profileDir: string,
   onCrash: () => void,
+  browserType?: import('playwright').BrowserType,
 ): Promise<CreatedTarget> {
   const { BrowserManager } = await import('../browser/manager');
   const bm = new BrowserManager();
-  await bm.launchPersistent(profileDir, onCrash);
+  await bm.launchPersistent(profileDir, onCrash, browserType);
   return {
     target: bm,
     getContext: () => bm.getContext(),

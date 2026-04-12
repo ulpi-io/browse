@@ -2,7 +2,7 @@
  * Engine module — browser runtime registry, Chrome discovery, cloud providers.
  */
 
-export { getRuntime, findLightpanda, AVAILABLE_RUNTIMES } from './resolver';
+export { getRuntime, findLightpanda, findCamoufox, AVAILABLE_RUNTIMES } from './resolver';
 export type { BrowserRuntime } from './resolver';
 
 export {

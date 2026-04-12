@@ -1201,7 +1201,7 @@ describe('Video Recording', () => {
 
 // ─── Runtime registry ────────────────────────────────────────────
 
-import { getRuntime, AVAILABLE_RUNTIMES, findLightpanda } from '../src/engine/resolver';
+import { getRuntime, AVAILABLE_RUNTIMES, findLightpanda, findCamoufox } from '../src/engine/resolver';
 
 describe('Runtime registry', () => {
   test('getRuntime() defaults to playwright', async () => {
@@ -1242,6 +1242,27 @@ describe('Runtime registry', () => {
       expect(e.message).toContain('rebrowser-playwright not installed');
     }
   });
+
+  test('AVAILABLE_RUNTIMES includes camoufox', () => {
+    expect(AVAILABLE_RUNTIMES).toContain('camoufox');
+  });
+
+  test('findCamoufox returns boolean', async () => {
+    const result = await findCamoufox();
+    expect(typeof result).toBe('boolean');
+  });
+
+  test('getRuntime("camoufox") either succeeds or throws install instructions', async () => {
+    try {
+      const runtime = await getRuntime('camoufox');
+      expect(runtime.name).toBe('camoufox');
+      expect(runtime.chromium).toBeTruthy();
+      // Should have launchOptions stored
+      expect(runtime.launchOptions).toBeTruthy();
+    } catch (e: any) {
+      expect(e.message).toContain('camoufox-js not installed');
+    }
+  });
 });
 
 // ─── --runtime CLI flag ──────────────────────────────────────────
@@ -1263,6 +1284,59 @@ describe('--runtime CLI flag', () => {
     const runtime = await getRuntime('playwright');
     expect(runtime.name).toBe('playwright');
     expect(runtime.chromium).toBeTruthy();
+  });
+
+  test('AVAILABLE_RUNTIMES includes camoufox', () => {
+    expect(AVAILABLE_RUNTIMES).toContain('camoufox');
+  });
+});
+
+// ─── Camoufox runtime integration ───────────────────────────────
+
+describe('Camoufox runtime integration', () => {
+  // Skip all tests if camoufox-js is not installed
+  let camoufoxAvailable = false;
+
+  beforeAll(async () => {
+    camoufoxAvailable = await findCamoufox();
+  });
+
+  test('launch camoufox and navigate to test page', async () => {
+    if (!camoufoxAvailable) {
+      console.log('Skipping: camoufox-js not installed');
+      return;
+    }
+
+    const runtime = await getRuntime('camoufox');
+    // Merge camoufox launch options with headless flag
+    const launchOpts = {
+      ...(runtime.launchOptions || {}),
+      headless: true,
+    };
+    const browser = await runtime.chromium.launch(launchOpts);
+
+    try {
+      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+      const page = await context.newPage();
+      await page.goto(baseUrl + '/basic.html');
+
+      // Verify page loaded
+      const title = await page.title();
+      expect(title).toBeTruthy();
+
+      // Verify text extraction works
+      const text = await page.evaluate(() => document.body?.innerText || '');
+      expect(text.length).toBeGreaterThan(0);
+
+      // Verify ariaSnapshot works on Firefox
+      const snapshot = await page.locator('body').ariaSnapshot();
+      expect(snapshot).toBeTruthy();
+      expect(snapshot.length).toBeGreaterThan(0);
+
+      await context.close();
+    } finally {
+      await browser.close();
+    }
   });
 });
 

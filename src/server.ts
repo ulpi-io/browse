@@ -484,9 +484,9 @@ async function start() {
 
     const profileTarget = await createPersistentBrowserTarget(profileDir, () => {
       if (isShuttingDown) return;
-      console.error('[browse] Chromium disconnected (profile mode). Shutting down.');
+      console.error('[browse] Browser disconnected (profile mode). Shutting down.');
       shutdown();
-    });
+    }, runtime.chromium);
 
     const outputDir = path.join(LOCAL_DIR, 'sessions', profileName);
     fs.mkdirSync(outputDir, { recursive: true });
@@ -510,6 +510,9 @@ async function start() {
     // Normal mode: launch shared browser, session multiplexing via SessionManager
     const cdpUrl = process.env.BROWSE_CDP_URL;
     if (cdpUrl) {
+      if (runtime.name === 'camoufox') {
+        throw new Error('Camoufox (Firefox) does not support Chrome DevTools Protocol. Remove --cdp or use --runtime playwright.');
+      }
       // Connect to remote Chrome via CDP
       browser = await runtime.chromium.connectOverCDP(cdpUrl);
       isRemoteBrowser = true;
@@ -523,18 +526,31 @@ async function start() {
         shutdown();
       });
     } else {
-      // Launch local Chromium
-      const launchOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
+      // Launch local browser (Chromium or Firefox via camoufox)
+      const serverOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
       if (DEBUG_PORT > 0) {
-        launchOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
+        serverOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
       }
       const proxyServer = process.env.BROWSE_PROXY;
       if (proxyServer) {
-        launchOptions.proxy = { server: proxyServer };
+        serverOptions.proxy = { server: proxyServer };
         if (process.env.BROWSE_PROXY_BYPASS) {
-          launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+          serverOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
         }
       }
+
+      // Merge runtime-specific launch options (e.g. camoufox Firefox prefs)
+      const runtimeOpts = runtime.launchOptions ?? {};
+      const launchOptions: Record<string, any> = {
+        ...runtimeOpts,
+        ...serverOptions,
+        // Concatenate args arrays from both sources
+        args: [...(Array.isArray(runtimeOpts.args) ? runtimeOpts.args : []), ...(serverOptions.args ?? [])],
+        // Merge env objects (server env takes precedence)
+        ...(runtimeOpts.env || serverOptions.env
+          ? { env: { ...(runtimeOpts.env as Record<string, string> ?? {}), ...(serverOptions.env as Record<string, string> ?? {}) } }
+          : {}),
+      };
       browser = await runtime.chromium.launch(launchOptions);
 
       // Chromium crash → clean shutdown (only for owned browser)

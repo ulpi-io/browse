@@ -7,7 +7,7 @@
  *   We do NOT try to self-heal — don't hide failure.
  */
 
-import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type BrowserType, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
 import { SessionBuffers, type NetworkEntry } from '../network/buffers';
 import type { HarRecording } from '../network/har';
 import type { DomainFilter } from '../security/domain-filter';
@@ -236,10 +236,11 @@ export class BrowserManager implements BrowserTarget {
    * Data (cookies, localStorage, cache) persists across restarts.
    * The context IS the browser — closing it closes everything.
    */
-  async launchPersistent(profileDir: string, onCrash?: () => void) {
+  async launchPersistent(profileDir: string, onCrash?: () => void, browserType?: BrowserType) {
+    const launcher = browserType ?? chromium;
     let context: BrowserContext;
     try {
-      context = await chromium.launchPersistentContext(profileDir, {
+      context = await launcher.launchPersistentContext(profileDir, {
         headless: process.env.BROWSE_HEADED !== '1',
         viewport: { width: 1920, height: 1080 },
         ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
@@ -250,7 +251,7 @@ export class BrowserManager implements BrowserTarget {
         const fs = await import('fs');
         console.error(`[browse] Profile directory corrupted, recreating: ${profileDir}`);
         fs.rmSync(profileDir, { recursive: true, force: true });
-        context = await chromium.launchPersistentContext(profileDir, {
+        context = await launcher.launchPersistentContext(profileDir, {
           headless: process.env.BROWSE_HEADED !== '1',
           viewport: { width: 1920, height: 1080 },
         });
