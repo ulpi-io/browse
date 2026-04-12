@@ -241,21 +241,8 @@ export async function handleWriteCommand(
       } catch (err: any) {
         // TASK-008: Click fallback chain — only when --force or BROWSE_CLICK_FORCE=1
         if (forceMode && (err.message?.includes('intercepts pointer events') || err.message?.includes('element is covered'))) {
-          try {
-            await locator.click({ force: true, timeout: 3000 });
-          } catch {
-            const box = await locator.boundingBox();
-            if (box) {
-              const x = box.x + box.width / 2;
-              const y = box.y + box.height / 2;
-              await page.mouse.move(x, y);
-              await page.mouse.down();
-              await page.waitForTimeout(50);
-              await page.mouse.up();
-            } else {
-              throw err;  // re-throw original
-            }
-          }
+          // Force click bypasses actionability checks (overlay interception)
+          await locator.click({ force: true, timeout: 3000 });
         } else {
           if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
           throw err;

@@ -647,3 +647,28 @@ describe('Errors', () => {
     expect(result).toBe('(no errors)');
   });
 });
+
+// ─── Images command ────────────────────────────────────────────
+
+describe('Images', () => {
+  test('images lists page images excluding tracking pixels', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/images.html'], bm);
+    const result = await handleReadCommand('images', [], bm);
+    expect(result).toContain('A photo');
+    expect(result).toContain('Logo');
+    expect(result).not.toContain('pixel'); // 1x1 tracking pixel filtered
+  });
+
+  test('images with --limit caps results', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/images.html'], bm);
+    const result = await handleReadCommand('images', ['--limit', '1'], bm);
+    const lines = result.split('\n').filter(l => l.trim());
+    expect(lines.length).toBe(1);
+  });
+
+  test('images on page with no images', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    const result = await handleReadCommand('images', [], bm);
+    expect(result).toContain('No images found');
+  });
+});

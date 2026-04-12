@@ -133,8 +133,9 @@ describe('Google block detection', () => {
   test('isGoogleSearchUrl rejects Google non-search pages', () => {
     expect(isGoogleSearchUrl('https://www.google.com/maps')).toBe(false);
     expect(isGoogleSearchUrl('https://www.google.com/images')).toBe(false);
-    // mail.google.com with /search path still matches (hostname includes 'google.')
-    expect(isGoogleSearchUrl('https://mail.google.com/search?q=test')).toBe(true);
+    // mail.google.com is NOT Google Search — only www.google.* or google.* matches
+    expect(isGoogleSearchUrl('https://mail.google.com/search?q=test')).toBe(false);
+    expect(isGoogleSearchUrl('https://docs.google.com/search?q=test')).toBe(false);
   });
 
   test('isGoogleSearchUrl rejects non-search paths on google.com', () => {

@@ -11,6 +11,8 @@ import { handleReadCommand } from '../src/commands/read';
 import { handleWriteCommand } from '../src/commands/write';
 import { handleMetaCommand } from '../src/commands/meta';
 import { parseSnapshotArgs } from '../src/browser/snapshot';
+import { applySnapshotWindow, formatWindowMetadata } from '../src/browser/snapshot-window';
+import { isGoogleSerp } from '../src/browser/serp';
 import { sharedBm as bm, sharedBaseUrl as baseUrl, sharedServer as testServer } from './setup';
 
 const shutdown = async () => {};
@@ -463,5 +465,80 @@ describe('Ref invalidation', () => {
     // Navigate
     await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
     expect(bm.getRefCount()).toBe(0);
+  });
+});
+
+// ─── Snapshot Windowing ─────────────────────────────────────────
+
+describe('Snapshot windowing', () => {
+  test('returns unchanged when under limit', () => {
+    const short = 'a'.repeat(1000);
+    const result = applySnapshotWindow(short);
+    expect(result.truncated).toBe(false);
+    expect(result.text).toBe(short);
+    expect(result.hasMore).toBe(false);
+  });
+
+  test('truncates when over 80K chars (multi-line input)', () => {
+    // applySnapshotWindow splits on line boundaries, so use many short lines
+    const lines = Array.from({ length: 10_000 }, (_, i) => `@e${i} [button] "Item ${i}"`);
+    const long = lines.join('\n'); // well over 80K chars
+    expect(long.length).toBeGreaterThan(80_000);
+    const result = applySnapshotWindow(long);
+    expect(result.truncated).toBe(true);
+    expect(result.text.length).toBeLessThan(long.length);
+    expect(result.totalChars).toBe(long.length);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextOffset).toBeGreaterThan(0);
+  });
+
+  test('offset-based pagination returns different slice', () => {
+    const lines = Array.from({ length: 10_000 }, (_, i) => `@e${i} [link] "Page ${i}"`);
+    const long = lines.join('\n'); // ~100K chars across many lines
+    const first = applySnapshotWindow(long, { offset: 0 });
+    expect(first.hasMore).toBe(true);
+    const second = applySnapshotWindow(long, { offset: first.nextOffset! });
+    expect(first.text).not.toBe(second.text);
+    expect(second.offset).toBe(first.nextOffset);
+  });
+
+  test('custom maxChars is respected', () => {
+    const lines = Array.from({ length: 5_000 }, (_, i) => `@e${i} [item] "Entry ${i}"`);
+    const text = lines.join('\n');
+    expect(text.length).toBeGreaterThan(20_000);
+    const result = applySnapshotWindow(text, { maxChars: 20_000 });
+    expect(result.truncated).toBe(true);
+    // The output should be significantly smaller than the input
+    expect(result.text.length).toBeLessThan(text.length);
+    expect(result.text.length).toBeLessThan(25_000);
+  });
+
+  test('formatWindowMetadata returns empty for non-truncated', () => {
+    const result = applySnapshotWindow('short');
+    expect(formatWindowMetadata(result)).toBe('');
+  });
+
+  test('formatWindowMetadata includes offset info for truncated', () => {
+    const lines = Array.from({ length: 10_000 }, (_, i) => `@e${i} [button] "Btn ${i}"`);
+    const long = lines.join('\n');
+    const result = applySnapshotWindow(long);
+    const meta = formatWindowMetadata(result);
+    expect(meta).toContain('truncated');
+    expect(meta).toContain('--offset');
+  });
+});
+
+// ─── Google SERP Detection ──────────────────────────────────────
+
+describe('Google SERP detection', () => {
+  test('isGoogleSerp identifies Google search pages', () => {
+    expect(isGoogleSerp('https://www.google.com/search?q=test')).toBe(true);
+    expect(isGoogleSerp('https://google.co.uk/search?q=test')).toBe(true);
+  });
+
+  test('isGoogleSerp rejects non-search pages', () => {
+    expect(isGoogleSerp('https://www.google.com/')).toBe(false);
+    expect(isGoogleSerp('https://example.com/search?q=test')).toBe(false);
+    expect(isGoogleSerp('https://mail.google.com/mail/search')).toBe(false);
   });
 });

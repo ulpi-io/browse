@@ -25,13 +25,13 @@ export async function handleReadCommand(
 
   switch (command) {
     case 'text': {
-      // TASK-006: Warn when Google has blocked the page
-      if (await isGoogleBlocked(page)) {
-        return '[warning: Google has blocked this page]\n' + formatGoogleBlockError(page.url());
-      }
+      // TASK-006: Detect Google block — prepend warning but still return page text
+      const googleBlockWarning = (await isGoogleBlocked(page))
+        ? '[warning: Google has blocked this page] ' + formatGoogleBlockError(page.url()) + '\n\n'
+        : '';
       // TreeWalker-based extraction — never appends to the live DOM,
       // so MutationObservers are not triggered.
-      return await evalCtx.evaluate(() => {
+      const textContent = await evalCtx.evaluate(() => {
         const body = document.body;
         if (!body) return '';
         const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG']);
@@ -55,6 +55,7 @@ export async function handleReadCommand(
         }
         return lines.join('\n');
       });
+      return googleBlockWarning + textContent;
     }
 
     case 'html': {
@@ -81,6 +82,66 @@ export async function handleReadCommand(
         })).filter(l => l.text && l.href)
       );
       return links.map(l => `${l.text} → ${l.href}`).join('\n');
+    }
+
+    case 'images': {
+      const limitIdx = args.indexOf('--limit');
+      const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) || 100 : 100;
+      const inlineMode = args.includes('--inline');
+      const filteredArgs = args.filter((a, i) => a !== '--limit' && a !== '--inline' && (limitIdx === -1 || i !== limitIdx + 1));
+      const selector = filteredArgs[0];
+
+      // Resolve @ref to a locator for scoped queries
+      let scopeHandle: import('playwright-core').ElementHandle | null = null;
+      if (selector) {
+        const resolved = bm.resolveRef(selector);
+        if ('locator' in resolved) {
+          scopeHandle = await resolved.locator.elementHandle();
+        } else {
+          scopeHandle = await page.$(resolved.selector);
+        }
+        if (!scopeHandle) throw new Error(`Element not found: ${selector}`);
+      }
+
+      const images = await evalCtx.evaluate((args: { scope: Node | null; inline: boolean }) => {
+        const root = (args.scope as Element | null) || document.body;
+        const imgs: Array<{ src: string; alt: string; width: number; height: number; dataUrl?: string }> = [];
+        root.querySelectorAll('img').forEach((img: Element) => {
+          const el = img as HTMLImageElement;
+          const src = el.src || el.getAttribute('data-src') || '';
+          if (!src || (src.startsWith('data:image') && src.length < 100)) return; // skip tiny placeholders
+          if (el.naturalWidth <= 1 && el.naturalHeight <= 1) return; // skip tracking pixels
+          const entry: { src: string; alt: string; width: number; height: number; dataUrl?: string } = {
+            src,
+            alt: el.alt || '',
+            width: el.naturalWidth || el.width,
+            height: el.naturalHeight || el.height,
+          };
+          if (args.inline) {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = el.naturalWidth || el.width;
+              canvas.height = el.naturalHeight || el.height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(el, 0, 0);
+                entry.dataUrl = canvas.toDataURL('image/png');
+              }
+            } catch { /* CORS — skip inline for cross-origin */ }
+          }
+          imgs.push(entry);
+        });
+        return imgs;
+      }, { scope: scopeHandle, inline: inlineMode });
+
+      const limited = images.slice(0, limit);
+      if (limited.length === 0) return 'No images found';
+      return limited.map(img => {
+        let line = `${img.src} | ${img.alt || '(no alt)'} | ${img.width}x${img.height}`;
+        if (img.dataUrl) line += `\n  data: ${img.dataUrl}`;
+        return line;
+      }
+      ).join('\n');
     }
 
     case 'forms': {

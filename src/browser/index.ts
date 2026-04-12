@@ -25,6 +25,7 @@ export { RefManager } from './refs';
 export {
   handleSnapshot,
   parseSnapshotArgs,
+  type SnapshotOptions,
 } from './snapshot';
 
 export { expandMacro, listMacros } from './macros';
@@ -52,3 +53,7 @@ export { isGoogleSearchUrl, isGoogleBlocked, formatGoogleBlockError } from './de
 export { dismissConsentDialog } from './consent';
 
 export { waitForPageReady, type ReadinessOptions } from './readiness';
+
+export { applySnapshotWindow, formatWindowMetadata, type WindowResult } from './snapshot-window';
+
+export { isGoogleSerp, extractGoogleSerp } from './serp';

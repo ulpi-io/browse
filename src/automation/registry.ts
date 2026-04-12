@@ -153,6 +153,17 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Buffer index (e.g. "3") or URL pattern (e.g. "/api/cart").' } }, required: ['query'] },
     argDecode: (p) => [String(p.query)],
   } }),
+  r('images',         'List page images with src, alt, and dimensions',   { usage: '[selector] [--limit N] [--inline]', safeToRetry: true, pageContent: true, mcp: {
+    description: 'List <img> elements on the page with src, alt text, and dimensions. Optional selector to scope. --limit N caps results (default 100). --inline includes base64 data URL for same-origin images.',
+    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to scope image search' }, limit: { type: 'number', description: 'Maximum images to return (default 100)' }, inline: { type: 'boolean', description: 'Include base64 data URLs for same-origin images' } } },
+    argDecode: (p: Record<string, unknown>) => {
+      const args: string[] = [];
+      if (p.selector) args.push(String(p.selector));
+      if (p.limit) args.push('--limit', String(p.limit));
+      if (p.inline) args.push('--inline');
+      return args;
+    },
+  } }),
 ]);
 
 // ─── Write Commands ──────────────────────────────────────────────
@@ -541,9 +552,9 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { url1: { type: 'string', description: 'First URL to compare.' }, url2: { type: 'string', description: 'Second URL to compare.' } }, required: ['url1', 'url2'] },
     argDecode: (p) => [String(p.url1), String(p.url2)],
   } }),
-  m('snapshot',         'Accessibility tree with @refs',                    { usage: '[-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]', safeToRetry: true, pageContent: true, mcp: {
+  m('snapshot',         'Accessibility tree with @refs',                    { usage: '[-i] [-f] [-V] [-c] [-C] [-d N] [-s sel] [--offset N] [--max-chars N] [--serp]', safeToRetry: true, pageContent: true, mcp: {
     description: 'Get the accessibility tree of the current page with @ref identifiers for each element. Use -i for interactive elements only (the most common usage). Refs like @e1, @e2 can be used with click, fill, and other commands. This is the primary way to understand page structure and find elements to interact with.',
-    inputSchema: { type: 'object', properties: { interactive: { type: 'boolean', description: 'Show only interactive elements (buttons, links, inputs, etc.). This is the most commonly used mode.' }, compact: { type: 'boolean', description: 'Remove empty structural elements from the tree.' }, cursor: { type: 'boolean', description: 'Include cursor-interactive elements (divs with onclick, cursor:pointer, etc.) that are not in the ARIA tree.' }, depth: { type: 'number', description: 'Limit the tree depth (e.g. 3 = only top 3 levels).' }, selector: { type: 'string', description: 'CSS selector to scope the snapshot to a subtree.' }, viewport: { type: 'boolean', description: 'Only include elements visible in the current viewport.' }, full: { type: 'boolean', description: 'Show full indented ARIA tree with props and children (overrides the default terse flat list when -i is used).' } } },
+    inputSchema: { type: 'object', properties: { interactive: { type: 'boolean', description: 'Show only interactive elements (buttons, links, inputs, etc.). This is the most commonly used mode.' }, compact: { type: 'boolean', description: 'Remove empty structural elements from the tree.' }, cursor: { type: 'boolean', description: 'Include cursor-interactive elements (divs with onclick, cursor:pointer, etc.) that are not in the ARIA tree.' }, depth: { type: 'number', description: 'Limit the tree depth (e.g. 3 = only top 3 levels).' }, selector: { type: 'string', description: 'CSS selector to scope the snapshot to a subtree.' }, viewport: { type: 'boolean', description: 'Only include elements visible in the current viewport.' }, full: { type: 'boolean', description: 'Show full indented ARIA tree with props and children (overrides the default terse flat list when -i is used).' }, offset: { type: 'number', description: 'Character offset for snapshot windowing. Use to paginate through large snapshots.' }, maxChars: { type: 'number', description: 'Maximum characters to return (default: 80000). Large snapshots are truncated with pagination hints.' }, serp: { type: 'boolean', description: 'Enable Google SERP fast-path extraction. When on a Google search results page, extracts results via DOM instead of ARIA snapshot for ~2x speed.' } } },
     argDecode: (p) => {
       const args: string[] = [];
       if (p.interactive) args.push('-i');
@@ -553,6 +564,9 @@ registry.registerAll([
       if (p.full) args.push('-f');
       if (p.depth != null) { args.push('-d', String(p.depth)); }
       if (p.selector) { args.push('-s', String(p.selector)); }
+      if (p.offset != null) { args.push('--offset', String(p.offset)); }
+      if (p.maxChars != null) { args.push('--max-chars', String(p.maxChars)); }
+      if (p.serp) args.push('--serp');
       return args;
     },
   } }),

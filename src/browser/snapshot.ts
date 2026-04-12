@@ -29,7 +29,7 @@ const INTERACTIVE_ROLES = new Set([
   'treeitem',
 ]);
 
-interface SnapshotOptions {
+export interface SnapshotOptions {
   interactive?: boolean;  // -i: only interactive elements (terse flat list by default)
   full?: boolean;         // -f: full indented ARIA tree with props/children (overrides -i terse default)
   compact?: boolean;      // -c: remove empty structural elements
@@ -37,6 +37,9 @@ interface SnapshotOptions {
   depth?: number;         // -d N: limit tree depth
   selector?: string;      // -s SEL: scope to CSS selector
   cursor?: boolean;       // -C: detect cursor-interactive elements (divs with cursor:pointer, onclick, tabindex)
+  offset?: number;        // --offset N: windowing offset in chars (applied at command handler level, not inside handleSnapshot)
+  maxChars?: number;      // --max-chars N: windowing budget in chars (applied at command handler level, not inside handleSnapshot)
+  serp?: boolean;         // --serp: enable Google SERP fast-path extraction
 }
 
 interface ParsedNode {
@@ -95,6 +98,17 @@ export function parseSnapshotArgs(args: string[]): SnapshotOptions {
       case '--selector':
         opts.selector = args[++i];
         if (!opts.selector) throw new Error('Usage: snapshot -s <selector>');
+        break;
+      case '--offset':
+        opts.offset = parseInt(args[++i], 10);
+        if (isNaN(opts.offset!)) throw new Error('Usage: snapshot --offset <number>');
+        break;
+      case '--max-chars':
+        opts.maxChars = parseInt(args[++i], 10);
+        if (isNaN(opts.maxChars!)) throw new Error('Usage: snapshot --max-chars <number>');
+        break;
+      case '--serp':
+        opts.serp = true;
         break;
       default:
         throw new Error(`Unknown snapshot flag: ${args[i]}`);
