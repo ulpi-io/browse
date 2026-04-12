@@ -1154,9 +1154,11 @@ export function registerWriteDefinitions(registry: CommandRegistry): void {
           for (let attempt = 0; attempt < maxRetries; attempt++) {
             console.log(`[browse] Google block detected, rotating proxy (attempt ${attempt + 1}/${maxRetries})`);
             // Close current session and recreate — gets new proxy from pool
+            // Preserve allowedDomains config so domain filter is restored
             const sessionId = ctx.session.id;
+            const allowedDomains = ctx.session.allowedDomainsConfig;
             await ctx.sessionManager.closeSession(sessionId);
-            const newSession = await ctx.sessionManager.getOrCreate(sessionId);
+            const newSession = await ctx.sessionManager.getOrCreate(sessionId, allowedDomains);
             const newBt = newSession.manager as BrowserTarget;
             result = await handleWriteCommand('goto', ctx.args, newBt, ctx.domainFilter);
             if (!result.includes('[warning]') || !result.includes('blocked')) {

@@ -41,6 +41,8 @@ export interface Session {
   proxyPool?: import('../proxy').ProxyPool | null;
   /** Per-session command serialization lock */
   commandLock?: TabLock;
+  /** Allowed domains config string — preserved for session recreation (proxy rotation) */
+  allowedDomainsConfig?: string;
 }
 
 export class SessionManager {
@@ -179,6 +181,7 @@ export class SessionManager {
       settleMode: false,
       proxyPool: this.proxyPool ?? null,
       commandLock: new TabLock(),
+      allowedDomainsConfig: allowedDomains,
     };
     this.sessions.set(sessionId, session);
     this.targets.set(sessionId, ct);
@@ -269,6 +272,8 @@ export class SessionManager {
     const now = Date.now();
     for (const [id, session] of this.sessions) {
       if (!session.tabActivity) continue;
+      // Skip session if a command is currently executing (lock held)
+      if (session.commandLock?.isLocked()) continue;
 
       const ct = this.targets.get(id);
       if (!ct) continue;

@@ -576,11 +576,18 @@ async function start() {
       if (DEBUG_PORT > 0) {
         serverOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
       }
-      const proxyServer = process.env.BROWSE_PROXY;
-      if (proxyServer) {
-        serverOptions.proxy = { server: proxyServer };
-        if (process.env.BROWSE_PROXY_BYPASS) {
-          serverOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+      // Browser-level proxy: pool launch proxy takes precedence over legacy BROWSE_PROXY
+      if (proxyPool) {
+        const launchProxy = proxyPool.getLaunchProxy();
+        serverOptions.proxy = { server: launchProxy.server, username: launchProxy.username, password: launchProxy.password };
+        console.log(`[browse] Browser launch proxy: ${launchProxy.server}`);
+      } else {
+        const proxyServer = process.env.BROWSE_PROXY;
+        if (proxyServer) {
+          serverOptions.proxy = { server: proxyServer };
+          if (process.env.BROWSE_PROXY_BYPASS) {
+            serverOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+          }
         }
       }
 
@@ -655,17 +662,21 @@ async function start() {
       // Health check — no auth required
       if (url.pathname === '/health') {
         let healthy: boolean;
+        let browserReady: boolean;
         let sessionCount: number;
         if (profileSession) {
-          // Profile mode: check if the browser target context is still alive
           healthy = !isShuttingDown && profileSession.manager.isReady();
+          browserReady = healthy;
           sessionCount = 1;
         } else {
-          healthy = !isShuttingDown && !!browser && browser.isConnected();
+          browserReady = !!browser && browser.isConnected();
+          // Server is healthy if not shutting down — browser may still be starting (warm retry)
+          healthy = !isShuttingDown;
           sessionCount = sessionManager ? sessionManager.getSessionCount() : 0;
         }
         return new Response(JSON.stringify({
           status: healthy ? 'healthy' : 'unhealthy',
+          browserReady,
           uptime: Math.floor((Date.now() - startTime) / 1000),
           sessions: sessionCount,
           ...(profileName ? { profile: profileName } : {}),
