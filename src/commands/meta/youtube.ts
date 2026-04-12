@@ -9,6 +9,7 @@ import { detectYtDlp, hasYtDlp, extractVideoId, ytDlpTranscript } from '../../br
 export async function handleYoutubeTranscript(
   args: string[],
   bm: BrowserTarget,
+  proxyUrl?: string | null,
 ): Promise<string> {
   const url = args[0];
   if (!url) throw new Error('Usage: browse youtube-transcript <url> [--lang en]');
@@ -23,41 +24,44 @@ export async function handleYoutubeTranscript(
   await detectYtDlp();
 
   if (hasYtDlp()) {
-    const result = await ytDlpTranscript(url, lang);
+    const result = await ytDlpTranscript(url, lang, proxyUrl);
     if (result) {
       return `Title: ${result.title}\nLanguage: ${result.language}\n\n${result.text}`;
     }
     // Fall through to browser method if yt-dlp fails
   }
 
-  // Browser fallback: navigate to video, intercept timedtext response
-  const page = bm.getPage();
+  // Browser fallback: open video in a temporary tab, intercept timedtext response
+  // Uses a new tab to avoid mutating the agent's current page state
+  const context = (bm as any).getContext?.();
+  const tempPage = context ? await context.newPage() : bm.getPage();
+  const isTemp = tempPage !== bm.getPage();
   const captured: { text: string | null } = { text: null };
 
   // Set up response interceptor for timedtext
   const captureHandler = async (response: any) => {
     const respUrl = response.url();
-    if (respUrl.includes('/api/timedtext') && respUrl.includes(`v=${videoId}`) && !captured.text) {
+    if (respUrl.includes('/api/timedtext') && respUrl.includes(`v=${videoId}`) && (respUrl.includes(`lang=${lang}`) || respUrl.includes(`tlang=${lang}`)) && !captured.text) {
       try {
         const body = await response.text();
         if (body && body.length > 0) captured.text = body;
       } catch { /* ignore */ }
     }
   };
-  page.on('response', captureHandler);
+  tempPage.on('response', captureHandler);
 
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await tempPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
     // Mute and play video to trigger caption loading
-    await page.evaluate(() => {
+    await tempPage.evaluate(() => {
       const v = document.querySelector('video') as HTMLVideoElement;
       if (v) { v.muted = true; v.play().catch(() => {}); }
     }).catch(() => {});
 
     // Wait for caption intercept (up to 20s)
     for (let i = 0; i < 40 && !captured.text; i++) {
-      await page.waitForTimeout(500);
+      await tempPage.waitForTimeout(500);
     }
 
     if (!captured.text) {
@@ -74,9 +78,10 @@ export async function handleYoutubeTranscript(
 
     if (!text) return 'Caption data captured but could not be parsed.';
 
-    const title = await page.title().catch(() => 'Unknown');
-    return `Title: ${title}\nLanguage: ${lang}\n\n${text}`;
+    const title = await tempPage.title().catch(() => 'Unknown');
+    return `Title: ${title}\nLanguage: ${lang} (browser fallback)\n\n${text}`;
   } finally {
-    page.off('response', captureHandler);
+    tempPage.off('response', captureHandler);
+    if (isTemp) await tempPage.close().catch(() => {});
   }
 }

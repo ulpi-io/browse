@@ -100,7 +100,9 @@ export async function handleMetaCommand(
 
   if (YOUTUBE_COMMANDS.has(command)) {
     const { handleYoutubeTranscript } = await import('./youtube');
-    return handleYoutubeTranscript(args, bm());
+    // Thread proxy URL for yt-dlp — read from env (same source as server proxy config)
+    const effectiveProxy = process.env.BROWSE_PROXY || undefined;
+    return handleYoutubeTranscript(args, bm(), effectiveProxy);
   }
 
   throw new Error(`Unknown meta command: ${command}`);

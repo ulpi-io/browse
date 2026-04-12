@@ -603,28 +603,8 @@ async function start() {
           ? { env: { ...(runtimeOpts.env as Record<string, string> ?? {}), ...(serverOptions.env as Record<string, string> ?? {}) } }
           : {}),
       };
-      // Launch with retry (exponential backoff)
-      const maxLaunchRetries = parseInt(process.env.BROWSE_LAUNCH_RETRIES || String(DEFAULTS.BROWSER_LAUNCH_RETRIES), 10);
-      const baseDelay = DEFAULTS.BROWSER_LAUNCH_BASE_DELAY_MS;
-      let launchAttempt = 0;
-      let lastLaunchError: Error | null = null;
-      while (launchAttempt < maxLaunchRetries) {
-        try {
-          browser = await runtime.chromium.launch(launchOptions);
-          break;
-        } catch (err: any) {
-          lastLaunchError = err;
-          launchAttempt++;
-          if (launchAttempt < maxLaunchRetries) {
-            const delay = baseDelay * Math.pow(2, launchAttempt - 1);
-            console.log(`[browse] Browser launch failed (attempt ${launchAttempt}/${maxLaunchRetries}), retrying in ${delay}ms: ${err.message}`);
-            await new Promise(r => setTimeout(r, delay));
-          }
-        }
-      }
-      if (!browser) {
-        throw lastLaunchError || new Error('Browser launch failed after all retries');
-      }
+      // Launch browser — fails fast, CLI handles restart on crash
+      browser = await runtime.chromium.launch(launchOptions);
 
       // Chromium crash → clean shutdown (only for owned browser)
       browser.on('disconnected', () => {
@@ -662,21 +642,16 @@ async function start() {
       // Health check — no auth required
       if (url.pathname === '/health') {
         let healthy: boolean;
-        let browserReady: boolean;
         let sessionCount: number;
         if (profileSession) {
           healthy = !isShuttingDown && profileSession.manager.isReady();
-          browserReady = healthy;
           sessionCount = 1;
         } else {
-          browserReady = !!browser && browser.isConnected();
-          // Server is healthy if not shutting down — browser may still be starting (warm retry)
-          healthy = !isShuttingDown;
+          healthy = !isShuttingDown && !!browser && browser.isConnected();
           sessionCount = sessionManager ? sessionManager.getSessionCount() : 0;
         }
         return new Response(JSON.stringify({
           status: healthy ? 'healthy' : 'unhealthy',
-          browserReady,
           uptime: Math.floor((Date.now() - startTime) / 1000),
           sessions: sessionCount,
           ...(profileName ? { profile: profileName } : {}),

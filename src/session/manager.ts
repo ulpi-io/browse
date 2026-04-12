@@ -130,6 +130,7 @@ export class SessionManager {
             }
           }
           session.domainFilter = domainFilter;
+          session.allowedDomainsConfig = allowedDomains;
         }
       }
       return session;

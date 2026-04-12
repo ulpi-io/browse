@@ -19,8 +19,7 @@ export const DEFAULTS = {
   PROXY_MAX_ROTATE_RETRIES: 3,
   TAB_INACTIVITY_MS: 1_800_000,          // 30 min (matches session timeout)
   TAB_REAP_INTERVAL_MS: 60_000,          // check every 60s
-  BROWSER_LAUNCH_RETRIES: 3,
-  BROWSER_LAUNCH_BASE_DELAY_MS: 1_000,
+  // Browser launch retries removed — CLI handles restart on crash (architecture mismatch)
   COMMAND_LOCK_TIMEOUT_MS: 30_000,
   MAX_CONCURRENT_PER_SESSION: 6,
   CONCURRENCY_QUEUE_TIMEOUT_MS: 30_000,
