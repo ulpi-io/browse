@@ -420,12 +420,13 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to highlight.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
   } }),
-  w('download',        'Download file by clicking element',                 { usage: '<sel> [path]', mcp: {
-    description: 'Click an element that triggers a download and save the file. Returns the saved file path.',
-    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the download trigger element.' }, path: { type: 'string', description: 'File path to save the download to (defaults to suggested filename).' } }, required: ['selector'] },
+  w('download',        'Download file by clicking element',                 { usage: '<sel> [path] [--inline]', mcp: {
+    description: 'Click an element that triggers a download and save the file. Returns the saved file path, or with inline=true returns the file content as a base64 data URL.',
+    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the download trigger element.' }, path: { type: 'string', description: 'File path to save the download to (defaults to suggested filename).' }, inline: { type: 'boolean', description: 'Return file content as base64 data URL instead of just the file path.' } }, required: ['selector'] },
     argDecode: (p) => {
       const args = [String(p.selector)];
       if (p.path) args.push(String(p.path));
+      if (p.inline) args.push('--inline');
       return args;
     },
   } }),
@@ -812,6 +813,15 @@ registry.registerAll([
       if (p.platform) args.push('--platform', String(p.platform));
       if (p.device) args.push('--device', String(p.device));
       if (p.app) args.push('--app', String(p.app));
+      return args;
+    },
+  } }),
+  m('youtube-transcript', 'Extract captions from a YouTube video',          { usage: '<url> [--lang en]', mcp: {
+    description: 'Extract transcript/captions from a YouTube video. Uses yt-dlp when available (fast), falls back to browser-based intercept. Returns timestamped text.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'YouTube video URL' }, lang: { type: 'string', description: 'Caption language code (default: en)' } }, required: ['url'] },
+    argDecode: (p: Record<string, unknown>) => {
+      const args = [String(p.url)];
+      if (p.lang) args.push('--lang', String(p.lang));
       return args;
     },
   } }),

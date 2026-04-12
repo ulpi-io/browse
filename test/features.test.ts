@@ -2639,3 +2639,83 @@ describe('Command Executor Pipeline', () => {
     expect(def!.mcpArgDecode!({ url: 'https://example.com' })).toEqual(['https://example.com']);
   });
 });
+
+// ─── YouTube parsers ──────────────────────────────────────────
+
+import { parseJson3, parseVtt, parseXml, extractVideoId } from '../src/browser/youtube';
+import { parseNetscapeCookieFile } from '../src/browser/cookie-import';
+
+describe('YouTube parsers', () => {
+  test('parseJson3 extracts timestamped text', () => {
+    const json = JSON.stringify({
+      events: [
+        { tStartMs: 0, segs: [{ utf8: 'Hello' }] },
+        { tStartMs: 65000, segs: [{ utf8: 'World' }] },
+      ],
+    });
+    const result = parseJson3(json);
+    expect(result).toContain('[00:00] Hello');
+    expect(result).toContain('[01:05] World');
+  });
+
+  test('parseJson3 returns null on invalid JSON', () => {
+    expect(parseJson3('not json')).toBeNull();
+  });
+
+  test('parseVtt strips HTML tags and deduplicates', () => {
+    const vtt = 'WEBVTT\n\n00:00.000 --> 00:05.000\n<b>Hello</b> world\n\n00:05.000 --> 00:10.000\nHello world\n\n00:10.000 --> 00:15.000\nGoodbye';
+    const result = parseVtt(vtt);
+    expect(result).toContain('Hello world');
+    expect(result).toContain('Goodbye');
+    // Should not duplicate "Hello world"
+    expect(result!.split('Hello world').length - 1).toBe(1);
+  });
+
+  test('parseVtt returns null on empty', () => {
+    expect(parseVtt('')).toBeNull();
+  });
+
+  test('parseXml extracts text from TTML tags', () => {
+    const xml = '<tt><body><div><text start="0" dur="5">Hello</text><text start="5" dur="5">World</text></div></body></tt>';
+    const result = parseXml(xml);
+    expect(result).toContain('Hello');
+    expect(result).toContain('World');
+  });
+
+  test('extractVideoId parses YouTube URLs', () => {
+    expect(extractVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+    expect(extractVideoId('https://youtu.be/dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+    expect(extractVideoId('https://youtube.com/shorts/dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+    expect(extractVideoId('https://example.com')).toBeNull();
+  });
+});
+
+describe('Netscape cookie parser', () => {
+  test('parses standard Netscape format', () => {
+    const content = '.example.com\tTRUE\t/\tFALSE\t0\tsession_id\tabc123';
+    const cookies = parseNetscapeCookieFile(content);
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0].name).toBe('session_id');
+    expect(cookies[0].value).toBe('abc123');
+    expect(cookies[0].domain).toBe('.example.com');
+    expect(cookies[0].secure).toBe(false);
+  });
+
+  test('handles HttpOnly prefix', () => {
+    const content = '#HttpOnly_.example.com\tTRUE\t/\tTRUE\t0\tauth\ttoken123';
+    const cookies = parseNetscapeCookieFile(content);
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0].httpOnly).toBe(true);
+    expect(cookies[0].secure).toBe(true);
+  });
+
+  test('skips comments and blank lines', () => {
+    const content = '# Netscape cookie file\n\n.example.com\tTRUE\t/\tFALSE\t0\tname\tvalue';
+    const cookies = parseNetscapeCookieFile(content);
+    expect(cookies).toHaveLength(1);
+  });
+
+  test('returns empty array for empty input', () => {
+    expect(parseNetscapeCookieFile('')).toHaveLength(0);
+  });
+});

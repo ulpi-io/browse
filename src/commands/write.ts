@@ -794,8 +794,10 @@ export async function handleWriteCommand(
     }
 
     case 'download': {
-      const [selector, savePath] = args;
-      if (!selector) throw new Error('Usage: browse download <selector> [path]');
+      const inline = args.includes('--inline');
+      const filteredArgs = args.filter(a => a !== '--inline');
+      const [selector, savePath] = filteredArgs;
+      if (!selector) throw new Error('Usage: browse download <selector> [path] [--inline]');
       const resolved = bm.resolveRef(selector);
       const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
       const [download] = await Promise.all([
@@ -804,6 +806,27 @@ export async function handleWriteCommand(
       ]);
       const finalPath = savePath || download.suggestedFilename();
       await download.saveAs(finalPath);
+
+      if (inline) {
+        const fileContent = fs.readFileSync(finalPath);
+        const base64 = fileContent.toString('base64');
+        const ext = finalPath.toLowerCase();
+        const mimeType = ext.endsWith('.pdf') ? 'application/pdf'
+          : ext.endsWith('.png') ? 'image/png'
+          : ext.endsWith('.jpg') || ext.endsWith('.jpeg') ? 'image/jpeg'
+          : ext.endsWith('.gif') ? 'image/gif'
+          : ext.endsWith('.svg') ? 'image/svg+xml'
+          : ext.endsWith('.webp') ? 'image/webp'
+          : ext.endsWith('.json') ? 'application/json'
+          : ext.endsWith('.csv') ? 'text/csv'
+          : ext.endsWith('.txt') ? 'text/plain'
+          : ext.endsWith('.html') || ext.endsWith('.htm') ? 'text/html'
+          : ext.endsWith('.xml') ? 'application/xml'
+          : ext.endsWith('.zip') ? 'application/zip'
+          : 'application/octet-stream';
+        return `Downloaded ${finalPath} (${fileContent.length} bytes)\ndata:${mimeType};base64,${base64}`;
+      }
+
       return `Downloaded: ${finalPath}`;
     }
 

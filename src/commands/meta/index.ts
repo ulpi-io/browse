@@ -42,6 +42,8 @@ const WORKFLOW_COMMANDS = new Set(['flow', 'retry', 'watch']);
 
 const SIM_COMMANDS = new Set(['sim']);
 
+const YOUTUBE_COMMANDS = new Set(['youtube-transcript']);
+
 export async function handleMetaCommand(
   command: string,
   args: string[],
@@ -94,6 +96,11 @@ export async function handleMetaCommand(
 
   if (SIM_COMMANDS.has(command)) {
     return handleSimCommand(command, args, bm(), shutdown, sessionManager, currentSession);
+  }
+
+  if (YOUTUBE_COMMANDS.has(command)) {
+    const { handleYoutubeTranscript } = await import('./youtube');
+    return handleYoutubeTranscript(args, bm());
   }
 
   throw new Error(`Unknown meta command: ${command}`);

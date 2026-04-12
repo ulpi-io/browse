@@ -57,3 +57,15 @@ export { waitForPageReady, type ReadinessOptions } from './readiness';
 export { applySnapshotWindow, formatWindowMetadata, type WindowResult } from './snapshot-window';
 
 export { isGoogleSerp, extractGoogleSerp } from './serp';
+
+export { parseNetscapeCookieFile } from './cookie-import';
+
+export {
+  detectYtDlp,
+  hasYtDlp,
+  extractVideoId,
+  ytDlpTranscript,
+  parseJson3,
+  parseVtt,
+  parseXml,
+} from './youtube';
