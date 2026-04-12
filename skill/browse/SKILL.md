@@ -32,6 +32,8 @@ Before running any browse command, decide the correct target:
 |---|---|---|
 | Open a URL, test a website, scrape web content | **Browser** (default) | `browse goto <url>` |
 | Test a local dev server (`localhost`) | **Browser** | `browse goto http://localhost:3000` |
+| Browse a site that blocks bots (Cloudflare, Turnstile) | **Camoufox** | `browse --runtime camoufox --headed goto <url>` |
+| Search Google, YouTube, Amazon, etc. | **Browser** | `browse goto @google "query"` |
 | Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
 | Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
 | Interact with a macOS desktop app (System Settings, TextEdit) | **macOS App** | `browse --app <name> <cmd>` |
@@ -40,11 +42,14 @@ Before running any browse command, decide the correct target:
 
 **Key rules:**
 - **No `--platform` or `--app` flag** → browser target (Chromium). Use `goto` to navigate.
+- **`--runtime camoufox --headed`** → anti-detection Firefox. Use when site blocks normal browsing. See `/browse-stealth` skill for Turnstile/CAPTCHA bypass patterns.
+- **`@macro` in goto URL** → search macro expansion. `browse goto @google "query"` expands to Google search URL. 14 macros: @google, @youtube, @amazon, @reddit, @wikipedia, @twitter, @yelp, @spotify, @netflix, @linkedin, @instagram, @tiktok, @twitch, @reddit_subreddit.
 - **`--app` without `--platform`** → macOS app automation. App must be running.
 - **`--platform ios --app`** → iOS Simulator. Use `browse sim start` first if not running.
 - **`--platform android --app`** → Android Emulator. Use `browse sim start` first if not running.
 - **Native app targets do NOT support**: `goto`, `js`, `eval`, `tabs`, `cookies`, `route`, `har`. These are browser-only.
 - **All targets support**: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
+- **If a site blocks you**, switch to `--runtime camoufox --headed`. If still blocked, use `/browse-stealth` for the full Turnstile bypass pattern.
 - **If unsure which target to use, ASK the user.** Don't guess — wrong target = wasted work.
 
 ## Goal
