@@ -7,3 +7,5 @@ export {
   cleanOldStates,
 } from './persist';
 export { resolveEncryptionKey, encrypt, decrypt } from './encryption';
+export { TabLock, TabLockTimeoutError } from './tab-lock';
+export { ConcurrencyLimiter, ConcurrencyLimitError, withUserLimit } from './concurrency';

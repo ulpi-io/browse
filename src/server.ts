@@ -25,6 +25,7 @@ import * as crypto from 'crypto';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
 import { createProxyPool, type ProxyPool, type ProxyPoolConfig } from './proxy';
+import { ConcurrencyLimiter, withUserLimit } from './session/concurrency';
 
 function nodeServe(opts: { port: number; hostname: string; fetch: (req: Request) => Promise<Response> }) {
   const server = http.createServer(async (nodeReq, nodeRes) => {
@@ -139,7 +140,11 @@ let activeRuntime: BrowserRuntime | undefined;
 let proxyPool: ProxyPool | null = null;
 let isShuttingDown = false;
 let isRemoteBrowser = false;
+let tabReaperInterval: ReturnType<typeof setInterval> | null = null;
 const policyChecker = new PolicyChecker();
+const concurrencyLimiter = new ConcurrencyLimiter(
+  parseInt(process.env.BROWSE_MAX_CONCURRENT || String(DEFAULTS.MAX_CONCURRENT_PER_SESSION), 10)
+);
 
 /**
  * Narrow the session's AutomationTarget to BrowserTarget.
@@ -395,7 +400,18 @@ async function shutdown() {
   console.log('[browse] Shutting down...');
   clearInterval(flushInterval);
   clearInterval(sessionCleanupInterval);
+  if (tabReaperInterval) clearInterval(tabReaperInterval);
   flushAllBuffers(sessionManager, true);
+
+  // Drain concurrency limiter for all sessions
+  if (sessionManager) {
+    for (const session of sessionManager.getAllSessions()) {
+      concurrencyLimiter.drain(session.id);
+    }
+  }
+  if (profileSession) {
+    concurrencyLimiter.drain(profileSession.id);
+  }
 
   if (profileSession) {
     // Profile mode: close the persistent browser target (closes context + browser)
@@ -580,7 +596,28 @@ async function start() {
           ? { env: { ...(runtimeOpts.env as Record<string, string> ?? {}), ...(serverOptions.env as Record<string, string> ?? {}) } }
           : {}),
       };
-      browser = await runtime.chromium.launch(launchOptions);
+      // Launch with retry (exponential backoff)
+      const maxLaunchRetries = parseInt(process.env.BROWSE_LAUNCH_RETRIES || String(DEFAULTS.BROWSER_LAUNCH_RETRIES), 10);
+      const baseDelay = DEFAULTS.BROWSER_LAUNCH_BASE_DELAY_MS;
+      let launchAttempt = 0;
+      let lastLaunchError: Error | null = null;
+      while (launchAttempt < maxLaunchRetries) {
+        try {
+          browser = await runtime.chromium.launch(launchOptions);
+          break;
+        } catch (err: any) {
+          lastLaunchError = err;
+          launchAttempt++;
+          if (launchAttempt < maxLaunchRetries) {
+            const delay = baseDelay * Math.pow(2, launchAttempt - 1);
+            console.log(`[browse] Browser launch failed (attempt ${launchAttempt}/${maxLaunchRetries}), retrying in ${delay}ms: ${err.message}`);
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+      if (!browser) {
+        throw lastLaunchError || new Error('Browser launch failed after all retries');
+      }
 
       // Chromium crash → clean shutdown (only for owned browser)
       browser.on('disconnected', () => {
@@ -592,9 +629,21 @@ async function start() {
 
     const reuseContext = runtime.name === 'chrome';
     const { createBrowserTargetFactory } = await import('./session/target-factory');
-    sessionManager = new SessionManager(createBrowserTargetFactory(browser, proxyPool ?? undefined), LOCAL_DIR, reuseContext);
+    sessionManager = new SessionManager(createBrowserTargetFactory(browser!, proxyPool ?? undefined), LOCAL_DIR, reuseContext);
     if (proxyPool) sessionManager.proxyPool = proxyPool;
   }
+
+  // ─── Tab Inactivity Reaper ──────────────────────────────────
+  const tabInactivityMs = parseInt(process.env.BROWSE_TAB_INACTIVITY_MS || String(DEFAULTS.TAB_INACTIVITY_MS), 10);
+  tabReaperInterval = setInterval(async () => {
+    if (isShuttingDown) return;
+    if (sessionManager) {
+      const closed = await sessionManager.reapInactiveTabs(tabInactivityMs);
+      if (closed.length > 0) {
+        console.log(`[browse] Reaped ${closed.length} idle tab(s): ${closed.join(', ')}`);
+      }
+    }
+  }, DEFAULTS.TAB_REAP_INTERVAL_MS);
 
   const startTime = Date.now();
   const server = nodeServe({
@@ -733,7 +782,33 @@ async function start() {
           maxOutput: parseInt(req.headers.get('x-browse-max-output') || '0', 10) || 0,
           contextLevel,
         };
-        return handleCommand(body, session, opts);
+
+        // Wrap dispatch in concurrency limiter + per-session command lock
+        const response = await withUserLimit(concurrencyLimiter, session.id, async () => {
+          const useLock = process.env.BROWSE_COMMAND_LOCK !== '0';
+          if (useLock && session.commandLock) {
+            await session.commandLock.acquire(DEFAULTS.COMMAND_LOCK_TIMEOUT_MS);
+          }
+          try {
+            const resp = await handleCommand(body, session, opts);
+
+            // Track tab activity for the reaper
+            if (sessionManager && session) {
+              const bt = trySessionBt(session);
+              if (bt) {
+                sessionManager.touchTab(session.id, bt.getActiveTabId());
+              }
+            }
+
+            return resp;
+          } finally {
+            if (useLock && session.commandLock) {
+              session.commandLock.release();
+            }
+          }
+        }, DEFAULTS.CONCURRENCY_QUEUE_TIMEOUT_MS);
+
+        return response;
       }
 
       return new Response('Not found', { status: 404 });

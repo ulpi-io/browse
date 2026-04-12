@@ -16,6 +16,7 @@ import type { ContextLevel } from '../types';
 import type { AutomationTarget } from '../automation/target';
 import type { SessionTargetFactory, CreatedTarget } from './target-factory';
 import type { RecordedStep } from '../export/record';
+import { TabLock } from './tab-lock';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -34,8 +35,12 @@ export interface Session {
   contextLevel: ContextLevel;
   /** When true, write commands auto-wait for page settled signal before returning */
   settleMode: boolean;
+  /** Per-tab last-activity timestamps — tab ID to epoch ms */
+  tabActivity?: Map<number, number>;
   /** Proxy pool reference — stored for status/inspection by future commands */
   proxyPool?: import('../proxy').ProxyPool | null;
+  /** Per-session command serialization lock */
+  commandLock?: TabLock;
 }
 
 export class SessionManager {
@@ -173,6 +178,7 @@ export class SessionManager {
       contextLevel: 'off',
       settleMode: false,
       proxyPool: this.proxyPool ?? null,
+      commandLock: new TabLock(),
     };
     this.sessions.set(sessionId, session);
     this.targets.set(sessionId, ct);
@@ -196,6 +202,9 @@ export class SessionManager {
   async closeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session "${sessionId}" not found`);
+
+    // Drain command lock — reject any queued commands
+    if (session.commandLock) session.commandLock.drain();
 
     // Auto-save state for named sessions (not "default")
     if (sessionId !== 'default') {
@@ -242,6 +251,50 @@ export class SessionManager {
   }
 
   /**
+   * Update a tab's last activity timestamp.
+   */
+  touchTab(sessionId: string, tabId: number): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    if (!session.tabActivity) session.tabActivity = new Map();
+    session.tabActivity.set(tabId, Date.now());
+  }
+
+  /**
+   * Close tabs idle beyond maxInactiveMs. Never closes the last tab.
+   * Returns descriptions of closed tabs.
+   */
+  async reapInactiveTabs(maxInactiveMs: number): Promise<string[]> {
+    const closed: string[] = [];
+    const now = Date.now();
+    for (const [id, session] of this.sessions) {
+      if (!session.tabActivity) continue;
+
+      const ct = this.targets.get(id);
+      if (!ct) continue;
+      let tabCount = ct.getTabCount();
+      if (tabCount <= 1) continue; // never close the last tab
+
+      for (const [tabId, lastActive] of session.tabActivity) {
+        if (tabCount <= 1) break;
+        if (now - lastActive > maxInactiveMs) {
+          try {
+            // closeTab is on BrowserTarget (session.manager for browser sessions)
+            const target = session.manager as any;
+            if (typeof target.closeTab === 'function') {
+              await target.closeTab(tabId);
+              session.tabActivity.delete(tabId);
+              tabCount--;
+              closed.push(`session=${id} tab=${tabId} idle=${Math.round((now - lastActive) / 1000)}s`);
+            }
+          } catch { /* tab may already be closed */ }
+        }
+      }
+    }
+    return closed;
+  }
+
+  /**
    * List all active sessions (for status/sessions commands).
    */
   listSessions(): Array<{ id: string; tabs: number; url: string; idleSeconds: number; active: boolean }> {
@@ -274,6 +327,9 @@ export class SessionManager {
    */
   async closeAll(): Promise<void> {
     for (const [id, session] of this.sessions) {
+      // Drain command lock — reject any queued commands
+      if (session.commandLock) session.commandLock.drain();
+
       // Auto-save state for named sessions (not "default")
       if (id !== 'default') {
         const ct = this.targets.get(id);
