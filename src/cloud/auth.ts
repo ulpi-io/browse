@@ -41,6 +41,8 @@ export interface CreateKeyResult {
 interface JwtPayload {
   tenantId: string;
   permissions: string;
+  maxSessions?: number;
+  maxConcurrent?: number;
 }
 
 interface JwtFullPayload extends JwtPayload {

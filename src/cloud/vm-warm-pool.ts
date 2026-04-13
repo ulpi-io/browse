@@ -124,6 +124,11 @@ export class VmWarmPool {
       return;
     }
 
+    if (!this.golden.authToken) {
+      console.log('[browse-vm-pool] Golden snapshot has no auth token — pool VMs would be unusable. Skipping replenish.');
+      return;
+    }
+
     const needed = this.targetSize - this.pool.length;
     if (needed <= 0) return;
 

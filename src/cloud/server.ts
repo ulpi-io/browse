@@ -41,6 +41,8 @@ export interface CloudConfig {
 interface TenantContext {
   tenantId: string;
   permissions: string;
+  maxSessions?: number;
+  maxConcurrent?: number;
 }
 
 // ─── HTTP helper (same pattern as src/server.ts) ────────────────
@@ -212,7 +214,12 @@ async function start() {
     if (!token) return null;
     const payload = validateJwt(token, config.jwtSecret);
     if (!payload) return null;
-    return { tenantId: payload.tenantId, permissions: payload.permissions };
+    return {
+      tenantId: payload.tenantId,
+      permissions: payload.permissions,
+      maxSessions: payload.maxSessions,
+      maxConcurrent: payload.maxConcurrent,
+    };
   }
 
   function requireAuth(req: Request): TenantContext | Response {
@@ -242,7 +249,12 @@ async function start() {
     }
 
     const token = createJwt(
-      { tenantId: record.tenantId, permissions: record.permissions },
+      {
+        tenantId: record.tenantId,
+        permissions: record.permissions,
+        maxSessions: record.maxSessions,
+        maxConcurrent: record.maxConcurrent,
+      },
       config.jwtSecret,
     );
 
@@ -296,6 +308,16 @@ async function start() {
     }
 
     try {
+      // Enforce per-key session limit if set (overrides global default)
+      if (tenant.maxSessions) {
+        const currentCount = orchestrator
+          ? [...orchestratorHandles.values()].filter(h => h.tenantId === tenant.tenantId).length
+          : cloudSessions.list(tenant.tenantId).length;
+        if (currentCount >= tenant.maxSessions) {
+          return errorResponse(`Session limit reached (max ${tenant.maxSessions} for this API key)`, 429);
+        }
+      }
+
       // Container isolation path — provision via orchestrator
       if (orchestrator) {
         const handle = await orchestrator.provision(tenant.tenantId, {
@@ -612,16 +634,10 @@ async function start() {
         // Validate tenant ownership via the session ID prefix
         if (!sessionId.startsWith(`tenant:${tenantId}:`)) return null;
 
-        // In direct mode (no orchestrator), buffers live on the SessionManager.
-        // In container/VM mode, the session runs in a separate process — its
-        // buffers are NOT accessible from the gateway. For isolated sessions,
-        // WS streaming is not supported yet (would require a shared event
-        // stream or per-container WS relay). Return null so the client gets
-        // a clear 404 instead of a silent no-op subscription.
-        // In container/VM isolation mode, sessions run in separate
-        // processes. Their buffers are not accessible from the gateway.
-        // WebSocket streaming requires an event relay (TODO).
-        // For now, return null — the client gets 404 "Session not found".
+        // In container/VM isolation mode, sessions run in separate processes
+        // and their buffers are not accessible from the gateway. WS streaming
+        // would require proxying the WebSocket to the container's internal
+        // server. For now, return null — the WS handler returns a clear error.
         if (orchestrator) return null;
 
         const session = sessionManager.getExisting(sessionId);

@@ -222,11 +222,15 @@ export class CloudTransport implements Transport {
         ? parseInt(this.parsedUrl.port, 10)
         : (this.useHttps ? 443 : 80);
 
+      // Prepend the endpoint's pathname prefix (e.g. /api/browse -> /api/browse/v1/...)
+      const basePath = this.parsedUrl.pathname.replace(/\/+$/, '');
+      const fullPath = basePath && basePath !== '/' ? basePath + urlPath : urlPath;
+
       const req = requestModule.request(
         {
           hostname: this.parsedUrl.hostname,
           port,
-          path: urlPath,
+          path: fullPath,
           method,
           headers,
           timeout: this.timeout,
