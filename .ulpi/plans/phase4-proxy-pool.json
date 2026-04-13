@@ -1,0 +1,385 @@
+{
+  "title": "Phase 4: Proxy Pool",
+  "branch": "feat/proxy-pool",
+  "mode": "EXPANSION",
+  "overview": "Add a proxy pool system with sticky session rotation and pluggable provider abstraction to browse_cli. Currently browse_cli only supports a single static proxy via BROWSE_PROXY=server pass-through (server.ts line 531-536). This phase adds: (1) a proxy pool that assigns different proxies to different browser contexts, supporting round-robin (fixed port list) and backconnect (rotating sticky sessions via provider gateway); (2) a provider abstraction where each provider shapes credentials and declares capabilities (canRotateSessions, launchRetries, launchTimeoutMs), shipping with Decodo and generic providers; (3) per-context proxy assignment so each multiplexed session gets a unique proxy from the pool; (4) auto-rotate on Google blocks (Phase 2 prerequisite) that destroys the blocked session and creates a fresh one with a new proxy. Phase 4 of 6 in the camoufox integration roadmap.",
+  "scopeChallenge": "The current proxy implementation is a simple pass-through: server.ts reads BROWSE_PROXY and passes it to browser.launch() as a single proxy option (line 531-536). This means all sessions share the same proxy IP. The proxy pool requires changing where proxy options are applied: from the browser level to the context level. Playwright supports per-context proxy when the browser is launched with a proxy, but per-context proxy assignment requires the pool to provide a proxy for each new BrowserContext created by the SessionTargetFactory. The key architectural change is threading proxy options through the factory pattern: createBrowserTargetFactory currently receives only a Browser, but now needs access to the proxy pool so it can call pool.getNext() when creating each BrowserContext. The auto-rotate feature depends on Phase 2's Google block detection — if that's not yet merged, TASK-005 must be deferred.",
+  "prerequisites": [
+    {
+      "assumption": "SessionTargetFactory pattern exists with create() method that provisions BrowserContext per session",
+      "status": "already-true",
+      "verification": "src/session/target-factory.ts:37-44 — SessionTargetFactory interface, create() returns CreatedTarget"
+    },
+    {
+      "assumption": "BrowserManager.launchWithBrowser() creates a new BrowserContext via browser.newContext()",
+      "status": "already-true",
+      "verification": "src/browser/manager.ts:222 — browser.newContext({ viewport, userAgent })"
+    },
+    {
+      "assumption": "server.ts reads BROWSE_PROXY and passes to browser.launch() as proxy option",
+      "status": "already-true",
+      "verification": "src/server.ts:531-536 — proxyServer env var, launchOptions.proxy = { server: proxyServer }"
+    },
+    {
+      "assumption": "Playwright supports per-context proxy options via browser.newContext({ proxy: {...} })",
+      "status": "external",
+      "verification": "Playwright docs: BrowserType.launch({ proxy }) sets browser-wide proxy; Browser.newContext({ proxy }) overrides per-context. Chromium only."
+    },
+    {
+      "assumption": "camofox-browser lib/proxy.js provides reference implementation of proxy pool with providers",
+      "status": "external",
+      "verification": "camofox-browser/lib/proxy.js (278 lines) — createProxyPool(), decodoProvider, genericBackconnectProvider, getProvider(), registerProvider()"
+    },
+    {
+      "assumption": "Phase 2 Google block detection exists for auto-rotate trigger",
+      "status": "not-yet",
+      "verification": "Phase 2 plan — Google block detection in goto handler. TASK-005 depends on this."
+    }
+  ],
+  "nonGoals": [
+    "Proxy authentication UI or interactive credential input (use env vars only)",
+    "Proxy health checking or automatic failover on non-Google blocks",
+    "Proxy usage metrics or Prometheus integration",
+    "SOCKS5 proxy support (HTTP/HTTPS proxies only, matching Playwright support)",
+    "Per-command proxy switching (proxy is per-session, not per-command)",
+    "Proxy chain or cascading proxy support",
+    "Fly.io deployment or cloud proxy management",
+    "Profile mode proxy support (profile mode has no session multiplexing)"
+  ],
+  "contracts": [
+    {
+      "boundary": "ProxyPool → SessionTargetFactory",
+      "producer": "src/proxy/pool.ts — createProxyPool(config) returns ProxyPool",
+      "consumer": "src/session/target-factory.ts — createBrowserTargetFactory(browser, proxyPool?)",
+      "shape": "ProxyPool { mode: 'round_robin' | 'backconnect', getNext(sessionId?): ProxyConfig, getLaunchProxy(sessionId?): ProxyConfig, canRotateSessions: boolean, provider: ProxyProvider | null }",
+      "consistencyRule": "Factory calls pool.getNext(sessionId) when creating each BrowserContext. If pool is null, no proxy is applied to contexts (falls back to browser-level proxy). ProxyConfig has { server, username?, password?, sessionId? }."
+    },
+    {
+      "boundary": "ProxyProvider → ProxyPool",
+      "producer": "src/proxy/providers.ts — decodoProvider, genericProvider, getProvider(name)",
+      "consumer": "src/proxy/pool.ts — createProxyPool({ providerName }) uses getProvider()",
+      "shape": "ProxyProvider { name: string, canRotateSessions: boolean, launchRetries: number, launchTimeoutMs: number, buildSessionUsername(base, opts): string, buildProxyUrl(proxy, config): string | null }",
+      "consistencyRule": "Provider shapes the username for backconnect sticky sessions. If provider unknown, falls back to decodoProvider."
+    },
+    {
+      "boundary": "server.ts → ProxyPool initialization",
+      "producer": "src/server.ts — reads BROWSE_PROXY_* env vars, calls createProxyPool()",
+      "consumer": "SessionManager via createBrowserTargetFactory(browser, proxyPool)",
+      "shape": "Env vars: BROWSE_PROXY_STRATEGY, BROWSE_PROXY_PROVIDER, BROWSE_PROXY_HOST, BROWSE_PROXY_PORTS, BROWSE_PROXY_USERNAME, BROWSE_PROXY_PASSWORD, BROWSE_PROXY_BACKCONNECT_HOST, BROWSE_PROXY_BACKCONNECT_PORT, BROWSE_PROXY_COUNTRY, BROWSE_PROXY_STATE, BROWSE_PROXY_CITY",
+      "consistencyRule": "When BROWSE_PROXY_STRATEGY is set, server creates proxy pool and passes to factory. When BROWSE_PROXY (legacy) is set without BROWSE_PROXY_STRATEGY, existing single-proxy behavior is preserved."
+    },
+    {
+      "boundary": "Auto-rotate → SessionManager",
+      "producer": "src/commands/write.ts goto handler — detects Google block (Phase 2)",
+      "consumer": "SessionManager.closeSession() + getOrCreate() with new proxy",
+      "shape": "On Google block: close current session, create new session (which gets new proxy from pool)",
+      "consistencyRule": "Only triggers when pool.canRotateSessions is true. Max 3 retries per session. Does not affect other sessions (context-level rotation, not browser-level restart)."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Proxy pool with round-robin and backconnect strategies",
+      "existingCode": "camofox-browser/lib/proxy.js:175-241",
+      "source": "external",
+      "action": "adapt"
+    },
+    {
+      "subProblem": "Decodo provider with username DSL for sticky sessions",
+      "existingCode": "camofox-browser/lib/proxy.js:66-104",
+      "source": "external",
+      "action": "adapt"
+    },
+    {
+      "subProblem": "Generic backconnect provider",
+      "existingCode": "camofox-browser/lib/proxy.js:111-132",
+      "source": "external",
+      "action": "adapt"
+    },
+    {
+      "subProblem": "Provider registry pattern",
+      "existingCode": "camofox-browser/lib/proxy.js:134-146",
+      "source": "external",
+      "action": "adapt"
+    },
+    {
+      "subProblem": "Session target factory for BrowserContext creation",
+      "existingCode": "src/session/target-factory.ts:72-89",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Server startup with proxy env var reading",
+      "existingCode": "src/server.ts:531-536",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "BrowserManager.launchWithBrowser context creation",
+      "existingCode": "src/browser/manager.ts:201-232",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Constants for default config values",
+      "existingCode": "src/constants.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Per-context proxy rotation test patterns",
+      "existingCode": "camofox-browser/tests/unit/proxyRotation.test.js",
+      "source": "external",
+      "action": "adapt"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "Playwright per-context proxy only works on Chromium — Firefox (camoufox) may not support it",
+      "affectedTasks": ["TASK-004"],
+      "mitigation": "Playwright docs confirm per-context proxy is Chromium-only. When runtime is camoufox (Firefox), proxy pool falls back to browser-level proxy (set at launch). Document this limitation."
+    },
+    {
+      "risk": "BROWSE_PROXY (legacy single proxy) conflicts with BROWSE_PROXY_STRATEGY pool configuration",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "When BROWSE_PROXY_STRATEGY is set, it takes precedence over BROWSE_PROXY. Legacy BROWSE_PROXY continues to work unchanged when BROWSE_PROXY_STRATEGY is not set. Clear error if both are set with conflicting values."
+    },
+    {
+      "risk": "Phase 2 Google block detection not yet merged — TASK-005 auto-rotate has no trigger",
+      "affectedTasks": ["TASK-005"],
+      "mitigation": "TASK-005 is P2 and explicitly depends on Phase 2. If Phase 2 is not merged, TASK-005 is deferred. The proxy pool (TASK-001-004) is independently useful without auto-rotate."
+    },
+    {
+      "risk": "Backconnect proxy provider credentials exposed in error messages or logs",
+      "affectedTasks": ["TASK-001", "TASK-003"],
+      "mitigation": "ProxyPool.toString() and logging redact password fields. Error messages show server:port but never credentials."
+    },
+    {
+      "risk": "Round-robin index wraps incorrectly under concurrent session creation",
+      "affectedTasks": ["TASK-002"],
+      "mitigation": "Index is a simple counter with modulo. Concurrent increments may skip ports but never crash — this is acceptable for proxy rotation (not a correctness requirement)."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "createProxyPool('round_robin') returns pool with getNext() cycling through ports",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "createProxyPool('backconnect') returns pool with sticky session usernames",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "decodoProvider.buildSessionUsername shapes username with country/state/city/session",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "genericProvider.buildSessionUsername passes through username with session suffix",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "getProvider() returns built-in providers, null for unknown",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "registerProvider() adds custom provider to registry",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "createProxyPool returns null when required config is missing",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Factory passes proxy from pool to BrowserContext on session creation",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Different sessions get different proxies from the pool",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Context rotation destroys only the affected session, not others",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Legacy BROWSE_PROXY still works when BROWSE_PROXY_STRATEGY is not set",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Proxy provider interface and implementations",
+      "description": "Create `src/proxy/` directory and `src/proxy/providers.ts` with the ProxyProvider interface and two built-in implementations: Decodo and generic backconnect.\n\nFirst create the directory: `mkdir -p src/proxy`.\n\nAdapt from camofox-browser/lib/proxy.js (lines 36-146), converting to TypeScript with proper types:\n\n1. **ProxyProvider interface**: `{ name: string, canRotateSessions: boolean, launchRetries: number, launchTimeoutMs: number, buildSessionUsername(baseUsername: string, options: SessionOptions): string, buildProxyUrl(proxy: ProxyConfig, config: ProxyPoolConfig): string | null }`\n\n2. **SessionOptions type**: `{ country?: string, state?: string, city?: string, zip?: string, sessionId?: string, sessionDurationMinutes?: number }`\n\n3. **decodoProvider**: Residential proxy provider. Username DSL: `user-{base}-country-{cc}-state-{st}-session-{id}-sessionduration-{min}`. Uses `sanitizeBackconnectValue()` helper to normalize inputs.\n\n4. **genericProvider**: Pass-through provider. Username: `{base}-{sessionId}`. Works with any backconnect proxy (BrightData, Oxylabs, etc.).\n\n5. **Provider registry**: `getProvider(name): ProxyProvider | null`, `registerProvider(name, provider)`. Built-in registry: `{ decodo: decodoProvider, generic: genericProvider }`.\n\n6. **normalizePlaywrightProxy()**: Decodes percent-encoded credentials for Playwright compatibility.\n\nAll providers are pure functions with no side effects. No external dependencies.\n\nFiles:\n- `src/proxy/providers.ts` — interface, implementations, registry\n\nReference: camofox-browser/lib/proxy.js lines 1-146",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "ProxyProvider interface exported with name, canRotateSessions, launchRetries, launchTimeoutMs, buildSessionUsername, buildProxyUrl",
+        "decodoProvider.buildSessionUsername('user', { country: 'us', sessionId: 'abc' }) returns 'user-user-country-us-session-abc'",
+        "genericProvider.buildSessionUsername('user', { sessionId: 'abc' }) returns 'user-abc'",
+        "getProvider('decodo') returns decodoProvider, getProvider('unknown') returns null",
+        "normalizePlaywrightProxy decodes percent-encoded credentials"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/proxy/providers.ts"],
+      "writeScope": ["src/proxy/providers.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/proxy/providers.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Proxy pool factory and barrel exports",
+      "description": "Create `src/proxy/pool.ts` with the ProxyPool interface and `createProxyPool()` factory, plus `src/proxy/index.ts` barrel. The `src/proxy/` directory is created by TASK-001.\n\nAdapt from camofox-browser/lib/proxy.js (lines 148-278), converting to TypeScript:\n\n1. **ProxyConfig type**: `{ server: string, username?: string, password?: string, sessionId?: string }`\n\n2. **ProxyPoolConfig type**: All the config fields needed to create a pool: `{ strategy: 'round_robin' | 'backconnect', host?: string, ports?: number[], username?: string, password?: string, backconnectHost?: string, backconnectPort?: number, providerName?: string, country?: string, state?: string, city?: string, zip?: string, sessionDurationMinutes?: number }`\n\n3. **ProxyPool interface**: `{ mode: 'round_robin' | 'backconnect', provider: ProxyProvider | null, canRotateSessions: boolean, launchRetries: number, launchTimeoutMs: number, size: number, getLaunchProxy(sessionId?: string): ProxyConfig, getNext(sessionId?: string): ProxyConfig }`\n\n4. **createProxyPool(config: ProxyPoolConfig): ProxyPool | null**: Factory function. Returns null when required config fields are missing.\n   - `round_robin`: cycles through `host:ports[i]` with a wrapping index. No session rotation. launchRetries=1, launchTimeoutMs=60000.\n   - `backconnect`: uses provider.buildSessionUsername() to create sticky session usernames. Each call to getNext(sessionId) returns a proxy with a unique session identity.\n\n5. **buildProxyUrl(pool, config)**: Build a proxy URL string for CLI tools.\n\n6. **Barrel export** `src/proxy/index.ts`: Re-exports all types and functions from providers.ts and pool.ts.\n\nFiles:\n- `src/proxy/pool.ts` — ProxyPool, ProxyPoolConfig, ProxyConfig types, createProxyPool(), buildProxyUrl()\n- `src/proxy/index.ts` — barrel exports\n\nReference: camofox-browser/lib/proxy.js lines 148-278",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "createProxyPool({ strategy: 'round_robin', host, ports: [10001,10002], username, password }) returns pool with mode='round_robin', size=2",
+        "Round-robin pool.getNext() cycles through ports: 10001, 10002, 10001, ...",
+        "createProxyPool({ strategy: 'backconnect', backconnectHost, backconnectPort, username, password }) returns pool with mode='backconnect'",
+        "Backconnect pool.getNext('session-1') returns proxy with session-specific username",
+        "createProxyPool with missing required fields returns null",
+        "src/proxy/index.ts re-exports all types and functions"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/proxy/pool.ts", "src/proxy/index.ts"],
+      "writeScope": ["src/proxy/pool.ts", "src/proxy/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/proxy/pool.ts and src/proxy/index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Env var configuration and constants for proxy pool",
+      "description": "Wire proxy pool initialization into server.ts by reading BROWSE_PROXY_* env vars, and add default values to constants.ts.\n\n1. **src/constants.ts**: Add proxy-related defaults to the DEFAULTS object:\n   - `PROXY_LAUNCH_RETRIES: 1` (overridden by provider)\n   - `PROXY_LAUNCH_TIMEOUT_MS: 60_000` (overridden by provider)\n   - `PROXY_SESSION_DURATION_MINUTES: 10` (default sticky session duration)\n   - `PROXY_MAX_ROTATE_RETRIES: 3` (max auto-rotate attempts per session)\n\n2. **src/server.ts** (in the `start()` function, after line 530, before browser launch):\n   - Read env vars: `BROWSE_PROXY_STRATEGY` (round_robin | backconnect), `BROWSE_PROXY_PROVIDER` (decodo | generic | custom name), `BROWSE_PROXY_HOST`, `BROWSE_PROXY_PORTS` (comma-separated: '10001,10002,10003'), `BROWSE_PROXY_USERNAME`, `BROWSE_PROXY_PASSWORD`, `BROWSE_PROXY_BACKCONNECT_HOST`, `BROWSE_PROXY_BACKCONNECT_PORT`, `BROWSE_PROXY_COUNTRY`, `BROWSE_PROXY_STATE`, `BROWSE_PROXY_CITY`\n   - When `BROWSE_PROXY_STRATEGY` is set: call `createProxyPool(config)` with the env var values. Log pool mode and size.\n   - For browser launch: when pool exists, use `pool.getLaunchProxy()` for the browser-level proxy (needed for Playwright's per-context proxy override). When pool is null, fall back to existing `BROWSE_PROXY` behavior.\n   - Pass the pool to `createBrowserTargetFactory(browser, proxyPool)` (TASK-004 handles the factory update).\n   - When `BROWSE_PROXY_STRATEGY` is set AND `BROWSE_PROXY` is also set, log a warning that BROWSE_PROXY_STRATEGY takes precedence.\n\n3. **Backward compatibility**: When `BROWSE_PROXY_STRATEGY` is NOT set, existing `BROWSE_PROXY` single-proxy behavior is completely unchanged.\n\nFiles:\n- `src/constants.ts` — add proxy defaults\n- `src/server.ts` — read env vars, create pool, pass to factory",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "DEFAULTS object includes PROXY_LAUNCH_RETRIES, PROXY_LAUNCH_TIMEOUT_MS, PROXY_SESSION_DURATION_MINUTES, PROXY_MAX_ROTATE_RETRIES",
+        "BROWSE_PROXY_STRATEGY=round_robin with BROWSE_PROXY_HOST and BROWSE_PROXY_PORTS creates a proxy pool and logs mode/size",
+        "BROWSE_PROXY_STRATEGY=backconnect with BROWSE_PROXY_BACKCONNECT_HOST and BROWSE_PROXY_BACKCONNECT_PORT creates a backconnect pool",
+        "When BROWSE_PROXY_STRATEGY is not set, existing BROWSE_PROXY single-proxy behavior is unchanged",
+        "When both BROWSE_PROXY and BROWSE_PROXY_STRATEGY are set, strategy takes precedence with a warning log"
+      ],
+      "filesToModify": ["src/constants.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/constants.ts", "src/server.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert constants.ts and server.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Wire proxy pool into session target factory",
+      "description": "Update the session target factory interface, its implementation, and BrowserManager to accept and apply per-context proxy options from the proxy pool.\n\nCRITICAL SEAM: The current `SessionTargetFactory.create(buffers, reuseContext)` interface (target-factory.ts:43) does not accept a session identifier or proxy pool. SessionManager.getOrCreate() (manager.ts:131) calls this. The plan must widen both the interface and the call site.\n\n1. **src/session/target-factory.ts**:\n   - Widen the `SessionTargetFactory.create()` interface to accept an options object: `create(buffers, reuseContext, opts?: { sessionId?: string, proxyPool?: ProxyPool })`. This is a non-breaking change since opts is optional.\n   - Update `createBrowserTargetFactory(browser, proxyPool?)` to capture the pool. In `create()`: when proxyPool is provided, generate a sessionId from the opts.sessionId or a UUID fallback, call `proxyPool.getNext(sessionId)` to get per-context proxy config.\n   - Pass the proxy config to `BrowserManager.launchWithBrowser()` as a new optional parameter.\n\n2. **src/session/manager.ts** `getOrCreate()`:\n   - Update the call to `factory.create(buffers, reuseContext)` to pass the session id: `factory.create(buffers, reuseContext, { sessionId: id })`.\n   - Add `proxyPool: ProxyPool | null` field to the Session interface. After factory.create() returns, store the pool reference on the session: `session.proxyPool = proxyPool`. This enables TASK-005 (auto-rotate) to access the pool via ctx.session.proxyPool at command execution time.\n\n3. **src/browser/manager.ts** `launchWithBrowser()`:\n   - Add optional `contextOptions?: { proxy?: { server: string; username?: string; password?: string } }` parameter.\n   - When `contextOptions.proxy` is provided, spread it into the `browser.newContext()` call (line 222).\n   - This enables Playwright's per-context proxy: each BrowserContext can have a different proxy while sharing the same Browser process.\n\nKey constraint: Playwright per-context proxy only works on Chromium. When runtime is Firefox (camoufox), per-context proxy is not supported — the browser-level proxy (set in server.ts launch) is used for all contexts. The factory should log a warning if pool is provided but runtime is Firefox.\n\nFiles:\n- `src/session/target-factory.ts` — widen create() interface, accept ProxyPool, call getNext()\n- `src/session/manager.ts` — pass sessionId through to factory.create()\n- `src/browser/manager.ts` — accept contextOptions in launchWithBrowser()",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "createBrowserTargetFactory(browser, proxyPool) passes proxy from pool.getNext() to each new BrowserContext",
+        "BrowserManager.launchWithBrowser(browser, reuseContext, contextOptions) spreads contextOptions into browser.newContext()",
+        "When proxyPool is null, behavior is identical to current code (no proxy per context)",
+        "Each session created through SessionManager gets a different proxy from the pool (verifiable via getNext() call count)"
+      ],
+      "filesToModify": ["src/session/target-factory.ts", "src/session/manager.ts", "src/browser/manager.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/session/target-factory.ts", "src/session/manager.ts", "src/browser/manager.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert target-factory.ts, manager.ts, and index.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Auto-rotate session on Google blocks",
+      "description": "When a Google block is detected during `goto` (Phase 2 prerequisite), automatically destroy the current session's context and create a fresh one with a new proxy from the pool.\n\nCROSS-PHASE PREREQUISITE: This task requires Phase 2 TASK-003 (Google block detection in src/browser/detection.ts) and TASK-006 (wiring into goto handler) to be merged first. If Phase 2 is not yet available, skip this task entirely.\n\nPROXY POOL ACCESS PATH: The proxy pool is accessible at execution time via `ctx.session.proxyPool` (a ProxyPool | null field on Session). TASK-004 stores the proxy pool reference on the Session object when the SessionTargetFactory creates it — specifically, the factory receives the pool, calls pool.getNext(), and stores the pool ref on the session for later use (rotation). This task reads it; TASK-004 writes it. No changes to CommandContext needed.\n\nIMPLEMENTATION LOCATION: The auto-rotate logic goes in the definition-backed execute wrapper in registerWriteDefinitions() (write.ts:1034), NOT inside handleWriteCommand(). The execute function receives full CommandContext which has ctx.session and ctx.sessionManager.\n\nRotation flow:\n1. Call handleWriteCommand('goto', ...) as normal\n2. Check result for Google block signal (Phase 2 detection)\n3. If blocked AND ctx.session?.proxyPool?.canRotateSessions: rotate\n4. ctx.sessionManager.closeSession(ctx.session.id)\n5. ctx.sessionManager.getOrCreate(ctx.session.id) → fresh session with new proxy from pool\n6. Retry goto on new session's target\n7. Track retry count per session (max DEFAULTS.PROXY_MAX_ROTATE_RETRIES)\n\nKey invariant: Context rotation destroys only the affected session. Other multiplexed sessions continue working.\n\nFiles:\n- src/commands/write.ts — add rotation wrapper in registerWriteDefinitions execute for 'goto'\n- src/session/manager.ts — add proxyPool field to Session interface (TASK-004 prerequisite stores it)",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-004"],
+      "acceptanceCriteria": [
+        "When Google block detected and pool.canRotateSessions is true, session is destroyed and recreated with new proxy",
+        "Rotation retry count is tracked per session, max DEFAULTS.PROXY_MAX_ROTATE_RETRIES (3)",
+        "After max retries, error is returned with actionable hint about changing provider/country",
+        "Other sessions are NOT affected by one session's rotation (context-level, not browser-level)",
+        "When pool is null or canRotateSessions is false, Google block is returned as-is (no rotation)"
+      ],
+      "filesToModify": ["src/commands/write.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert write.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Tests for proxy pool, providers, and rotation",
+      "description": "Add comprehensive tests for the proxy pool system. Create a new test file `test/proxy.test.ts`.\n\n1. **Provider tests**:\n   - decodoProvider.buildSessionUsername with full options (country, state, city, zip, sessionId, sessionDurationMinutes)\n   - decodoProvider sanitizes spaces and special characters\n   - decodoProvider declares correct capabilities (canRotateSessions, launchRetries, launchTimeoutMs)\n   - genericProvider passes through username with session suffix\n   - getProvider('decodo') returns decodoProvider, getProvider('unknown') returns null\n   - registerProvider() adds custom provider to registry\n   - normalizePlaywrightProxy decodes percent-encoded credentials, handles null, handles malformed sequences\n\n2. **Pool factory tests**:\n   - createProxyPool('round_robin') with valid config returns pool with correct mode, size\n   - Round-robin getNext() cycles through ports correctly\n   - createProxyPool('backconnect') with valid config returns pool with correct mode\n   - Backconnect getNext(sessionId) returns proxy with session-specific username\n   - createProxyPool returns null when required config is missing (no host, no ports, no backconnectHost)\n   - buildProxyUrl works for both round_robin and backconnect modes\n\n3. **Per-context assignment tests** (replicate behavioral contracts from camofox-browser/tests/unit/proxyRotation.test.js):\n   - Backconnect pool creates unique session IDs per session\n   - Round-robin pool has no sessionId\n   - Null pool returns null proxy\n   - Destroying one session preserves others (context-level isolation)\n\n4. **Integration with factory** (mock-based):\n   - Verify factory calls pool.getNext() when creating each context\n   - Verify no proxy applied when pool is null\n\nFiles:\n- `test/proxy.test.ts` — all proxy pool tests\n\nReference: camofox-browser/tests/unit/proxy.test.js and proxyRotation.test.js for test patterns",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004"],
+      "acceptanceCriteria": [
+        "All provider tests pass: decodo, generic, registry, normalizePlaywrightProxy",
+        "All pool factory tests pass: round_robin cycling, backconnect sticky sessions, null for missing config",
+        "Per-context assignment tests pass: unique sessions per context, context isolation on rotation",
+        "Tests achieve 90%+ coverage of src/proxy/providers.ts and src/proxy/pool.ts",
+        "npm test runs the new test file without errors"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/proxy.test.ts"],
+      "writeScope": ["test/proxy.test.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Delete test/proxy.test.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 6,
+    "layerCount": 4,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001"], "notes": "Provider interface and implementations (no dependencies)" },
+      { "layer": 1, "tasks": ["TASK-002"], "notes": "Pool factory depends on providers" },
+      { "layer": 2, "tasks": ["TASK-003", "TASK-004"], "notes": "Server wiring and factory wiring (both depend on pool, independent of each other)" },
+      { "layer": 3, "tasks": ["TASK-005", "TASK-006"], "notes": "Auto-rotate depends on factory wiring; tests depend on both wiring tasks" }
+    ],
+    "criticalPath": ["TASK-001", "TASK-002", "TASK-004", "TASK-005"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-002"],
+    "TASK-004": ["TASK-002"],
+    "TASK-005": ["TASK-004"],
+    "TASK-006": ["TASK-003", "TASK-004"]
+  },
+  "linkedPlans": [
+    "phase1-camoufox-runtime",
+    "phase2-real-web-browsing-quality",
+    "phase3-snapshot-large-pages",
+    "phase5-concurrency-lifecycle",
+    "phase6-new-commands"
+  ]
+}

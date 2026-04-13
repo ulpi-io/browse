@@ -1,0 +1,281 @@
+{
+  "title": "Phase 7: Safety, Flags & Skill Integration",
+  "branch": "feat/safety-skill-integration",
+  "mode": "EXPANSION",
+  "overview": "Ensure all Phases 1-6 features are safe by default, have opt-in/opt-out flags, are documented in the browse skill, and are covered by backward-compatibility regression tests. This phase runs AFTER all feature phases land. It adds no new functionality — it hardens the behavioral contracts, wires env var flags, updates SKILL.md and commands.md, creates a regression test suite that proves existing agent workflows are unbroken, and creates a new 'browse-stealth' skill for anti-detection workflows.",
+  "scopeChallenge": "Phases 1-6 introduce 5 features that change existing behavior: (1) consent dialog dismiss — could click non-consent buttons, (2) click fallback chain — auto-force-clicks through overlays, (3) page readiness wait — adds latency to every goto, (4) Google SERP fast-path — changes snapshot output on Google pages, (5) session commandLock — serializes concurrent requests per session. Each needs a safety flag and default-off or escape-hatch behavior. Additionally, the browse skill (skill/browse/SKILL.md and references/) needs updating for new commands (images, youtube-transcript, search macros) and new flags (--runtime camoufox, --force, --serp, --offset, --ready). A new 'browse-stealth' skill provides opinionated guidance for anti-detection browsing (when to use camoufox, proxy config, consent dismiss, etc.).",
+  "prerequisites": [
+    {
+      "assumption": "Phases 1-6 features are implemented and merged to main",
+      "status": "requires-task",
+      "verification": "All Phase 1-6 branches merged"
+    },
+    {
+      "assumption": "browse skill exists at skill/browse/SKILL.md with references/commands.md, references/guides.md, references/permissions.md",
+      "status": "already-true",
+      "verification": "skill/browse/SKILL.md, skill/browse/references/commands.md"
+    },
+    {
+      "assumption": "Test suite exists in test/ with integration tests against real browser",
+      "status": "already-true",
+      "verification": "test/commands.test.ts, test/features.test.ts, test/snapshot.test.ts"
+    }
+  ],
+  "nonGoals": [
+    "New features beyond what Phases 1-6 deliver",
+    "Rewriting existing test files — only add new regression tests",
+    "Changing the browse skill's argument-hint or when_to_use triggers",
+    "MCP tool schema changes (those are in Phase 2/3 plans already)"
+  ],
+  "contracts": [
+    {
+      "boundary": "Safety flags → feature behavior",
+      "producer": "src/constants.ts env var defaults",
+      "consumer": "Feature modules (consent.ts, readiness.ts, write.ts click handler, serp.ts, tab-lock.ts)",
+      "shape": "BROWSE_CONSENT_DISMISS=0|1 (default 1), BROWSE_CLICK_FORCE=0|1 (default 0), BROWSE_READINESS=0|1 (default 0), BROWSE_SERP_FASTPATH=0|1 (default 0), BROWSE_COMMAND_LOCK=0|1 (default 1), BROWSE_TAB_INACTIVITY_MS=N (default 1800000)",
+      "consistencyRule": "Features that change existing command output/behavior default OFF or have escape hatch. Features that improve correctness (commandLock, consent dismiss) default ON with opt-out."
+    },
+    {
+      "boundary": "Skill docs → agent behavior",
+      "producer": "skill/browse/SKILL.md, skill/browse/references/commands.md",
+      "consumer": "AI agents reading skill docs to decide which commands to run",
+      "shape": "Markdown docs with command tables, flag descriptions, workflow guidance",
+      "consistencyRule": "Every new command, flag, and env var documented. No undocumented behavioral changes."
+    },
+    {
+      "boundary": "Regression suite → CI",
+      "producer": "test/regression.test.ts",
+      "consumer": "npm test (vitest)",
+      "shape": "Test cases that run core agent workflow: goto → snapshot → click → text → screenshot",
+      "consistencyRule": "Tests pass on all runtimes (playwright at minimum, camoufox if installed). Tests fail if any Phase 1-6 feature changes output format or behavior of existing commands without explicit flag."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Skill documentation structure",
+      "existingCode": "skill/browse/SKILL.md",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Command reference format",
+      "existingCode": "skill/browse/references/commands.md",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Integration test patterns",
+      "existingCode": "test/commands.test.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Constants and env var pattern",
+      "existingCode": "src/constants.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Feature flag pattern",
+      "existingCode": "src/config.ts (browse.json config loader)",
+      "source": "local",
+      "action": "extend"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "Safety flag defaults wrong — risky feature defaults ON, breaking existing agents",
+      "affectedTasks": ["TASK-001"],
+      "mitigation": "Explicit default table in task description. Review checks each default against the 'does this change existing output' test."
+    },
+    {
+      "risk": "Skill docs out of sync with actual commands after Phase 2-6 changes",
+      "affectedTasks": ["TASK-003", "TASK-004"],
+      "mitigation": "Task reads actual registry.ts command list and cross-references with docs. Acceptance criteria requires every registered command to appear in commands.md."
+    },
+    {
+      "risk": "Regression tests too narrow — pass in CI but miss real-world breakage",
+      "affectedTasks": ["TASK-005"],
+      "mitigation": "Tests must cover the exact agent workflow: goto URL → snapshot -i → click @ref → text. Not just individual commands."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "Default behavior unchanged: goto → snapshot → click → text workflow",
+      "coveringTask": "TASK-005",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Safety flags disable risky features when set to 0",
+      "coveringTask": "TASK-005",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Safety flags enable features when set to 1",
+      "coveringTask": "TASK-005",
+      "testType": "integration"
+    },
+    {
+      "codepath": "All new commands appear in commands.md",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Wire safety flags into constants and feature modules",
+      "description": "Add env var flags to src/constants.ts and wire them into the feature modules from Phases 2-5. Each flag controls whether a behavioral change is active.\n\nFlags and their defaults (based on safety analysis):\n\n| Flag | Default | Rationale |\n|------|---------|----------|\n| BROWSE_CONSENT_DISMISS | 0 (OFF) | Changes post-navigation behavior (clicks buttons). Opt-in only. browse-stealth skill recommends enabling. |\n| BROWSE_CLICK_FORCE | 0 (OFF) | Changes click semantics. Must be opt-in. Agents use `click --force` for explicit force-click. |\n| BROWSE_READINESS | 0 (OFF) | Adds latency to every goto. Must be opt-in via flag or env var. |\n| BROWSE_SERP_FASTPATH | 0 (OFF) | Changes snapshot output on Google pages. Must be opt-in. |\n| BROWSE_COMMAND_LOCK | 1 (ON) | Prevents CDP corruption. Correct by default. Escape hatch for debugging. |\n| BROWSE_TAB_INACTIVITY_MS | 1800000 (30min) | Matches session timeout. Not the aggressive 5min from camofox-browser. |\n\nFor each flag:\n1. Add to DEFAULTS in src/constants.ts\n2. Read from process.env in the feature module that uses it\n3. Guard the behavioral change behind the flag check\n\nThe Phase 2 consent module (src/browser/consent.ts) should check BROWSE_CONSENT_DISMISS.\nThe Phase 2 click fallback should only auto-force when BROWSE_CLICK_FORCE=1 OR when `--force` flag is passed explicitly.\nThe Phase 2 page readiness should only activate when BROWSE_READINESS=1.\nThe Phase 3 SERP fast-path should only activate when BROWSE_SERP_FASTPATH=1.\nThe Phase 5 commandLock should be bypassable when BROWSE_COMMAND_LOCK=0.\nThe Phase 5 tab reaper should use BROWSE_TAB_INACTIVITY_MS (default 30min).\n\nAlso add these to src/config.ts BrowseConfig so they can be set in browse.json:\n- consentDismiss: boolean\n- clickForce: boolean\n- readiness: boolean\n- serpFastpath: boolean\n- commandLock: boolean\n- tabInactivityMs: number",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "All 6 flags appear in DEFAULTS with documented defaults: CONSENT_DISMISS=1, CLICK_FORCE=0, READINESS=0, SERP_FASTPATH=0, COMMAND_LOCK=1, TAB_INACTIVITY_MS=1800000",
+        "Each flag is read from process.env in the feature module that uses it, with DEFAULTS fallback",
+        "When BROWSE_CLICK_FORCE=0 (default), click on obscured element throws the existing error (no auto-force-click)",
+        "When BROWSE_READINESS=0 (default), goto behavior is identical to current code (no extra wait)"
+      ],
+      "filesToModify": ["src/constants.ts", "src/config.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/constants.ts", "src/config.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert constants.ts and config.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Update Phase 2-5 feature modules to respect safety flags",
+      "description": "Audit each Phase 2-5 feature module and ensure the behavioral change is gated behind its safety flag.\n\nChecklist:\n1. src/browser/consent.ts — check BROWSE_CONSENT_DISMISS before running dismiss scan. If 0, return immediately.\n2. src/commands/write.ts click handler — only do force-click fallback when BROWSE_CLICK_FORCE=1 OR args contain --force. Currently Phase 2 TASK-008 applies fallback unconditionally.\n3. src/browser/readiness.ts — check BROWSE_READINESS before running hydration wait. If 0, skip entirely. The goto handler should call readiness only when flag is on.\n4. src/browser/serp.ts / src/commands/meta/inspection.ts — check BROWSE_SERP_FASTPATH before using SERP extraction. If 0, always use standard handleSnapshot.\n5. src/session/manager.ts commandLock — check BROWSE_COMMAND_LOCK. If 0, skip lock acquire/release (pass-through). Log a warning that CDP corruption is possible.\n6. src/session/manager.ts tab reaper — use BROWSE_TAB_INACTIVITY_MS from DEFAULTS (30min, not 5min).\n\nEach guard must be a simple early-return or conditional, not a restructuring of the feature code.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "With all flags at defaults: goto, snapshot, click, text behavior identical to pre-Phase-2 behavior (no consent dismiss, no force-click, no readiness wait, no SERP fast-path — all default OFF)",
+        "BROWSE_CONSENT_DISMISS=1 enables consent dismiss after navigation; =0 (default) disables it completely",
+        "Click on obscured element with --force flag works regardless of BROWSE_CLICK_FORCE env var"
+      ],
+      "filesToModify": ["src/commands/write.ts"],
+      "filesToCreate": [],
+      "note": "Also modifies src/browser/consent.ts and src/browser/readiness.ts which are created by Phase 2. These files will exist when Phase 7 executes (Phase 2 is a prerequisite).",
+      "crossPhaseModifies": ["src/browser/consent.ts", "src/browser/readiness.ts", "src/commands/meta/inspection.ts", "src/session/manager.ts"],
+      "writeScope": ["src/commands/write.ts", "src/commands/meta/inspection.ts", "src/session/manager.ts", "src/browser/consent.ts", "src/browser/readiness.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert changes to feature modules",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Update browse skill SKILL.md with new features",
+      "description": "Update skill/browse/SKILL.md to document all new capabilities from Phases 1-6.\n\nAdditions:\n1. Runtime selection section: --runtime camoufox for anti-detection browsing. Explain what it gives you (C++ fingerprint spoofing) and when to use it (sites that block Chromium).\n2. Search macros section: browse goto @google 'query', list all 14 macros.\n3. New commands table entries: images, youtube-transcript.\n4. New flags table: --force (click), --offset/--max-chars (snapshot), --serp (snapshot), --ready (goto), --inline (download).\n5. Env var table additions: BROWSE_RUNTIME, BROWSE_CONSENT_DISMISS, BROWSE_CLICK_FORCE, BROWSE_READINESS, BROWSE_SERP_FASTPATH, BROWSE_COMMAND_LOCK, BROWSE_TAB_INACTIVITY_MS, BROWSE_PROXY_STRATEGY, BROWSE_PROXY_* vars.\n6. Update the description frontmatter to mention anti-detection capability.\n\nDo NOT restructure the existing skill content. Add new sections at appropriate locations following the existing document structure.",
+      "type": "docs",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "skill/browse/SKILL.md mentions --runtime camoufox with usage guidance",
+        "All 14 search macros listed with syntax: browse goto @google 'query'",
+        "Every new env var from Phases 1-6 appears in the skill's env var section"
+      ],
+      "filesToModify": ["skill/browse/SKILL.md"],
+      "filesToCreate": [],
+      "writeScope": ["skill/browse/SKILL.md"],
+      "validateCommand": "grep -c 'camoufox' skill/browse/SKILL.md && grep -c '@google' skill/browse/SKILL.md",
+      "rollbackPlan": "Revert SKILL.md changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Update commands.md reference with new commands and flags",
+      "description": "Update skill/browse/references/commands.md to include all new commands and flags from Phases 1-6.\n\nAdditions:\n1. images command: browse images [--limit N] — list <img> elements with src, alt, dimensions\n2. youtube-transcript command: browse youtube-transcript <url> [--lang en] — extract YouTube captions\n3. Search macro syntax in goto: browse goto @google 'best coffee' (with all 14 macros listed)\n4. snapshot flags: --offset N, --max-chars N, --serp/--no-serp\n5. click flag: --force (bypass overlay interception)\n6. goto flag: --ready (wait for hydration)\n7. download flag: --inline (return base64 instead of saving to disk)\n8. Runtime flag: --runtime camoufox|playwright|rebrowser|lightpanda|chrome\n\nCross-reference with src/automation/registry.ts to ensure every registered command appears in the reference.",
+      "type": "docs",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Every command registered in src/automation/registry.ts has a corresponding entry in commands.md",
+        "images and youtube-transcript commands documented with syntax and examples",
+        "All new flags (--force, --offset, --max-chars, --serp, --ready, --inline) documented under their respective commands"
+      ],
+      "filesToModify": ["skill/browse/references/commands.md"],
+      "filesToCreate": [],
+      "writeScope": ["skill/browse/references/commands.md"],
+      "validateCommand": "grep -c 'images' skill/browse/references/commands.md && grep -c 'youtube-transcript' skill/browse/references/commands.md",
+      "rollbackPlan": "Revert commands.md changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Backward-compatibility regression test suite",
+      "description": "Create test/regression.test.ts — a test suite that proves the core agent workflow is unbroken after all Phase 1-6 changes land.\n\nTest cases:\n\n1. **Core workflow (default flags)**: goto test page → snapshot -i → click @ref → text → verify page changed. All safety flags at defaults. Output must match pre-Phase-2 format.\n\n2. **Snapshot format stability**: snapshot -i output on a static test page must match a stored baseline (no extra fields, no format changes). If SERP fast-path is off (default), Google-like pages still get standard ARIA format.\n\n3. **Click error preservation**: click on obscured element (create a fixture with overlay) must throw the existing overlay error with BROWSE_CLICK_FORCE=0. Must NOT auto-force-click.\n\n4. **goto latency baseline**: goto a test page with BROWSE_READINESS=0 (default). Verify no extra wait (time the command, should be <2s for local test server).\n\n5. **Concurrent commands**: send 3 simultaneous read commands to same session with BROWSE_COMMAND_LOCK=1. Verify they all return correct results (serialized but not corrupted).\n\n6. **Consent dismiss safe**: navigate to a test page that has a button labeled 'Accept' that is NOT a consent dialog (it's a form submit). With BROWSE_CONSENT_DISMISS=1, the button must NOT be auto-clicked (it's not in a consent-dialog context).\n\n7. **Camoufox runtime smoke** (skip if not installed): BROWSE_RUNTIME=camoufox → goto → snapshot → verify refs generated.\n\nUse the existing test server (test/test-server.ts) and add necessary HTML fixtures to test/fixtures/.",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "All 7 test cases pass with default flag values — proving no behavioral regression",
+        "Test case 3 (click error preservation) fails if BROWSE_CLICK_FORCE default is changed to 1",
+        "Test case 7 (camoufox smoke) skips gracefully when camoufox-js not installed"
+      ],
+      "filesToModify": ["test/test-server.ts"],
+      "filesToCreate": ["test/regression.test.ts"],
+      "writeScope": ["test/regression.test.ts", "test/test-server.ts"],
+      "validateCommand": "npm test -- test/regression",
+      "rollbackPlan": "Delete test/regression.test.ts, revert test-server.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Create browse-stealth skill for anti-detection workflows",
+      "description": "Create a new skill at skill/browse-stealth/ that provides opinionated guidance for anti-detection browsing. This is a separate skill (not merged into the main browse skill) because anti-detection is a specialized workflow that most agents don't need.\n\nCreate:\n1. skill/browse-stealth/SKILL.md — skill definition with:\n   - When to use: sites that block Chromium, Google scraping, authenticated browsing through proxies\n   - Setup: npm install camoufox-js, BROWSE_RUNTIME=camoufox\n   - Recommended flags: BROWSE_CONSENT_DISMISS=1, BROWSE_SERP_FASTPATH=1, BROWSE_READINESS=1\n   - Proxy setup: BROWSE_PROXY_STRATEGY, provider config\n   - Cookie import for authenticated browsing\n   - Search macro workflow: browse goto @google 'query' → snapshot → click result\n   - Troubleshooting: Google blocks, proxy rotation, fingerprint detection\n\n2. skill/browse-stealth/references/setup.md — detailed setup guide for camoufox + proxy\n\nThe skill should reference the main browse skill for command syntax and only document what's different for stealth workflows.",
+      "type": "docs",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-003"],
+      "acceptanceCriteria": [
+        "skill/browse-stealth/SKILL.md exists with valid frontmatter (name, version, description, when_to_use)",
+        "Skill recommends BROWSE_RUNTIME=camoufox and lists all relevant stealth env vars",
+        "Skill references main browse skill for command syntax instead of duplicating"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["skill/browse-stealth/SKILL.md", "skill/browse-stealth/references/setup.md"],
+      "writeScope": ["skill/browse-stealth/SKILL.md", "skill/browse-stealth/references/setup.md"],
+      "validateCommand": "test -f skill/browse-stealth/SKILL.md && grep -c 'camoufox' skill/browse-stealth/SKILL.md",
+      "rollbackPlan": "Delete skill/browse-stealth/ directory",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 6,
+    "layerCount": 3,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-003", "TASK-004"], "notes": "Independent: safety flags, SKILL.md update, commands.md update" },
+      { "layer": 1, "tasks": ["TASK-002", "TASK-006"], "notes": "Flag wiring (depends TASK-001), stealth skill (depends TASK-003)" },
+      { "layer": 2, "tasks": ["TASK-005"], "notes": "Regression tests (depends TASK-001, TASK-002)" }
+    ],
+    "criticalPath": ["TASK-001", "TASK-002", "TASK-005"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": [],
+    "TASK-004": [],
+    "TASK-005": ["TASK-001", "TASK-002"],
+    "TASK-006": ["TASK-003"]
+  },
+  "linkedPlans": [
+    "phase1-camoufox-runtime",
+    "phase2-real-web-browsing-quality",
+    "phase3-snapshot-large-pages",
+    "phase4-proxy-pool",
+    "phase5-concurrency-lifecycle",
+    "phase6-new-commands"
+  ]
+}

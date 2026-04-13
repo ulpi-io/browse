@@ -1,0 +1,492 @@
+{
+  "title": "Phase 2: Real-Web Browsing Quality",
+  "branch": "feat/real-web-browsing-quality",
+  "mode": "EXPANSION",
+  "overview": "Add six runtime-agnostic features that make browse_cli robust on real websites: consent dialog auto-dismiss (cookie banners), search engine macros (@google, @youtube, etc.), Google block/captcha detection, stale ref auto-refresh, click fallback chain (normal -> force -> mouse sequence), and page readiness enhancement (DOMContentLoaded + networkidle + hydration + rAF settle). All features work on every runtime (playwright, rebrowser, lightpanda, chrome, camoufox). Phase 2 of 6 in the camoufox integration roadmap.",
+  "scopeChallenge": "All six features integrate into the existing write command pipeline (src/commands/write.ts) and the browser domain (src/browser/). The goto handler (line 156) is the main integration point for 4 of 6 features: search macros expand the URL before navigation, page readiness runs after navigation, consent dismiss runs after readiness, and Google block detection runs after navigation to google.com. The click handler (line 182) is the integration point for 2 features: stale ref auto-refresh wraps resolveRef calls, and click fallback chain wraps the click itself. Each feature is implemented as a standalone module in src/browser/ first (P0 tasks), then wired into handlers (P1 tasks), keeping write.ts changes minimal and testable.",
+  "prerequisites": [
+    {
+      "assumption": "Goto handler in src/commands/write.ts accepts BrowserTarget and returns navigation result",
+      "status": "already-true",
+      "verification": "src/commands/write.ts:156 — goto case with page.goto() and status return"
+    },
+    {
+      "assumption": "Click handler supports both @ref and CSS selectors via resolveRef()",
+      "status": "already-true",
+      "verification": "src/commands/write.ts:182-211 — click case with bm.resolveRef() and locator.click()"
+    },
+    {
+      "assumption": "handleSnapshot() rebuilds @ref map and returns ARIA tree text",
+      "status": "already-true",
+      "verification": "src/browser/snapshot.ts — handleSnapshot(args, bm) builds refs, stores in setRefMap()"
+    },
+    {
+      "assumption": "RefManager.resolveRef() throws descriptive error when ref not found",
+      "status": "already-true",
+      "verification": "src/browser/refs.ts:77 — throws 'Ref @eN not found. Page may have changed — run snapshot'"
+    },
+    {
+      "assumption": "Barrel exports in src/browser/index.ts allow clean imports from browser domain",
+      "status": "already-true",
+      "verification": "src/browser/index.ts — exports BrowserManager, handleSnapshot, RefManager, etc."
+    },
+    {
+      "assumption": "Test infrastructure supports HTML fixtures and BrowserManager integration tests",
+      "status": "already-true",
+      "verification": "test/test-server.ts serves fixtures from test/fixtures/; test/commands.test.ts pattern uses shared bm"
+    }
+  ],
+  "nonGoals": [
+    "Proxy pool rotation (Phase 4)",
+    "Snapshot windowing for large pages (Phase 3)",
+    "Concurrency lifecycle improvements (Phase 5)",
+    "New commands beyond what exists (Phase 6)",
+    "CAPTCHA solving — only detection + clear error reporting",
+    "Auto-login to sites behind consent dialogs",
+    "Custom consent dismiss selectors configurable by user (hardcoded ~20 selectors is sufficient)",
+    "Search macros beyond the 14 defined (google, youtube, amazon, reddit, reddit_subreddit, wikipedia, twitter, yelp, spotify, netflix, linkedin, instagram, tiktok, twitch)"
+  ],
+  "contracts": [
+    {
+      "boundary": "Search macros module -> goto handler",
+      "producer": "src/browser/macros.ts expandMacro(url)",
+      "consumer": "src/commands/write.ts goto case (line 156)",
+      "shape": "expandMacro(url: string): string | null — returns expanded URL if input matches @macro pattern, null otherwise",
+      "consistencyRule": "Macro expansion runs BEFORE domain filter check. If expandMacro returns non-null, goto uses the expanded URL for both domain check and navigation."
+    },
+    {
+      "boundary": "Consent dismiss module -> goto handler",
+      "producer": "src/browser/consent.ts dismissConsentDialogs(page)",
+      "consumer": "src/commands/write.ts goto case (after navigation)",
+      "shape": "dismissConsentDialogs(page: Page): Promise<string | null> — returns description of dismissed dialog or null if none found. Timeout: 2s max, never throws.",
+      "consistencyRule": "Consent dismiss is best-effort: catches all errors internally, never delays goto response by more than 2s, and never overwrites the goto success result (appends info if dismissed)."
+    },
+    {
+      "boundary": "Google block detection -> goto + read commands",
+      "producer": "src/browser/detection.ts detectGoogleBlock(page)",
+      "consumer": "src/commands/write.ts goto case, src/commands/read.ts text case",
+      "shape": "detectGoogleBlock(page: Page): Promise<{ blocked: boolean; reason: string } | null> — returns block info or null if not on Google.",
+      "consistencyRule": "Detection only runs when URL contains google.com. Returns null for non-Google pages (fast path). When blocked, goto appends warning to result; text/snapshot prepend warning to output."
+    },
+    {
+      "boundary": "Stale ref auto-refresh -> write command resolveRef calls",
+      "producer": "Inline retry logic in write.ts click/fill/hover cases",
+      "consumer": "handleSnapshot() called to rebuild refs on first ref-not-found error",
+      "shape": "On ref-not-found error from resolveRef(), call handleSnapshot(['-i'], bm) once, then retry resolveRef(). If retry fails, throw original error.",
+      "consistencyRule": "Auto-refresh happens at most once per command invocation. Only triggers for @ref selectors (not CSS). Uses -i flag for fast interactive-only snapshot."
+    },
+    {
+      "boundary": "Click fallback chain -> click handler",
+      "producer": "Inline fallback logic in write.ts click case",
+      "consumer": "page.click() -> locator.click({force:true}) -> mouse event sequence",
+      "shape": "Try normal click (5s timeout). On intercepted/timeout error: try force click (3s). On force failure: try mouseover+mousedown+mouseup sequence.",
+      "consistencyRule": "Fallback only activates for interception-style errors (element intercepted, timeout). Genuine not-found errors skip fallback and throw immediately. Result message indicates which method succeeded."
+    },
+    {
+      "boundary": "Page readiness -> goto handler",
+      "producer": "src/browser/readiness.ts waitForPageReady(page)",
+      "consumer": "src/commands/write.ts goto case (after page.goto)",
+      "shape": "waitForPageReady(page: Page, opts?: { timeout?: number }): Promise<void> — waits for DOMContentLoaded (already done by goto), then networkidle (2s timeout, best-effort), then rAF settle (100ms).",
+      "consistencyRule": "Readiness is best-effort: networkidle timeout is soft (2s, non-fatal). rAF settle uses requestAnimationFrame + 100ms delay. Total overhead is bounded at ~2.5s max. Never throws."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Goto handler integration point",
+      "existingCode": "src/commands/write.ts:156-165",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Click handler with @ref support",
+      "existingCode": "src/commands/write.ts:182-211",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Fill handler with @ref support",
+      "existingCode": "src/commands/write.ts:213-236",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Hover handler with @ref support",
+      "existingCode": "src/commands/write.ts:251-278",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Ref resolution and error handling",
+      "existingCode": "src/browser/refs.ts:62-89",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Snapshot rebuilds refs",
+      "existingCode": "src/browser/snapshot.ts handleSnapshot()",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Browser domain barrel exports",
+      "existingCode": "src/browser/index.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Test fixtures and shared BrowserManager",
+      "existingCode": "test/test-server.ts, test/setup.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Consent dialog selector list",
+      "existingCode": "camofox-browser server.js:1056-1099",
+      "source": "external",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Search macro URL templates",
+      "existingCode": "camofox-browser lib/macros.js",
+      "source": "external",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Click fallback chain strategy",
+      "existingCode": "camofox-browser server.js:2036-2095",
+      "source": "external",
+      "action": "adapt"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "Consent dismiss selectors match non-consent elements (false positive click)",
+      "affectedTasks": ["TASK-002", "TASK-005"],
+      "mitigation": "Selectors are scoped to known consent framework IDs/classes (OneTrust, CookieBot, etc.). Each selector targets accept/dismiss buttons specifically. 2s timeout prevents hanging. Test against real consent dialog fixture."
+    },
+    {
+      "risk": "Search macro expansion conflicts with real URLs starting with @",
+      "affectedTasks": ["TASK-001", "TASK-004"],
+      "mitigation": "Only expand if URL starts with @<known_macro_name> followed by a space or end-of-string. Unknown @prefixes pass through as literal URLs. Pattern: /^@(google|youtube|...) /."
+    },
+    {
+      "risk": "Google block detection false positive on non-block Google pages",
+      "affectedTasks": ["TASK-003", "TASK-006"],
+      "mitigation": "Check both URL pattern (google.com/sorry) AND body text patterns ('unusual traffic', 'captcha'). Require at least 2 signals before declaring blocked."
+    },
+    {
+      "risk": "Stale ref auto-refresh rebuilds snapshot mid-action, causing unexpected delay",
+      "affectedTasks": ["TASK-007"],
+      "mitigation": "Auto-refresh uses -i flag (interactive-only, fast). Happens at most once per command. If rebuild takes >3s, timeout and throw original error."
+    },
+    {
+      "risk": "Click fallback chain causes double-click or unintended side effects",
+      "affectedTasks": ["TASK-008"],
+      "mitigation": "Each fallback step only runs after the previous step throws an interception/timeout error. If normal click succeeds, no fallback runs. Mouse sequence uses separate mousedown/mouseup to avoid double-click."
+    },
+    {
+      "risk": "Page readiness networkidle wait causes 2s delay on pages with persistent connections (WebSocket, SSE)",
+      "affectedTasks": ["TASK-009"],
+      "mitigation": "networkidle has a 2s soft timeout (race with setTimeout). If networkidle doesn't fire within 2s, proceed anyway. rAF settle adds only ~100ms."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "expandMacro('@google query') returns Google search URL",
+      "coveringTask": "TASK-010",
+      "testType": "unit"
+    },
+    {
+      "codepath": "expandMacro('https://example.com') returns null (not a macro)",
+      "coveringTask": "TASK-010",
+      "testType": "unit"
+    },
+    {
+      "codepath": "dismissConsentDialogs clicks OneTrust accept button",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    },
+    {
+      "codepath": "dismissConsentDialogs returns null on page without consent dialog",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    },
+    {
+      "codepath": "detectGoogleBlock identifies /sorry captcha page",
+      "coveringTask": "TASK-010",
+      "testType": "unit"
+    },
+    {
+      "codepath": "detectGoogleBlock returns null for non-Google page",
+      "coveringTask": "TASK-010",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Stale ref auto-refresh: click @ref after page change rebuilds refs and succeeds",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Click fallback: force click succeeds when normal click is intercepted by overlay",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Page readiness: goto waits for rAF settle after DOMContentLoaded",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    },
+    {
+      "codepath": "goto @google 'test query' navigates to Google search results URL",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Consent dismiss does not delay goto when no consent dialog present",
+      "coveringTask": "TASK-010",
+      "testType": "integration"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Search macros module",
+      "description": "Create `src/browser/macros.ts` with a search macro registry and expansion function.\n\nThe module exports:\n- `SEARCH_MACROS`: Record<string, { name: string; urlTemplate: string }> — 14 macros: google, youtube, amazon, reddit, reddit_subreddit, wikipedia, twitter, yelp, spotify, netflix, linkedin, instagram, tiktok, twitch. Each maps a macro name to a URL template with `{query}` placeholder.\n- `expandMacro(input: string): string | null` — if input starts with `@<macro_name>` followed by space + query text, returns the expanded URL with the query URI-encoded. Returns null if input doesn't match any macro pattern.\n- `listMacros(): string[]` — returns sorted list of macro names for help text.\n\nURL templates (from camofox-browser lib/macros.js):\n- google: `https://www.google.com/search?q={query}`\n- youtube: `https://www.youtube.com/results?search_query={query}`\n- amazon: `https://www.amazon.com/s?k={query}`\n- reddit: `https://www.reddit.com/search/?q={query}`\n- reddit_subreddit: `https://www.reddit.com/r/{query}` (no encoding)\n- wikipedia: `https://en.wikipedia.org/wiki/Special:Search?search={query}`\n- twitter: `https://twitter.com/search?q={query}`\n- yelp: `https://www.yelp.com/search?find_desc={query}`\n- spotify: `https://open.spotify.com/search/{query}`\n- netflix: `https://www.netflix.com/search?q={query}`\n- linkedin: `https://www.linkedin.com/search/results/all/?keywords={query}`\n- instagram: `https://www.instagram.com/explore/tags/{query}`\n- tiktok: `https://www.tiktok.com/search?q={query}`\n- twitch: `https://www.twitch.tv/search?term={query}`\n\nUpdate barrel export in `src/browser/index.ts` to export `expandMacro` and `listMacros`.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "expandMacro('@google test query') returns 'https://www.google.com/search?q=test%20query'",
+        "expandMacro('https://example.com') returns null (not a macro)",
+        "listMacros() returns array of 14 sorted macro names"
+      ],
+      "filesToModify": ["src/browser/index.ts"],
+      "filesToCreate": ["src/browser/macros.ts"],
+      "writeScope": ["src/browser/macros.ts", "src/browser/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/macros.ts, revert src/browser/index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Consent dialog dismiss module",
+      "description": "Create `src/browser/consent.ts` with a consent dialog dismissal function.\n\nThe module exports:\n- `CONSENT_SELECTORS`: Array of CSS selectors targeting common consent dialog accept/dismiss buttons (~20 selectors covering OneTrust, CookieBot, Quantcast, GDPR/CCPA banners, generic cookie buttons).\n- `dismissConsentDialogs(page: Page): Promise<string | null>` — iterates CONSENT_SELECTORS, for each checks if element exists and is visible (with 200ms timeout per selector check), clicks the first match found, returns description string (e.g. 'Dismissed cookie consent (OneTrust)'). Returns null if no consent dialog found. Entire function has a 2s hard timeout via Promise.race. Never throws — catches all errors internally and returns null on failure.\n\nSelector list (adapted from camofox-browser server.js:1056-1099):\n- OneTrust: `#onetrust-accept-btn-handler`\n- CookieBot: `#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll`\n- Quantcast: `.qc-cmp2-summary-buttons button[mode=\"primary\"]`\n- TrustArc: `#truste-consent-button`\n- Generic: `button[id*=\"accept\"][id*=\"cookie\"]`, `button[class*=\"accept\"][class*=\"cookie\"]`\n- GDPR: `button[id*=\"gdpr\"][id*=\"accept\"]`, `.gdpr-accept`, `.cookie-accept`\n- CCPA: `button[id*=\"ccpa\"]`\n- Common patterns: `[data-testid=\"cookie-accept\"]`, `[aria-label*=\"accept\" i][aria-label*=\"cookie\" i]`\n- Fallback text-based: buttons containing text 'Accept All', 'Accept Cookies', 'I Accept', 'Agree', 'Got it', 'OK' (via page.getByRole)\n\nUpdate barrel export in `src/browser/index.ts` to export `dismissConsentDialogs`.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "dismissConsentDialogs returns description string when consent dialog is present on page",
+        "dismissConsentDialogs returns null within <100ms on pages without consent dialogs",
+        "dismissConsentDialogs never throws — returns null on any error (timeout, selector failure)"
+      ],
+      "filesToModify": ["src/browser/index.ts"],
+      "filesToCreate": ["src/browser/consent.ts"],
+      "writeScope": ["src/browser/consent.ts", "src/browser/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/consent.ts, revert src/browser/index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Google block detection utility",
+      "description": "Create `src/browser/detection.ts` with a Google block/captcha detection function.\n\nThe module exports:\n- `detectGoogleBlock(page: Page): Promise<{ blocked: boolean; reason: string } | null>` — checks if the current page is a Google block page. Returns null immediately if URL does not contain 'google.com' (fast path). For Google URLs, checks two signals:\n  1. URL contains '/sorry/' or 'google.com/sorry'\n  2. Page body text contains 'unusual traffic' or 'captcha' or 'not a robot'\n  Returns `{ blocked: true, reason: 'Google detected unusual traffic — showing CAPTCHA page' }` if at least one URL signal and one text signal match. Returns `{ blocked: false, reason: '' }` for normal Google pages.\n- `formatBlockWarning(info: { blocked: boolean; reason: string }): string` — returns formatted warning string: `[WARNING] ${reason}. Use a different IP, proxy, or try again later.`\n\nThis is a pure detection utility — no side effects, no navigation, no clicks.\n\nUpdate barrel export in `src/browser/index.ts` to export `detectGoogleBlock` and `formatBlockWarning`.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "detectGoogleBlock returns null for non-Google URLs (fast path, no page evaluation)",
+        "detectGoogleBlock returns { blocked: true } when URL contains /sorry/ and body contains 'unusual traffic'",
+        "formatBlockWarning returns actionable error message with proxy suggestion"
+      ],
+      "filesToModify": ["src/browser/index.ts"],
+      "filesToCreate": ["src/browser/detection.ts"],
+      "writeScope": ["src/browser/detection.ts", "src/browser/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/detection.ts, revert src/browser/index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Wire search macros into goto handler",
+      "description": "Modify the goto handler in `src/commands/write.ts` (line 156) to expand search macros before navigation.\n\nChanges:\n1. Import `expandMacro` from `../browser/macros`\n2. In the goto case, before the domain filter check, call `const expanded = expandMacro(url)`. If expanded is non-null, use it as the navigation URL instead of the raw input.\n3. Update the return message to show both the macro and the expanded URL: `Navigated to @google \"query\" -> https://www.google.com/search?q=query (200)`\n\nAlso update the goto command's help/usage in the registry (`src/automation/registry.ts`) to mention macro support in the description: add 'Supports @macro shortcuts (e.g. @google \"query\")' to the goto command MCP description.\n\nThis is a small, surgical change: 3-5 lines added to the goto case, plus an import.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "browse goto '@google test query' navigates to https://www.google.com/search?q=test%20query",
+        "browse goto 'https://example.com' works unchanged (expandMacro returns null, no impact)",
+        "Domain filter check uses the expanded URL, not the raw @macro input"
+      ],
+      "filesToModify": ["src/commands/write.ts", "src/automation/registry.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts", "src/automation/registry.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert goto case in write.ts and registry.ts description change",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Wire consent dismiss as post-navigation hook",
+      "description": "Wire consent dialog dismissal into the goto handler in `src/commands/write.ts`.\n\nChanges to goto case (line 156-165):\n1. Import `dismissConsentDialogs` from `../browser/consent`\n2. After `page.goto()` completes and status is captured, call `const dismissed = await dismissConsentDialogs(page)`\n3. If dismissed is non-null, append to result: `Navigated to ${url} (${status})\\n${dismissed}`\n4. If dismissed is null, return original result unchanged\n\nThe consent dismiss runs synchronously after navigation (not in a lifecycle hook) because it needs the page to be loaded and it directly affects the visible page state. The 2s internal timeout in dismissConsentDialogs prevents delays.\n\nNo changes to other commands — consent dismiss only runs on explicit navigation via goto, not on back/forward/reload (those revisit pages where consent was already handled).\n\nAlso add an environment variable `BROWSE_CONSENT_DISMISS` (default: '1') checked in the goto handler. When set to '0', skip consent dismiss entirely. This allows users to disable the feature if it causes issues.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "goto to a page with consent dialog auto-dismisses it and reports in output",
+        "goto to a page without consent dialog shows no extra output and completes within normal timeframe",
+        "BROWSE_CONSENT_DISMISS=0 disables consent dismiss entirely"
+      ],
+      "filesToModify": ["src/commands/write.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert goto case changes in write.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Wire Google block detection into goto and read commands",
+      "description": "Wire Google block detection into goto, text, and snapshot commands.\n\nChanges:\n1. **src/commands/write.ts goto case**: Import `detectGoogleBlock` and `formatBlockWarning` from `../browser/detection`. After navigation completes (after consent dismiss if enabled), call `const blockInfo = await detectGoogleBlock(page)`. If `blockInfo?.blocked`, append warning to result: `Navigated to ${url} (${status})\\n${formatBlockWarning(blockInfo)}`.\n\n2. **src/commands/read.ts text case**: Import detection utilities. Before returning text result, call `detectGoogleBlock(page)`. If blocked, prepend warning: `${formatBlockWarning(blockInfo)}\\n\\n${textResult}`. This ensures agents reading page text get an immediate signal that the content is a captcha page, not real search results.\n\n3. **src/commands/meta/inspection.ts snapshot case**: After `handleSnapshot(args, bm)` returns, call `detectGoogleBlock(bm.getPage())`. If blocked, prepend warning to snapshot output.\n\nThe detection function returns null immediately for non-Google URLs, so the performance impact on normal browsing is negligible (one URL string check).",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P1",
+      "dependsOn": ["TASK-003"],
+      "acceptanceCriteria": [
+        "goto to Google /sorry page includes block warning in output",
+        "text command on Google /sorry page prepends block warning to extracted text",
+        "Non-Google pages have zero overhead from detection (null fast path)"
+      ],
+      "filesToModify": ["src/commands/write.ts", "src/commands/read.ts", "src/commands/meta/inspection.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts", "src/commands/read.ts", "src/commands/meta/inspection.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert detection imports and checks in write.ts, read.ts, inspection.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Stale ref auto-refresh in click/fill/hover handlers",
+      "description": "Add stale ref auto-refresh to the click, fill, and hover handlers in `src/commands/write.ts`.\n\nThe pattern: when `bm.resolveRef(selector)` throws a 'Ref @eN not found' error for a @ref selector, automatically call `handleSnapshot(['-i'], bm)` to rebuild the ref map, then retry `bm.resolveRef(selector)`. If the retry also fails, throw the original error.\n\nImplementation:\n1. Import `handleSnapshot` from `../browser/snapshot`\n2. Create a helper function `resolveRefWithAutoRefresh(selector: string, bm: BrowserTarget): Promise<{ locator: Locator } | { selector: string }>` at the top of write.ts:\n   - Call `bm.resolveRef(selector)` in a try/catch\n   - If error message contains 'not found' AND selector starts with '@e':\n     - Call `await handleSnapshot(['-i'], bm)` to rebuild refs\n     - Retry `bm.resolveRef(selector)` (this time let errors propagate)\n   - Otherwise, rethrow\n3. Replace `bm.resolveRef(selector)` calls in click (line 188), fill (line 219), and hover (line 257) with `await resolveRefWithAutoRefresh(selector, bm)`\n\nThis is a targeted change: only the resolveRef call changes, the rest of each handler stays the same. The auto-refresh only triggers for @ref selectors that fail — CSS selectors pass through unchanged.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "click @e3 after page content changes auto-rebuilds refs and succeeds if element still exists",
+        "click @e999 (truly nonexistent) fails with clear error after one auto-refresh attempt",
+        "click with CSS selector bypasses auto-refresh entirely (no snapshot call)"
+      ],
+      "filesToModify": ["src/commands/write.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert resolveRefWithAutoRefresh helper and call sites in write.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Click fallback chain",
+      "description": "Enhance the click handler in `src/commands/write.ts` (line 182) with a three-step fallback chain: normal click -> force click -> mouse event sequence. SAFETY: The fallback is OPT-IN only. It activates when (a) the user passes `--force` flag in the click args, OR (b) BROWSE_CLICK_FORCE=1 env var is set. Without either, click on an obscured element throws the existing overlay error unchanged — preserving backward compatibility.\n\nModify the click case's try/catch block (line 198-207):\n\n1. **Normal click** (always): `locator.click({ timeout: ACTION_TIMEOUT_MS })` — the current behavior.\n2. **Force click** (only if --force or BROWSE_CLICK_FORCE=1): If normal click throws an interception error (message contains 'intercepted' or 'element is covered'), retry with `locator.click({ force: true, timeout: 3000 })`. If --force not set and BROWSE_CLICK_FORCE not '1', re-throw the original error.\n3. **Mouse event sequence** (only if force-click also fails AND force mode active): Get bounding box, calculate center, dispatch: `page.mouse.move(x, y)` -> `page.mouse.down()` -> `page.mouse.up()`.\n\nParse --force from args: check if args include '--force', strip it before passing to resolveRef.\n\nRead BROWSE_CLICK_FORCE from process.env, default '0'. Add to src/constants.ts DEFAULTS.\n\nThe result message indicates which method succeeded:\n- Normal: `Clicked ${selector} -> now at ${url}` (unchanged)\n- Force: `Clicked ${selector} (force) -> now at ${url}`\n- Mouse: `Clicked ${selector} (mouse) -> now at ${url}`\n\nAdapted from camofox-browser server.js:2036-2095.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Click on obscured element WITHOUT --force flag throws existing overlay error (no fallback — backward compatible)",
+        "Click on obscured element WITH --force flag succeeds via force click fallback",
+        "Click on element that doesn't exist throws immediately without fallback attempts",
+        "Result message indicates which click method was used (normal, force, or mouse)"
+      ],
+      "filesToModify": ["src/commands/write.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert click case changes in write.ts to original try/catch",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-009",
+      "title": "Page readiness enhancement",
+      "description": "Create `src/browser/readiness.ts` with a page readiness utility and wire it into the goto handler.\n\nThe module exports:\n- `waitForPageReady(page: Page, opts?: { timeout?: number }): Promise<void>` — waits for the page to be truly ready for interaction after navigation. Steps:\n  1. `page.waitForLoadState('networkidle', { timeout: opts?.timeout ?? 2000 }).catch(() => {})` — soft wait for network to settle. 2s default timeout, non-fatal on timeout.\n  2. `page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 100))))` — wait for one animation frame + 100ms settle. This catches hydration-triggered re-renders.\n  Never throws — all steps are wrapped in try/catch returning void.\n\nUpdate barrel export in `src/browser/index.ts` to export `waitForPageReady`.\n\nWire into goto handler in `src/commands/write.ts`:\n1. Import `waitForPageReady` from `../browser/readiness`\n2. After `page.goto()` and before consent dismiss, call `await waitForPageReady(page)`\n3. Add environment variable `BROWSE_READINESS` (default: '0' — opt-in only, adds latency to goto). When set to '0', skip readiness wait.\n\nThe total overhead is bounded: 2s networkidle timeout + 100ms rAF settle = 2.1s max in worst case. On fast pages, networkidle resolves immediately and total overhead is ~100ms.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "waitForPageReady completes within 200ms on a simple static page (no network activity to wait for)",
+        "waitForPageReady completes within 2.5s max even on a page with persistent WebSocket connection",
+        "BROWSE_READINESS=0 skips readiness wait entirely in goto handler"
+      ],
+      "filesToModify": ["src/commands/write.ts", "src/browser/index.ts"],
+      "filesToCreate": ["src/browser/readiness.ts"],
+      "writeScope": ["src/browser/readiness.ts", "src/browser/index.ts", "src/commands/write.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/readiness.ts, revert src/browser/index.ts and write.ts goto changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-010",
+      "title": "Integration tests for Phase 2 features",
+      "description": "Add integration tests for all Phase 2 features in a new test file `test/real-web.test.ts` and supporting fixtures.\n\nNew test fixtures:\n- `test/fixtures/consent-dialog.html` — page with a mock cookie consent banner (div with OneTrust-style ID and accept button). Verifies dismissConsentDialogs finds and clicks it.\n- `test/fixtures/click-overlay.html` — page with a button behind a transparent overlay div. Verifies click fallback chain reaches force click.\n- `test/fixtures/dynamic-refs.html` — page where button text changes after 500ms (simulating hydration). Verifies stale ref auto-refresh.\n\nTest sections in `test/real-web.test.ts`:\n\n1. **Search macros (unit)**:\n   - expandMacro('@google test') returns correct URL\n   - expandMacro('@youtube cats') returns correct URL\n   - expandMacro('@reddit_subreddit javascript') returns /r/javascript\n   - expandMacro('https://example.com') returns null\n   - expandMacro('@unknown query') returns null\n   - listMacros() returns 14 items\n\n2. **Consent dialog dismiss (integration)**:\n   - Navigate to consent-dialog.html, call dismissConsentDialogs, verify accept button was clicked (element hidden/removed after click)\n   - Navigate to basic.html (no consent), verify dismissConsentDialogs returns null quickly\n\n3. **Google block detection (unit)**:\n   - Mock page URL check for google.com/sorry — verify blocked detection\n   - Non-Google URL returns null\n   - formatBlockWarning returns actionable message\n\n4. **Stale ref auto-refresh (integration)**:\n   - Navigate to dynamic-refs.html, take snapshot, trigger content change, click old ref — verify auto-refresh and success\n\n5. **Click fallback chain (integration)**:\n   - Navigate to click-overlay.html, click button behind overlay — verify force click fallback succeeds\n   - Click non-existent selector — verify no fallback attempted, immediate error\n\n6. **Page readiness (integration)**:\n   - Navigate to basic.html with waitForPageReady — verify completes quickly\n   - Verify readiness function never throws",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-004", "TASK-005", "TASK-006", "TASK-007", "TASK-008", "TASK-009"],
+      "acceptanceCriteria": [
+        "All unit tests pass: macro expansion, Google detection, block warning formatting",
+        "All integration tests pass: consent dismiss on fixture, click overlay fallback, stale ref refresh",
+        "Test for click on non-existent element verifies no fallback chain activation (failure-case coverage)"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/real-web.test.ts", "test/fixtures/consent-dialog.html", "test/fixtures/click-overlay.html"],
+      "writeScope": ["test/real-web.test.ts", "test/fixtures/consent-dialog.html", "test/fixtures/click-overlay.html"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Delete test/real-web.test.ts and new fixture files",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 10,
+    "layerCount": 3,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002", "TASK-003", "TASK-007", "TASK-008", "TASK-009"] },
+      { "layer": 1, "tasks": ["TASK-004", "TASK-005", "TASK-006"] },
+      { "layer": 2, "tasks": ["TASK-010"] }
+    ],
+    "criticalPath": ["TASK-002", "TASK-005", "TASK-010"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": [],
+    "TASK-004": ["TASK-001"],
+    "TASK-005": ["TASK-002"],
+    "TASK-006": ["TASK-003"],
+    "TASK-007": [],
+    "TASK-008": [],
+    "TASK-009": [],
+    "TASK-010": ["TASK-004", "TASK-005", "TASK-006", "TASK-007", "TASK-008", "TASK-009"]
+  },
+  "linkedPlans": [
+    "phase1-camoufox-runtime",
+    "phase3-snapshot-large-pages",
+    "phase4-proxy-pool",
+    "phase5-concurrency-lifecycle",
+    "phase6-new-commands"
+  ]
+}

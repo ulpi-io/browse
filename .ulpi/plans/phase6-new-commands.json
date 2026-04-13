@@ -1,0 +1,355 @@
+{
+  "title": "Phase 6: New Commands",
+  "branch": "feat/new-commands",
+  "mode": "EXPANSION",
+  "overview": "Add YouTube transcript extraction, download inline base64 support, and Netscape cookie file import to browse_cli. Phase 6 of the camoufox integration roadmap. All three features are runtime-agnostic — they work with any browser runtime (Playwright, Camoufox, Rebrowser). YouTube transcripts use yt-dlp as fast path (no browser needed), falling back to browser-based caption intercept. Download inline returns file content as base64 in the CLI response. Netscape cookie import adds support for .txt cookie files exported by browser extensions (EditThisCookie, Get cookies.txt, etc.).",
+  "scopeChallenge": "Three independent features sharing the command pipeline. YouTube transcript is the largest: new handler file (src/commands/meta/youtube.ts), new helper module (src/browser/youtube.ts), and registry entry. The yt-dlp fast path spawns a child process with a sanitized environment — security-critical. Download inline is a small extension to the existing download handler in src/commands/write.ts — add --inline flag that reads the saved file and returns base64 instead of the path. Netscape cookie import extends the existing cookie-import command in src/commands/meta/auth.ts — the current implementation only handles Chromium SQLite databases. Need to detect Netscape format (.txt files with tab-separated fields) and parse them into Playwright-compatible cookies. The Netscape parser is a new function in src/browser/cookie-import.ts alongside the existing Chromium decryption pipeline.",
+  "prerequisites": [
+    {
+      "assumption": "CommandRegistry in src/automation/registry.ts supports meta command registration via m() helper",
+      "status": "already-true",
+      "verification": "registry.ts:24 — m() helper creates CommandSpec with category 'meta'"
+    },
+    {
+      "assumption": "Meta command dispatcher (src/commands/meta/index.ts) routes to handler modules via command set membership",
+      "status": "already-true",
+      "verification": "meta/index.ts:23-43 — routing sets for TABS, SCREENSHOTS, RECORDING, SESSIONS, etc."
+    },
+    {
+      "assumption": "Download command handler exists in src/commands/write.ts with save-to-disk logic",
+      "status": "already-true",
+      "verification": "write.ts:732-744 — case 'download' saves file via download.saveAs()"
+    },
+    {
+      "assumption": "Cookie import exists for Chromium SQLite databases only (Chrome, Arc, Brave, Edge on macOS)",
+      "status": "already-true",
+      "verification": "cookie-import.ts:86-91 — BROWSER_REGISTRY only lists Chromium browsers; no Netscape .txt parsing"
+    },
+    {
+      "assumption": "yt-dlp binary available on developer machines for YouTube fast path",
+      "status": "external",
+      "verification": "yt-dlp is optional — fallback to browser-based intercept when not available"
+    },
+    {
+      "assumption": "Test infrastructure has download fixture (test/fixtures/download-link.html) and test server with /download/test.txt route",
+      "status": "already-true",
+      "verification": "test-server.ts:45-48, interactions.test.ts:275-289"
+    }
+  ],
+  "nonGoals": [
+    "YouTube video download (only transcript/caption extraction)",
+    "YouTube playlist or channel batch transcript extraction",
+    "Download manager with queue/retry/resume (only single-file inline base64)",
+    "Cookie encryption/vault for Netscape-imported cookies (they are plain text)",
+    "Firefox cookie database decryption (only Netscape .txt format added)",
+    "Browser-based YouTube transcript fallback (Phase 6 only implements yt-dlp path; browser intercept is a future enhancement)"
+  ],
+  "contracts": [
+    {
+      "boundary": "youtube.ts helpers -> meta/youtube.ts handler",
+      "producer": "src/browser/youtube.ts exports: detectYtDlp, ensureYtDlp, ytDlpTranscript, parseJson3, parseVtt, parseXml",
+      "consumer": "src/commands/meta/youtube.ts imports helpers, calls ensureYtDlp + ytDlpTranscript",
+      "shape": "ytDlpTranscript(url, lang?) returns { status: 'ok', transcript, video_title, language, total_words } | { status: 'error', code, message }",
+      "consistencyRule": "Handler catches yt-dlp not available error and returns user-friendly message with install instructions"
+    },
+    {
+      "boundary": "download --inline -> CLI response",
+      "producer": "src/commands/write.ts download handler with --inline flag",
+      "consumer": "CLI stdout / MCP response",
+      "shape": "Returns 'data:<mime>;base64,<encoded>' string instead of 'Downloaded: <path>'",
+      "consistencyRule": "Inline flag reads file after saveAs, then deletes temp file. Max size 20MB (MAX_DOWNLOAD_INLINE_BYTES). Exceeding returns error with file path fallback."
+    },
+    {
+      "boundary": "Netscape cookie parser -> cookie-import handler",
+      "producer": "src/browser/cookie-import.ts exports: parseNetscapeCookieFile, importNetscapeCookies",
+      "consumer": "src/commands/meta/auth.ts cookie-import handler with --file flag",
+      "shape": "parseNetscapeCookieFile(text) returns PlaywrightCookie[]; importNetscapeCookies(filePath, domain?) returns ImportResult",
+      "consistencyRule": "Netscape format detected by --file flag. Domain filtering optional. Cookies converted to Playwright format and added to context."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "YouTube transcript parsing (JSON3, VTT, XML)",
+      "existingCode": "camofox-browser/lib/youtube.js",
+      "source": "reference",
+      "action": "port"
+    },
+    {
+      "subProblem": "yt-dlp process spawning with safe environment",
+      "existingCode": "camofox-browser/lib/youtube.js:21-86",
+      "source": "reference",
+      "action": "port"
+    },
+    {
+      "subProblem": "Download inline base64 pattern",
+      "existingCode": "camofox-browser/lib/downloads.js:118-150",
+      "source": "reference",
+      "action": "port"
+    },
+    {
+      "subProblem": "Netscape cookie file parsing",
+      "existingCode": "camofox-browser/lib/cookies.js:13-43",
+      "source": "reference",
+      "action": "port"
+    },
+    {
+      "subProblem": "Meta command dispatcher routing pattern",
+      "existingCode": "src/commands/meta/index.ts:23-97",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Command registry registration pattern",
+      "existingCode": "src/automation/registry.ts:471+ — existing meta command registrations",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Download command handler",
+      "existingCode": "src/commands/write.ts:732-744",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Cookie import handler and auth.ts dispatcher",
+      "existingCode": "src/commands/meta/auth.ts:73-134",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Download integration test",
+      "existingCode": "test/interactions.test.ts:275-289",
+      "source": "local",
+      "action": "extend"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "yt-dlp not installed on user machine — transcript command fails with unhelpful error",
+      "affectedTasks": ["TASK-001", "TASK-002"],
+      "mitigation": "ensureYtDlp() returns false when binary not found. Handler returns clear message: 'yt-dlp not installed. Install: brew install yt-dlp (macOS) or pip install yt-dlp'. No browser fallback in Phase 6."
+    },
+    {
+      "risk": "yt-dlp subprocess hangs or takes too long on slow networks",
+      "affectedTasks": ["TASK-001"],
+      "mitigation": "All yt-dlp calls have explicit timeouts (15s for title, 30s for subtitles). Safe environment (only PATH, HOME, LANG). maxBuffer 4MB to prevent memory issues."
+    },
+    {
+      "risk": "Download inline exceeds memory for large files (>20MB)",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "MAX_DOWNLOAD_INLINE_BYTES = 20MB hard limit. Files exceeding this return error with the disk path so caller can read the file directly."
+    },
+    {
+      "risk": "Netscape cookie file has malformed lines or unexpected encoding",
+      "affectedTasks": ["TASK-004"],
+      "mitigation": "Parser skips malformed lines (less than 7 tab-separated fields). BOM stripping for UTF-8 with BOM. Invalid lines logged as warnings, not errors."
+    },
+    {
+      "risk": "YouTube video has no captions — yt-dlp returns empty",
+      "affectedTasks": ["TASK-002"],
+      "mitigation": "Handler returns structured error: 'No captions available for this video' with video URL and title. Not a crash — clean error response."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "parseJson3() parses YouTube JSON3 caption format into timestamped lines",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "parseVtt() parses WebVTT caption format into timestamped lines",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "parseXml() parses XML/srv3 caption format into timestamped lines",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "normalizeYoutubeUrl() validates and normalizes YouTube URLs",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "download --inline returns base64-encoded file content",
+      "coveringTask": "TASK-005",
+      "testType": "integration"
+    },
+    {
+      "codepath": "download --inline with oversized file returns error with path fallback",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "parseNetscapeCookieFile() parses Netscape .txt cookies into PlaywrightCookie[]",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "parseNetscapeCookieFile() handles #HttpOnly_ prefix correctly",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "parseNetscapeCookieFile() skips comment lines and malformed entries",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "cookie-import --file <path> loads Netscape cookies into browser context",
+      "coveringTask": "TASK-005",
+      "testType": "integration"
+    },
+    {
+      "codepath": "youtube-transcript command registered in CommandRegistry as meta command",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "YouTube yt-dlp detection and caption parsers",
+      "description": "Create `src/browser/youtube.ts` with yt-dlp binary detection, safe child process spawning, and three caption format parsers (JSON3, VTT, XML/srv3). Port from camofox-browser/lib/youtube.js with TypeScript types.\n\nKey functions to implement:\n1. `detectYtDlp()` — scan candidate paths (/usr/local/bin/yt-dlp, etc.), cache result\n2. `ensureYtDlp()` — lazy re-detect on each call if initial detection failed\n3. `hasYtDlp()` — synchronous check of cached detection result\n4. `buildSafeEnv()` — whitelist only PATH, HOME, LANG, LC_ALL, LC_CTYPE, TMPDIR\n5. `runYtDlp(binary, args, timeoutMs)` — spawn with safe env, maxBuffer 4MB, timeout\n6. `normalizeYoutubeUrl(rawUrl)` — validate URL scheme (https/http), host (youtube.com, youtu.be)\n7. `normalizeLanguage(rawLang)` — validate language code regex, default 'en'\n8. `ytDlpTranscript(url, lang?, proxyUrl?)` — full transcript extraction pipeline:\n   - Get video title via --print %(title)s\n   - Download subtitles to temp dir (--write-sub --write-auto-sub --sub-lang --sub-format json3)\n   - Find subtitle file (.json3, .vtt, .srv3)\n   - Parse with appropriate parser\n   - Return { status, transcript, video_title, language, total_words } or error\n   - Clean up temp dir in finally block\n9. `parseJson3(content)` — parse YouTube JSON3 format (events[].segs[].utf8 with tStartMs timestamps)\n10. `parseVtt(content)` — parse WebVTT format (strip headers, extract timestamps and text, decode HTML entities)\n11. `parseXml(content)` — parse XML/srv3 format (<text start=\"...\"> elements, decode HTML entities)\n\nExport barrel in `src/browser/index.ts`.\n\nSecurity: All yt-dlp args are constructed from validated values (no user input interpolation). Environment is whitelisted. temp dirs are cleaned up in finally blocks.\n\nReference: camofox-browser/lib/youtube.js (lines 1-301)",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "parseJson3() converts YouTube JSON3 caption data into '[MM:SS] text' format",
+        "parseVtt() converts WebVTT caption data into '[MM:SS] text' format, stripping HTML tags and decoding entities",
+        "parseXml() converts XML/srv3 caption data into '[MM:SS] text' format",
+        "normalizeYoutubeUrl() rejects non-YouTube URLs and non-http(s) schemes",
+        "buildSafeEnv() only includes whitelisted environment variables",
+        "ytDlpTranscript() cleans up temp directory even on error (finally block)",
+        "All functions have TypeScript types — no any types"
+      ],
+      "filesToModify": ["src/browser/index.ts"],
+      "filesToCreate": ["src/browser/youtube.ts"],
+      "writeScope": ["src/browser/youtube.ts", "src/browser/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/youtube.ts, revert src/browser/index.ts barrel export",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "YouTube transcript meta command and registry entry",
+      "description": "Create `src/commands/meta/youtube.ts` as the command handler, register `youtube-transcript` in the command registry, and wire it into the meta dispatcher.\n\n**Handler (src/commands/meta/youtube.ts):**\n1. Export `handleYoutubeCommand(command, args, bm)` following the pattern of other meta handlers (sim.ts, auth.ts)\n2. Parse args: first positional arg is the YouTube URL, optional --lang <code> flag\n3. Call ensureYtDlp() — if false, return clear error with install instructions for macOS (brew install yt-dlp) and generic (pip install yt-dlp)\n4. Call ytDlpTranscript(url, lang) from src/browser/youtube.ts\n5. On success: format output as 'Title: <title>\\nLanguage: <lang>\\nWords: <count>\\n\\n<transcript>'\n6. On error (no captions): return the error message from ytDlpTranscript result\n\n**Registry (src/automation/registry.ts):**\nAdd `m('youtube-transcript', ...)` entry near the other meta commands. Include:\n- description: 'Extract YouTube video transcript'\n- usage: '<url> [--lang <code>]'\n- safeToRetry: true\n- mcp schema with url (required) and lang (optional) properties\n- argDecode function\n\n**Meta dispatcher (src/commands/meta/index.ts):**\n1. Import handleYoutubeCommand from './youtube'\n2. Add YOUTUBE_COMMANDS = new Set(['youtube-transcript'])\n3. Add routing block before the catch-all throw\n\nThe command is a meta command because it primarily extracts data (like inspection commands) and uses a tool external to the browser (yt-dlp). It is safe to retry since it has no side effects.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "youtube-transcript appears in META_COMMANDS set (derived from registry)",
+        "browse youtube-transcript <youtube-url> returns transcript text when yt-dlp is available",
+        "browse youtube-transcript without URL throws usage error",
+        "MCP schema has url (required) and lang (optional) properties",
+        "When yt-dlp is not installed, returns helpful error message with install instructions"
+      ],
+      "filesToModify": ["src/automation/registry.ts", "src/commands/meta/index.ts"],
+      "filesToCreate": ["src/commands/meta/youtube.ts"],
+      "writeScope": ["src/commands/meta/youtube.ts", "src/automation/registry.ts", "src/commands/meta/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/commands/meta/youtube.ts, revert registry.ts and index.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Download inline base64 extension",
+      "description": "Extend the existing download command in `src/commands/write.ts` (line 732-744) to support a `--inline` flag that returns the downloaded file content as a base64 data URI instead of just saving to disk.\n\n**Changes to write.ts download handler:**\n1. Parse --inline flag from args (before the selector/savePath extraction)\n2. When --inline is set:\n   a. Save file to temp path (os.tmpdir() + random UUID) instead of user path\n   b. Read the file with fs.readFile()\n   c. Check file size against MAX_DOWNLOAD_INLINE_BYTES (20MB)\n   d. If under limit: encode as base64, guess MIME type from filename, return `data:<mime>;base64,<encoded>`\n   e. If over limit: return error `File too large for inline (${size} bytes). Saved to: ${tempPath}`\n   f. Clean up temp file after reading (unless over limit — leave it for the caller)\n3. Without --inline: existing behavior unchanged\n\n**Changes to registry.ts download entry (line 412-420):**\n1. Add `inline` boolean property to inputSchema\n2. Update argDecode to handle inline flag: if (p.inline) args.push('--inline')\n3. Update MCP description to mention --inline option\n\nMIME type guessing: reuse simple extension-based mapping (.png -> image/png, .jpg -> image/jpeg, etc., default application/octet-stream). Implement as a local helper in write.ts or extract to a shared utility.\n\nReference: camofox-browser/lib/downloads.js:118-150 (getDownloadsList with includeData flag)",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse download <selector> --inline returns data:<mime>;base64,<encoded> string",
+        "browse download <selector> <path> (without --inline) behavior unchanged — saves to path",
+        "Files over 20MB with --inline return error with saved temp path",
+        "MCP schema includes inline boolean property",
+        "Temp file is cleaned up after successful inline read"
+      ],
+      "filesToModify": ["src/commands/write.ts", "src/automation/registry.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/write.ts", "src/automation/registry.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert write.ts download handler and registry.ts download entry",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Netscape cookie format parity",
+      "description": "Add Netscape cookie file (.txt) import support to the existing cookie-import command. The current implementation only handles Chromium browser SQLite databases. This adds a --file flag to import from Netscape-format text files (the de facto standard exported by browser extensions like EditThisCookie, Get cookies.txt, Cookie-Editor, etc.).\n\n**New functions in src/browser/cookie-import.ts:**\n1. `parseNetscapeCookieFile(text: string): PlaywrightCookie[]` — Parse Netscape format:\n   - Strip BOM (\\uFEFF)\n   - Skip empty lines and comment lines (starting with #, except #HttpOnly_)\n   - Handle #HttpOnly_ prefix (strip prefix, set httpOnly flag)\n   - Split each line by tabs — expect 7+ fields: domain, subdomains-flag, path, secure, expires, name, value\n   - Convert 'TRUE'/'FALSE' strings to booleans for secure flag\n   - Convert expires to Unix timestamp (number)\n   - Map sameSite to 'Lax' default (Netscape format doesn't specify sameSite)\n   - Return array of PlaywrightCookie objects\n\n2. `importNetscapeCookies(filePath: string, domain?: string): Promise<ImportResult>` — Read and parse:\n   - Validate file exists and size < 5MB\n   - Read file as UTF-8\n   - Call parseNetscapeCookieFile()\n   - If domain filter provided, filter cookies where domain ends with the filter\n   - Return ImportResult with cookies, count, failed (0 for Netscape — no decryption), domainCounts\n\nExport both functions from src/browser/cookie-import.ts.\n\n**Changes to src/commands/meta/auth.ts cookie-import handler (line 73+):**\n1. Detect --file <path> flag in args\n2. If --file present: call importNetscapeCookies(filePath, domain?)\n3. Add cookies to browser context\n4. Return import count message\n\n**Changes to src/automation/registry.ts cookie-import entry (line 660+):**\n1. Add `file` string property to MCP inputSchema\n2. Update argDecode to handle file flag\n3. Update description to mention --file option\n\nReference: camofox-browser/lib/cookies.js (parseNetscapeCookieFile, readCookieFile)",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "parseNetscapeCookieFile() correctly parses standard Netscape cookie file format",
+        "parseNetscapeCookieFile() handles #HttpOnly_ prefix, BOM, and malformed lines gracefully",
+        "browse cookie-import --file cookies.txt imports cookies into browser context",
+        "browse cookie-import --file cookies.txt --domain .example.com filters by domain",
+        "Files over 5MB are rejected with clear error",
+        "MCP schema includes file property",
+        "Existing Chromium cookie import (browse cookie-import chrome) still works unchanged"
+      ],
+      "filesToModify": ["src/browser/cookie-import.ts", "src/commands/meta/auth.ts", "src/automation/registry.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/browser/cookie-import.ts", "src/commands/meta/auth.ts", "src/automation/registry.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert cookie-import.ts, auth.ts, and registry.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Tests for YouTube transcript, download base64, and cookie import",
+      "description": "Add tests for all three new features across test files.\n\n**YouTube parser unit tests (test/features.test.ts):**\n1. New describe block 'YouTube transcript'\n2. Test parseJson3(): valid JSON3 content -> timestamped lines\n3. Test parseJson3(): empty events array -> empty string\n4. Test parseJson3(): malformed JSON -> null\n5. Test parseVtt(): valid VTT content -> timestamped lines, HTML entities decoded\n6. Test parseVtt(): VTT with nested HTML tags stripped\n7. Test parseXml(): valid XML/srv3 content -> timestamped lines\n8. Test normalizeYoutubeUrl(): valid YouTube URLs accepted\n9. Test normalizeYoutubeUrl(): non-YouTube hosts rejected\n10. Test normalizeYoutubeUrl(): non-https schemes rejected\n11. Test normalizeLanguage(): valid codes pass through, invalid default to 'en'\n\n**Download inline integration test (test/interactions.test.ts):**\n1. Extend existing 'download' describe block\n2. Test: download --inline returns base64 data URI (use existing /download/test.txt fixture)\n3. Verify data URI format: starts with 'data:' and contains base64-encoded content\n4. Decode base64 and verify content matches 'test file content'\n5. Test: download without --inline still saves to disk (existing test unchanged)\n\n**Netscape cookie parser unit tests (test/features.test.ts):**\n1. New describe block 'Netscape cookie import'\n2. Test parseNetscapeCookieFile(): standard 7-field tab-separated lines\n3. Test parseNetscapeCookieFile(): #HttpOnly_ prefix sets httpOnly flag\n4. Test parseNetscapeCookieFile(): comment lines and empty lines skipped\n5. Test parseNetscapeCookieFile(): lines with fewer than 7 fields skipped\n6. Test parseNetscapeCookieFile(): BOM stripped from start of file\n7. Test parseNetscapeCookieFile(): secure flag TRUE/FALSE conversion\n\n**Cookie import integration test (test/interactions.test.ts or test/features.test.ts):**\n1. Create a temp Netscape cookie file with known content\n2. Test cookie-import --file <path> imports cookies into context\n3. Verify cookies are queryable via bm.getContext().cookies()",
+      "type": "test",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-002", "TASK-003", "TASK-004"],
+      "acceptanceCriteria": [
+        "All YouTube parser unit tests pass (parseJson3, parseVtt, parseXml, normalizeYoutubeUrl, normalizeLanguage)",
+        "Download --inline integration test verifies base64 data URI format and content correctness",
+        "Netscape cookie parser unit tests cover standard format, HttpOnly prefix, BOM, malformed lines",
+        "Cookie import --file integration test verifies cookies are loaded into browser context",
+        "All existing tests continue to pass (no regressions)"
+      ],
+      "filesToModify": ["test/features.test.ts", "test/interactions.test.ts"],
+      "filesToCreate": [],
+      "writeScope": ["test/features.test.ts", "test/interactions.test.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Revert test file changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 5,
+    "layerCount": 3,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-003", "TASK-004"] },
+      { "layer": 1, "tasks": ["TASK-002"] },
+      { "layer": 2, "tasks": ["TASK-005"] }
+    ],
+    "criticalPath": ["TASK-001", "TASK-002", "TASK-005"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": [],
+    "TASK-004": [],
+    "TASK-005": ["TASK-002", "TASK-003", "TASK-004"]
+  },
+  "linkedPlans": [
+    "phase1-camoufox-runtime",
+    "phase2-real-web-browsing-quality",
+    "phase3-snapshot-large-pages",
+    "phase4-proxy-pool",
+    "phase5-concurrency-lifecycle"
+  ]
+}
