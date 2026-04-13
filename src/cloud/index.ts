@@ -17,3 +17,7 @@ export { WarmPool } from './warm-pool';
 export type { WarmPoolOptions, PoolEntry } from './warm-pool';
 export { FirecrackerClient, FirecrackerApiError } from './firecracker';
 export type { VmConfig, FirecrackerClientOptions } from './firecracker';
+export { GoldenSnapshotManager } from './golden-snapshot';
+export type { GoldenSnapshotOptions } from './golden-snapshot';
+export { VmOrchestrator } from './vm-orchestrator';
+export type { VmOrchestratorOptions } from './vm-orchestrator';

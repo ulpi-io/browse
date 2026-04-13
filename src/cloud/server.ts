@@ -171,6 +171,21 @@ async function start() {
       });
       console.log('[cloud] Container isolation enabled');
     }
+  } else if (isolation === 'firecracker') {
+    const { FirecrackerClient } = await import('./firecracker');
+    const { VmOrchestrator } = await import('./vm-orchestrator');
+    const fc = new FirecrackerClient();
+
+    if (!fc.checkKvm()) {
+      console.error('[cloud] KVM not available. Falling back to direct mode.');
+    } else {
+      orchestrator = new VmOrchestrator({
+        firecracker: fc,
+        kernelPath: process.env.BROWSE_CLOUD_KERNEL || 'vmlinux',
+        rootfsPath: process.env.BROWSE_CLOUD_ROOTFS || 'rootfs.ext4',
+      });
+      console.log('[cloud] Firecracker VM isolation enabled');
+    }
   }
 
   // ─── Orphan container reaper (optional) ─────────────────
