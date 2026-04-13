@@ -1,0 +1,60 @@
+# Dockerfile.session — Container image for a single browse session.
+#
+# Pre-requisites:
+#   npm run build   (produces dist/browse.cjs)
+#
+# Build (from repo root):
+#   docker build -f docker/Dockerfile.session -t browse-session .
+#
+# Run:
+#   docker run --rm -p 9400:9400 browse-session
+#
+# The Playwright base image ships Chromium + system deps.
+# We install only the production npm packages that the esbuild
+# bundle marks as --external (playwright, better-sqlite3, etc.).
+# Everything else is already bundled inside dist/browse.cjs.
+
+# ── Base: Playwright with Chromium + system deps ────────────────
+FROM mcr.microsoft.com/playwright:v1.58.2-noble
+
+WORKDIR /app
+
+# ── Install production dependencies ─────────────────────────────
+# Copy only package files first for layer caching.
+# The postinstall script (npx playwright install chromium) is
+# skipped because the base image already has Chromium.
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev --ignore-scripts 2>/dev/null \
+    || npm install --omit=dev --ignore-scripts
+
+# ── Copy pre-built server bundle ────────────────────────────────
+COPY dist/browse.cjs ./dist/
+
+# ── Environment ─────────────────────────────────────────────────
+ENV NODE_ENV=production
+# Trigger server mode (bypass CLI client, start HTTP daemon directly)
+ENV __BROWSE_SERVER_MODE=1
+# Fixed port inside the container (no auto-scan needed)
+ENV BROWSE_PORT=9400
+# Shorter idle timeout for container sessions (5 min)
+ENV BROWSE_IDLE_TIMEOUT=300000
+# Use /tmp for state files — no persistent volume needed
+ENV BROWSE_LOCAL_DIR=/tmp
+
+# ── Security: run as non-root ───────────────────────────────────
+# The Playwright image provides 'pwuser' (UID 1001).
+# Ensure /tmp is writable (state files, screenshots).
+RUN mkdir -p /tmp/.browse && chown -R pwuser:pwuser /tmp/.browse
+USER pwuser
+
+# ── Health check ────────────────────────────────────────────────
+# Uses Node.js built-in fetch (Node 18+). No curl needed.
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:9400/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
+EXPOSE 9400
+
+# ── Start the browse server ─────────────────────────────────────
+# With __BROWSE_SERVER_MODE=1, the bundle starts the HTTP server
+# directly instead of acting as a CLI client.
+CMD ["node", "dist/browse.cjs"]
