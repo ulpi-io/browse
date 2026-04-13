@@ -30,7 +30,7 @@
       "boundary": "CLI --camoufox-profile → server env → resolver",
       "producer": "src/cli.ts sets BROWSE_CAMOUFOX_PROFILE env var on server spawn",
       "consumer": "src/config.ts loadCamoufoxConfig() reads the env var",
-      "shape": "String profile name → .browse/profiles/<name>.json file path",
+      "shape": "String profile name → .browse/camoufox-profiles/<name>.json file path",
       "consistencyRule": "Flag only takes effect when spawning a NEW server. If server is already running, the flag is ignored (same behavior as --runtime). Document this in CLI help."
     }
   ],
@@ -50,7 +50,7 @@
     { "risk": "headless: 'virtual' requires Xvfb (Linux only)", "affectedTasks": ["TASK-001"], "mitigation": "Document in CamoufoxConfig JSDoc. camoufox-js throws on unsupported platforms — try/catch fallback handles it." },
     { "risk": "Malformed profile JSON (syntax error or wrong types)", "affectedTasks": ["TASK-001"], "mitigation": "loadCamoufoxConfig() wraps JSON.parse in try/catch. On parse failure: log warning with file path, fall back to browse.json defaults only." },
     { "risk": "Invalid merge precedence between browse.json and profile", "affectedTasks": ["TASK-001"], "mitigation": "Simple Object.assign — profile keys override browse.json keys. Documented in loadCamoufoxConfig() JSDoc. No deep merge — flat override." },
-    { "risk": "Profile file not found", "affectedTasks": ["TASK-001"], "mitigation": "Clear error listing available profiles in .browse/profiles/." },
+    { "risk": "Profile file not found", "affectedTasks": ["TASK-001"], "mitigation": "Clear error listing available profiles in .browse/camoufox-profiles/." },
     { "risk": "--camoufox-profile ignored on already-running server", "affectedTasks": ["TASK-002"], "mitigation": "Same behavior as --runtime (flag only applies at server spawn). Document in CLI help text and browse-config skill." },
     { "risk": "New commands conflict with existing names", "affectedTasks": ["TASK-003"], "mitigation": "Verified: no existing commands named schema, meta, headings, or profiles in registry.ts" },
     { "risk": "Skill guidance too vague for agent execution", "affectedTasks": ["TASK-006", "TASK-007", "TASK-008", "TASK-009"], "mitigation": "Every skill step includes exact browse commands. Pattern from browse/SKILL.md." }
@@ -73,14 +73,14 @@
     {
       "id": "TASK-001",
       "title": "CamoufoxConfig type, loadCamoufoxConfig(), and resolver integration",
-      "description": "Extend `src/config.ts` with:\n\n1. `CamoufoxConfig` interface — 26 optional keys mapping 1:1 to camoufox-js LaunchOptions: os, blockImages, blockWebrtc, blockWebgl, disableCoop, geoip, humanize, locale, addons, fonts, customFontsOnly, screen, window, fingerprint, ffVersion, headless, mainWorldEval, firefoxUserPrefs, proxy, enableCache, debug, excludeAddons, executablePath, args, env, virtualDisplay. (26 of 27 — webgl_config excluded per design decision.)\n\n2. `loadCamoufoxConfig(localDir?: string): CamoufoxConfig` function:\n   - Read browse.json camoufox section via loadConfig()\n   - Check BROWSE_CAMOUFOX_PROFILE env var\n   - If set, load .browse/profiles/<name>.json (or <localDir>/profiles/<name>.json)\n   - Merge: Object.assign({}, browseJsonConfig, profileConfig) — profile wins\n   - On malformed profile JSON: log warning, return browse.json config only\n   - On missing profile: throw with list of available profiles\n   - On no config at all: return {} (resolver uses its own defaults)\n\n3. Add `camoufox?: CamoufoxConfig` to BrowseConfig interface.\n\n4. `mapCamoufoxConfig(config: CamoufoxConfig): Record<string, unknown>` helper that converts camelCase keys to camoufox-js snake_case.\n\nUpdate `src/engine/resolver.ts` camoufox loader (line 171-182):\n- Import loadCamoufoxConfig and mapCamoufoxConfig\n- Call loadCamoufoxConfig() to get merged config\n- Call mapCamoufoxConfig() to convert keys\n- Merge with defaults (humanize: true, enable_cache: true, headless: from BROWSE_HEADED)\n- Pass to camou.launchOptions()\n- Wrap in try/catch — on error, log and fall back to original hardcoded defaults\n\nNote: headless: 'virtual' requires Linux with Xvfb — document in JSDoc.",
+      "description": "Extend `src/config.ts` with:\n\n1. `CamoufoxConfig` interface — 26 optional keys mapping 1:1 to camoufox-js LaunchOptions: os, blockImages, blockWebrtc, blockWebgl, disableCoop, geoip, humanize, locale, addons, fonts, customFontsOnly, screen, window, fingerprint, ffVersion, headless, mainWorldEval, firefoxUserPrefs, proxy, enableCache, debug, excludeAddons, executablePath, args, env, virtualDisplay. (26 of 27 — webgl_config excluded per design decision.)\n\n2. `loadCamoufoxConfig(localDir?: string): CamoufoxConfig` function:\n   - Read browse.json camoufox section via loadConfig()\n   - Check BROWSE_CAMOUFOX_PROFILE env var\n   - If set, load .browse/camoufox-profiles/<name>.json (or <localDir>/profiles/<name>.json)\n   - Merge: Object.assign({}, browseJsonConfig, profileConfig) — profile wins\n   - On malformed profile JSON: log warning, return browse.json config only\n   - On missing profile: throw with list of available profiles\n   - On no config at all: return {} (resolver uses its own defaults)\n\n3. Add `camoufox?: CamoufoxConfig` to BrowseConfig interface.\n\n4. `mapCamoufoxConfig(config: CamoufoxConfig): Record<string, unknown>` helper that converts camelCase keys to camoufox-js snake_case.\n\nUpdate `src/engine/resolver.ts` camoufox loader (line 171-182):\n- Import loadCamoufoxConfig and mapCamoufoxConfig\n- Call loadCamoufoxConfig() to get merged config\n- Call mapCamoufoxConfig() to convert keys\n- Merge with defaults (humanize: true, enable_cache: true, headless: from BROWSE_HEADED)\n- Pass to camou.launchOptions()\n- Wrap in try/catch — on error, log and fall back to original hardcoded defaults\n\nNote: headless: 'virtual' requires Linux with Xvfb — document in JSDoc.\n\nThe local type stub at `src/camoufox.d.ts` currently only types 3 keys + index signature. The 26-key CamoufoxConfig in config.ts is the application-level contract; `src/camoufox.d.ts` is only for tsc pass-through when camoufox-js is not installed. Do NOT extend the d.ts stub to match — runtime tests (TASK-004) are the source of truth for option compatibility.",
       "type": "feature",
       "effort": "M",
       "priority": "P0",
       "dependsOn": [],
       "acceptanceCriteria": [
         "browse.json { camoufox: { geoip: true, os: 'windows' } } causes launchOptions() to receive { geoip: true, os: 'windows', humanize: true, enable_cache: true }",
-        "BROWSE_CAMOUFOX_PROFILE=stealth with .browse/profiles/stealth.json merges profile on top of browse.json",
+        "BROWSE_CAMOUFOX_PROFILE=stealth with .browse/camoufox-profiles/stealth.json merges profile on top of browse.json",
         "Malformed profile JSON logs warning and falls back to browse.json config without crashing"
       ],
       "filesToModify": ["src/config.ts", "src/engine/resolver.ts"],
@@ -93,19 +93,19 @@
     {
       "id": "TASK-002",
       "title": "--camoufox-profile CLI flag and browse profiles meta command",
-      "description": "Add `--camoufox-profile <name>` CLI flag in `src/cli.ts`:\n- Add to cliFlags object: `camoufoxProfile: '' as string`\n- Parse in main(): `--camoufox-profile` → cliFlags.camoufoxProfile\n- In startServer(), set env var on spawn: `env.BROWSE_CAMOUFOX_PROFILE = cliFlags.camoufoxProfile`\n- Same pattern as --runtime → BROWSE_RUNTIME\n- Update CLI help text to document the flag. Note: only applies when spawning a new server.\n\nAdd `browse profiles` meta command:\n- Register in `src/automation/registry.ts` as meta command via m() helper\n- Implement in `src/commands/meta/profile.ts` (this file already exists for profile/react-devtools/provider commands — extend it):\n  - Scan .browse/profiles/*.json (using the localDir from context)\n  - For each file: read JSON, extract top-level keys, display as summary\n  - If no profiles directory or no files: return '(no camoufox profiles found)'\n- Wire into `src/commands/meta/index.ts` dispatch",
+      "description": "Add `--camoufox-profile <name>` CLI flag in `src/cli.ts`:\n- Add to cliFlags object: `camoufoxProfile: '' as string`\n- Parse in main(): `--camoufox-profile` → cliFlags.camoufoxProfile\n- In startServer(), set env var on spawn: `env.BROWSE_CAMOUFOX_PROFILE = cliFlags.camoufoxProfile`\n- Same pattern as --runtime → BROWSE_RUNTIME\n- Update CLI help text to document the flag. Note: only applies when spawning a new server.\n\nAdd `browse profiles` meta command:\n- Register in `src/automation/registry.ts` as meta command via m() helper\n- Implement in `src/commands/meta/profile.ts` (this file already exists for profile/react-devtools/provider commands — extend it):\n  - Scan .browse/camoufox-profiles/*.json (using the localDir from context)\n  - For each file: read JSON, extract top-level keys, display as summary\n  - If no profiles directory or no files: return '(no camoufox profiles found)'\n- Wire into `src/commands/meta/index.ts` by adding 'profiles' to the PROFILE_COMMANDS set (line 39). Registry registration alone is NOT enough — dispatch is gated by this set.",
       "type": "feature",
       "effort": "M",
       "priority": "P0",
       "dependsOn": ["TASK-001"],
       "acceptanceCriteria": [
         "browse --camoufox-profile stealth-google sets BROWSE_CAMOUFOX_PROFILE=stealth-google on server spawn",
-        "browse profiles lists .browse/profiles/*.json with key summary",
+        "browse profiles lists .browse/camoufox-profiles/*.json with key summary",
         "browse profiles returns '(no camoufox profiles found)' when directory is empty or missing"
       ],
-      "filesToModify": ["src/cli.ts", "src/commands/meta/profile.ts", "src/automation/registry.ts"],
+      "filesToModify": ["src/cli.ts", "src/commands/meta/profile.ts", "src/commands/meta/index.ts", "src/automation/registry.ts"],
       "filesToCreate": [],
-      "writeScope": ["src/cli.ts", "src/commands/meta/profile.ts", "src/automation/registry.ts"],
+      "writeScope": ["src/cli.ts", "src/commands/meta/profile.ts", "src/commands/meta/index.ts", "src/automation/registry.ts"],
       "validateCommand": "npx tsc --noEmit",
       "agent": "nodejs-cli-senior-engineer",
       "review": "none"
@@ -113,7 +113,7 @@
     {
       "id": "TASK-003",
       "title": "Register schema, meta, and headings read commands",
-      "description": "Add 3 new read commands to `src/automation/registry.ts` and implement in `src/commands/read.ts`.\n\n**schema** — extract JSON-LD, Microdata, RDFa via page.evaluate(). Return JSON.\n**meta** — extract title, description, canonical, OG, twitter, hreflang, robots, viewport. Return structured text.\n**headings** — extract H1-H6 tree with counts. Return indented text.\n\nAll three: safeToRetry: true, pageContent: true, MCP schemas via registry mcp field.\n\nUpdate CLI help text in `src/cli.ts` to list the 3 new commands under Read.",
+      "description": "Add 3 new read commands to `src/automation/registry.ts` and implement in `src/commands/read.ts`.\n\n**schema** — extract JSON-LD, Microdata, RDFa via page.evaluate(). Return JSON.\n**meta** — extract title, description, canonical, OG, twitter, hreflang, robots, viewport. Return structured text.\n**headings** — extract H1-H6 tree with counts. Return indented text.\n\nAll three: safeToRetry: true, pageContent: true, MCP schemas via registry mcp field.\n\nCommand help (--help output) is auto-generated from the registry at `src/automation/registry.ts:1020`, so registration there is sufficient for help. `src/cli.ts` only needs changes if the top-level help banner has a manually-maintained command list — check and update if so.",
       "type": "feature",
       "effort": "M",
       "priority": "P0",
@@ -133,7 +133,7 @@
     {
       "id": "TASK-004",
       "title": "Tests for commands, config, profiles, and CLI flag",
-      "description": "Create `test/seo-commands.test.ts` covering:\n\n**Read command tests** (integration, against real BrowserManager):\n- Create `test/fixtures/seo-page.html` with JSON-LD, meta tags, heading hierarchy, Microdata\n- schema returns JSON-LD parsed correctly\n- schema on page without structured data returns empty message\n- meta returns all expected tags\n- meta on minimal page returns only title\n- headings returns correct count summary and indented tree\n- headings on page with no headings returns empty message\n\n**Config tests** (unit, no browser needed):\n- loadCamoufoxConfig() with no config returns {}\n- loadCamoufoxConfig() reads browse.json camoufox section\n- loadCamoufoxConfig() merges profile over browse.json (profile wins)\n- loadCamoufoxConfig() with malformed profile JSON falls back to browse.json\n- loadCamoufoxConfig() with missing profile throws with available list\n- mapCamoufoxConfig() converts all 21 camelCase keys to snake_case correctly\n\n**CLI flag test** (unit):\n- --camoufox-profile value is read into cliFlags\n\n**Integration test** (skipIf !camoufoxAvailable):\n- launchOptions() called with full mapped config — no error\n\n**profiles command test** (integration):\n- browse profiles with no profiles dir returns empty message\n- browse profiles with .json files lists them\n\nRegister seo-page.html fixture in `test/test-server.ts`.",
+      "description": "Create `test/seo-commands.test.ts` covering:\n\n**Read command tests** (integration, against real BrowserManager):\n- Create `test/fixtures/seo-page.html` with JSON-LD, meta tags, heading hierarchy, Microdata\n- schema returns JSON-LD parsed correctly\n- schema on page without structured data returns empty message\n- meta returns all expected tags\n- meta on minimal page returns only title\n- headings returns correct count summary and indented tree\n- headings on page with no headings returns empty message\n\n**Config tests** (unit, no browser needed):\n- loadCamoufoxConfig() with no config returns {}\n- loadCamoufoxConfig() reads browse.json camoufox section\n- loadCamoufoxConfig() merges profile over browse.json (profile wins)\n- loadCamoufoxConfig() with malformed profile JSON falls back to browse.json\n- loadCamoufoxConfig() with missing profile throws with available list\n- mapCamoufoxConfig() converts all 26 camelCase keys to snake_case correctly\n\n**CLI flag test** (unit):\n- --camoufox-profile value is read into cliFlags\n\n**Integration test** (skipIf !camoufoxAvailable):\n- launchOptions() called with full mapped config — no error\n\n**profiles command test** (integration):\n- browse profiles with no profiles dir returns empty message\n- browse profiles with .json files lists them\n\nRegister seo-page.html fixture in `test/test-server.ts`.",
       "type": "test",
       "effort": "L",
       "priority": "P1",

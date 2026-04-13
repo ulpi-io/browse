@@ -49,7 +49,7 @@ Excluded: `webgl_config` — camoufox auto-generates from fingerprint, manual ov
 ## Architecture
 
 ```
-browse.json                           .browse/profiles/*.json
+browse.json                           .browse/camoufox-profiles/*.json
 ┌───────────────────┐                ┌──────────────────────┐
 │ { "camoufox": {   │                │ stealth-google.json   │
 │   "geoip": true   │  ◄── merge ── │ fast-scrape.json      │
@@ -65,7 +65,7 @@ browse.json                           .browse/profiles/*.json
 
   src/cli.ts                        src/commands/meta/profile.ts
   --camoufox-profile flag           browse profiles command
-  sets BROWSE_CAMOUFOX_PROFILE      lists .browse/profiles/*.json
+  sets BROWSE_CAMOUFOX_PROFILE      lists .browse/camoufox-profiles/*.json
   TASK-002                          TASK-002
 
   src/automation/registry.ts        src/commands/read.ts
@@ -86,7 +86,9 @@ browse.json                           .browse/profiles/*.json
 
 ### TASK-001: CamoufoxConfig type, loadCamoufoxConfig(), and resolver integration
 
-Extend `src/config.ts` with `CamoufoxConfig` interface (26 keys), `loadCamoufoxConfig()` (reads browse.json + merges profile), `mapCamoufoxConfig()` (camelCase → snake_case). Update `src/engine/resolver.ts` camoufox loader to use these. Wrap in try/catch with fallback to defaults.
+Extend `src/config.ts` with `CamoufoxConfig` interface (26 keys), `loadCamoufoxConfig()` (reads browse.json + merges profile from `.browse/camoufox-profiles/`), `mapCamoufoxConfig()` (camelCase → snake_case). Update `src/engine/resolver.ts` camoufox loader to use these. Wrap in try/catch with fallback to defaults.
+
+Note: `src/camoufox.d.ts` stub stays minimal (3 keys + index signature) — it exists only for tsc when camoufox-js isn't installed. CamoufoxConfig in config.ts is the app-level contract; runtime tests (TASK-004) are source of truth for compatibility.
 
 **Type:** feature
 **Effort:** M
@@ -106,7 +108,7 @@ Extend `src/config.ts` with `CamoufoxConfig` interface (26 keys), `loadCamoufoxC
 
 ### TASK-002: --camoufox-profile CLI flag and browse profiles meta command
 
-Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` env on server spawn). Add `browse profiles` meta command in `src/commands/meta/profile.ts` (lists `.browse/profiles/*.json`). Register in `src/automation/registry.ts`.
+Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` env on server spawn). Add `browse profiles` meta command in `src/commands/meta/profile.ts` (lists `.browse/camoufox-profiles/*.json`). Register in `src/automation/registry.ts`. Add `'profiles'` to `PROFILE_COMMANDS` set in `src/commands/meta/index.ts` (line 39) — dispatch is gated by this set.
 
 **Type:** feature
 **Effort:** M
@@ -116,7 +118,7 @@ Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` 
 - [ ] `browse profiles` lists profiles with key summary
 - [ ] `browse profiles` returns empty message when no profiles exist
 
-**Write Scope:** `src/cli.ts`, `src/commands/meta/profile.ts`, `src/automation/registry.ts`
+**Write Scope:** `src/cli.ts`, `src/commands/meta/profile.ts`, `src/commands/meta/index.ts`, `src/automation/registry.ts`
 **Validation:** `npx tsc --noEmit`
 
 **Depends on:** TASK-001
@@ -127,7 +129,7 @@ Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` 
 
 ### TASK-003: Register schema, meta, and headings read commands
 
-Add 3 read commands to `src/automation/registry.ts`, implement in `src/commands/read.ts`, update CLI help in `src/cli.ts`.
+Add 3 read commands to `src/automation/registry.ts`, implement in `src/commands/read.ts`. Command help (`--help` output) auto-generates from registry at `src/automation/registry.ts:1020`. Only update `src/cli.ts` if its top-level help banner has a manually-maintained command list.
 
 **Type:** feature
 **Effort:** M
