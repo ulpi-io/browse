@@ -254,9 +254,18 @@ export class VmWarmPool {
     // Immediately pause -- save CPU while waiting to be claimed
     await this.firecracker.pauseVm(vmId);
 
+    // Token is empty because the golden snapshot's token is unknown to
+    // the pool. The orchestrator MUST read the actual token from the guest
+    // after resume (e.g., via /health or a well-known token injected during
+    // golden snapshot build), or provision a fresh VM instead of using the
+    // pool when a known token is required.
+    //
+    // TODO: When building the golden snapshot, set a well-known token via
+    // BROWSE_AUTH_TOKEN boot arg, store it in GoldenSnapshotManager, and
+    // pass it through here so all clones have a known token.
     return {
       vmId,
-      token: '', // Token is inherited from golden snapshot; orchestrator assigns its own
+      token: '',
       createdAt: new Date().toISOString(),
     };
   }

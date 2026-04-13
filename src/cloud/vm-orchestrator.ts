@@ -11,6 +11,17 @@
  * The gateway proxies commands to each VM's internal browse server
  * via the proxyCommand() HTTP function.
  *
+ * Auth token injection: the token is passed via kernel boot args as
+ *   BROWSE_AUTH_TOKEN=<uuid>. The rootfs init script parses /proc/cmdline
+ *   and exports matching BROWSE_* vars before launching the browse server.
+ *
+ * Networking: Firecracker VMs require host-side tap device setup (ip tuntap,
+ * ip addr, iptables NAT) which must be done BEFORE createVm(). This
+ * orchestrator generates tap device names and guest IPs but does NOT create
+ * the tap devices — the host environment must pre-provision them or a setup
+ * script must run before the orchestrator. Without real tap devices,
+ * provision() will fail at the health check step.
+ *
  * IP assignment: simplified counter-based scheme using 172.16.0.0/24.
  * Host-side tap devices all share 172.16.0.1; each guest gets
  * 172.16.0.{N} where N increments per VM. Production deployments
@@ -113,11 +124,22 @@ export class VmOrchestrator implements Orchestrator {
     const shortId = opts?.sessionId || crypto.randomUUID();
     const sessionId = `tenant:${tenantId}:session:${shortId}`;
 
-    // Try claiming a pre-cloned paused VM from the warm pool
+    // Try claiming a pre-cloned paused VM from the warm pool.
+    // Pool VMs have an empty auth token because the golden snapshot's
+    // token is not known to the pool. We cannot inject a new token into
+    // a running/paused VM — the token was set at boot time via kernel
+    // args. So the pool is only usable when the golden snapshot was
+    // built with a well-known token. Until that is implemented (see TODO
+    // in vm-warm-pool.ts), pool claims use the golden snapshot's
+    // original token which the orchestrator may not know.
+    //
+    // For now, we only use the pool when the entry has a non-empty token.
+    // Otherwise we fall through to direct VM creation which injects the
+    // token via boot args.
     const poolEntry = this.pool?.claim() ?? null;
-    if (poolEntry) {
+    if (poolEntry && poolEntry.token) {
       const vmId = poolEntry.vmId;
-      const internalToken = poolEntry.token || crypto.randomUUID();
+      const internalToken = poolEntry.token;
       const guestIp = this.allocateGuestIp();
 
       try {
@@ -146,6 +168,10 @@ export class VmOrchestrator implements Orchestrator {
         console.log(`[browse-cloud] Pool VM ${vmId} failed, falling back to direct provision`);
         // Fall through to direct VM creation
       }
+    } else if (poolEntry) {
+      // Pool entry has no token — can't use it. Stop the orphaned VM.
+      console.log(`[browse-cloud] Pool VM ${poolEntry.vmId} has no auth token, discarding`);
+      await this.firecracker.stopVm(poolEntry.vmId).catch(() => {});
     }
 
     // Fall back to direct VM creation
@@ -154,12 +180,22 @@ export class VmOrchestrator implements Orchestrator {
     const guestIp = this.allocateGuestIp();
     const tapDevice = `tap-${vmId.slice(0, 8)}`;
 
-    // Create and configure the microVM
+    // Create and configure the microVM.
+    // The auth token is injected via kernel boot args — the rootfs init
+    // script must parse /proc/cmdline for BROWSE_AUTH_TOKEN and export it.
+    // See scripts/build-rootfs.sh for the init script that does this.
+    const bootArgs = [
+      'console=ttyS0 reboot=k panic=1 pci=off',
+      `BROWSE_AUTH_TOKEN=${internalToken}`,
+      `BROWSE_PORT=${this.browsePort}`,
+    ].join(' ');
+
     await this.firecracker.createVm(vmId, {
       kernelPath: this.kernelPath,
       rootfsPath: this.rootfsPath,
       memSizeMb: this.memSizeMb,
       vcpuCount: this.vcpuCount,
+      bootArgs,
       network: {
         tapDevice,
       },

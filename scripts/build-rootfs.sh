@@ -129,6 +129,19 @@ start_pre() {
     export BROWSE_IDLE_TIMEOUT=300000
     export BROWSE_LOCAL_DIR=/tmp
     export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+    # Parse kernel boot args for BROWSE_* env vars injected by the orchestrator.
+    # This is how the VM orchestrator passes the auth token and port at boot time.
+    # Format in /proc/cmdline: ... BROWSE_AUTH_TOKEN=<uuid> BROWSE_PORT=9400 ...
+    if [ -f /proc/cmdline ]; then
+        for arg in $(cat /proc/cmdline); do
+            case "$arg" in
+                BROWSE_AUTH_TOKEN=*|BROWSE_PORT=*|BROWSE_IDLE_TIMEOUT=*|BROWSE_ALLOWED_DOMAINS=*)
+                    export "$arg"
+                    ;;
+            esac
+        done
+    fi
 }
 INITSCRIPT
 

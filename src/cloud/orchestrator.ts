@@ -78,8 +78,13 @@ export class ContainerOrchestrator implements Orchestrator {
     const shortId = opts?.sessionId || crypto.randomUUID();
     const sessionId = `tenant:${tenantId}:session:${shortId}`;
 
-    // Try claiming a pre-started container from the warm pool
-    const poolEntry = this.pool?.claim() ?? null;
+    // Try claiming a pre-started container from the warm pool.
+    // Skip the pool when allowedDomains is set — pool containers are created
+    // without domain restrictions, and Docker doesn't allow reconfiguring env
+    // vars on a running container. Restricted sessions must be created fresh.
+    const poolEntry = (!opts?.allowedDomains && this.pool)
+      ? (this.pool.claim() ?? null)
+      : null;
     if (poolEntry) {
       const handle: SessionHandle = {
         sessionId,
@@ -168,6 +173,23 @@ export class ContainerOrchestrator implements Orchestrator {
   }
 
   async freeze(handle: SessionHandle): Promise<FrozenSession> {
+    // Trigger a graceful stop on the in-container browse server so it
+    // persists named-session state (cookies, localStorage) to disk before
+    // we commit the filesystem. Without this, the committed image would
+    // miss any state that the server only flushes during shutdown.
+    try {
+      await proxyCommand('stop', [], {
+        address: handle.internalAddress,
+        token: handle.internalToken,
+        timeout: 10_000,
+      });
+      // Give the server a moment to flush and exit
+      await new Promise(r => setTimeout(r, 1000));
+    } catch {
+      // Server may have already exited or the stop command isn't supported
+      // in this context — proceed with commit anyway (best-effort)
+    }
+
     // Commit the container state to a new image
     const imageId = await this.docker.commit(
       handle.backendId,
