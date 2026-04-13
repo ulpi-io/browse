@@ -21,6 +21,7 @@ import { handleUpgrade, closeAllConnections, broadcastSessionEvent } from './ws'
 import { DockerClient } from './docker';
 import { ContainerOrchestrator } from './orchestrator';
 import type { Orchestrator, SessionHandle } from './orchestrator-interface';
+import { ContainerReaper } from './reaper';
 import { CLOUD_DEFAULTS } from '../constants';
 import type { Browser } from 'playwright';
 
@@ -151,16 +152,18 @@ async function start() {
 
   const isolation = process.env.BROWSE_CLOUD_ISOLATION;
   let orchestrator: Orchestrator | null = null;
+  let docker: DockerClient | null = null;
 
   // Track orchestrator sessions for the command handler
   const orchestratorHandles = new Map<string, SessionHandle>();
 
   if (isolation === 'container') {
-    const docker = new DockerClient();
+    docker = new DockerClient();
     const reachable = await docker.ping();
 
     if (!reachable) {
       console.error('[cloud] Docker not reachable. Falling back to direct mode.');
+      docker = null;
     } else {
       orchestrator = new ContainerOrchestrator({
         docker,
@@ -168,6 +171,19 @@ async function start() {
       });
       console.log('[cloud] Container isolation enabled');
     }
+  }
+
+  // ─── Orphan container reaper (optional) ─────────────────
+
+  let reaper: ContainerReaper | null = null;
+
+  if (orchestrator instanceof ContainerOrchestrator && docker) {
+    const containerOrch = orchestrator;
+    reaper = new ContainerReaper({
+      docker,
+      getActiveIds: () => containerOrch.getActiveBackendIds(),
+    });
+    reaper.start();
   }
 
   // ─── Auth middleware ─────────────────────────────────────
@@ -507,6 +523,11 @@ async function start() {
 
     clearInterval(cleanupInterval);
     closeAllConnections();
+
+    // Stop the reaper before tearing down containers
+    if (reaper) {
+      reaper.stop();
+    }
 
     // Shut down orchestrator-managed containers first
     if (orchestrator) {

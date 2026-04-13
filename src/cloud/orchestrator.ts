@@ -16,6 +16,7 @@ import * as crypto from 'crypto';
 import { DockerClient, type ContainerInfo } from './docker';
 import type { Orchestrator, SessionHandle, FrozenSession } from './orchestrator-interface';
 import { proxyCommand } from './proxy';
+import type { WarmPool } from './warm-pool';
 
 // ─── Constants ─────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ export interface ContainerOrchestratorOptions {
   cpuLimit?: number;
   /** Container health check timeout in ms (default 30000) */
   healthTimeout?: number;
+  /** Optional warm container pool for fast provisioning */
+  pool?: WarmPool;
 }
 
 // ─── ContainerOrchestrator ─────────────────────────────────────
@@ -50,6 +53,7 @@ export class ContainerOrchestrator implements Orchestrator {
   private memoryLimit: number;
   private cpuLimit: number;
   private healthTimeout: number;
+  private pool: WarmPool | null;
 
   /** Active session handles keyed by sessionId */
   private handles = new Map<string, SessionHandle>();
@@ -62,6 +66,7 @@ export class ContainerOrchestrator implements Orchestrator {
     this.memoryLimit = opts.memoryLimit ?? DEFAULT_MEMORY_LIMIT;
     this.cpuLimit = opts.cpuLimit ?? DEFAULT_CPU_LIMIT;
     this.healthTimeout = opts.healthTimeout ?? DEFAULT_HEALTH_TIMEOUT_MS;
+    this.pool = opts.pool ?? null;
   }
 
   // ── Orchestrator interface ───────────────────────────────────
@@ -72,6 +77,23 @@ export class ContainerOrchestrator implements Orchestrator {
   ): Promise<SessionHandle> {
     const shortId = opts?.sessionId || crypto.randomUUID();
     const sessionId = `tenant:${tenantId}:session:${shortId}`;
+
+    // Try claiming a pre-started container from the warm pool
+    const poolEntry = this.pool?.claim() ?? null;
+    if (poolEntry) {
+      const handle: SessionHandle = {
+        sessionId,
+        tenantId,
+        internalAddress: poolEntry.internalAddress,
+        internalToken: poolEntry.token,
+        backendId: poolEntry.containerId,
+        createdAt: new Date().toISOString(),
+      };
+      this.trackHandle(handle);
+      return handle;
+    }
+
+    // Fall back to direct container creation
     const internalToken = crypto.randomUUID();
 
     // Build container env vars
@@ -168,12 +190,15 @@ export class ContainerOrchestrator implements Orchestrator {
 
     this.untrackHandle(handle);
 
-    return {
+    const frozen: FrozenSession = {
       sessionId: handle.sessionId,
       tenantId: handle.tenantId,
       snapshotRef: imageId,
       frozenAt: new Date().toISOString(),
     };
+
+    console.log(`[browse-cloud] Session "${handle.sessionId}" frozen as image ${imageId}`);
+    return frozen;
   }
 
   async resume(tenantId: string, frozen: FrozenSession): Promise<SessionHandle> {
@@ -214,7 +239,18 @@ export class ContainerOrchestrator implements Orchestrator {
     };
 
     this.trackHandle(handle);
+
+    console.log(`[browse-cloud] Session "${frozen.sessionId}" resumed in container ${containerId}`);
     return handle;
+  }
+
+  /** Return all active container IDs tracked by this orchestrator. */
+  getActiveBackendIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const handle of this.handles.values()) {
+      ids.add(handle.backendId);
+    }
+    return ids;
   }
 
   list(tenantId: string): SessionHandle[] {
@@ -230,6 +266,11 @@ export class ContainerOrchestrator implements Orchestrator {
   }
 
   async shutdown(): Promise<void> {
+    // Drain the warm pool first (if configured)
+    if (this.pool) {
+      await this.pool.drain();
+    }
+
     // Terminate all active sessions in parallel
     const handles = Array.from(this.handles.values());
     await Promise.allSettled(

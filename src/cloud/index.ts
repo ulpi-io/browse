@@ -11,3 +11,7 @@ export { ContainerOrchestrator } from './orchestrator';
 export type { ContainerOrchestratorOptions } from './orchestrator';
 export { proxyCommand, ProxyError } from './proxy';
 export type { ProxyOptions } from './proxy';
+export { ContainerReaper } from './reaper';
+export type { ReaperOptions } from './reaper';
+export { WarmPool } from './warm-pool';
+export type { WarmPoolOptions, PoolEntry } from './warm-pool';
