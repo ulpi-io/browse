@@ -21,3 +21,5 @@ export { GoldenSnapshotManager } from './golden-snapshot';
 export type { GoldenSnapshotOptions } from './golden-snapshot';
 export { VmOrchestrator } from './vm-orchestrator';
 export type { VmOrchestratorOptions } from './vm-orchestrator';
+export { VmWarmPool } from './vm-warm-pool';
+export type { VmWarmPoolOptions, VmPoolEntry } from './vm-warm-pool';

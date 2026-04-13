@@ -24,6 +24,7 @@ import * as http from 'http';
 import { FirecrackerClient, type VmConfig } from './firecracker';
 import type { Orchestrator, SessionHandle, FrozenSession } from './orchestrator-interface';
 import { proxyCommand } from './proxy';
+import type { VmWarmPool } from './vm-warm-pool';
 
 // ─── Constants ─────────────────────────────────────────────────
 
@@ -53,8 +54,8 @@ export interface VmOrchestratorOptions {
   healthTimeout?: number;
   /** Directory for snapshot files (default /var/lib/browse-cloud/snapshots) */
   snapshotDir?: string;
-  /** Optional warm pool (compatible with WarmPool.claim/drain interface) */
-  pool?: { claim(): { internalAddress: string; token: string; vmId: string } | null; drain(): Promise<void> } | null;
+  /** Optional VM warm pool for pre-cloned paused VMs */
+  pool?: VmWarmPool | null;
 }
 
 /** Extended handle that tracks the VM ID alongside the standard SessionHandle fields. */
@@ -112,21 +113,39 @@ export class VmOrchestrator implements Orchestrator {
     const shortId = opts?.sessionId || crypto.randomUUID();
     const sessionId = `tenant:${tenantId}:session:${shortId}`;
 
-    // Try claiming a pre-started VM from the warm pool
+    // Try claiming a pre-cloned paused VM from the warm pool
     const poolEntry = this.pool?.claim() ?? null;
     if (poolEntry) {
-      const handle: VmSessionHandle = {
-        sessionId,
-        tenantId,
-        internalAddress: poolEntry.internalAddress,
-        internalToken: poolEntry.token,
-        backendId: poolEntry.vmId,
-        vmId: poolEntry.vmId,
-        createdAt: new Date().toISOString(),
-      };
-      this.trackHandle(handle);
-      console.log(`[browse-cloud] Session "${sessionId}" claimed VM ${poolEntry.vmId} from pool`);
-      return handle;
+      const vmId = poolEntry.vmId;
+      const internalToken = poolEntry.token || crypto.randomUUID();
+      const guestIp = this.allocateGuestIp();
+
+      try {
+        // Resume the paused VM
+        await this.firecracker.resumeVm(vmId);
+
+        // Wait for the browse server to become healthy after resume
+        const internalAddress = `${guestIp}:${this.browsePort}`;
+        await this.waitForHealth(guestIp, this.browsePort, this.healthTimeout);
+
+        const handle: VmSessionHandle = {
+          sessionId,
+          tenantId,
+          internalAddress,
+          internalToken,
+          backendId: vmId,
+          vmId,
+          createdAt: new Date().toISOString(),
+        };
+        this.trackHandle(handle);
+        console.log(`[browse-cloud] Session "${sessionId}" claimed VM ${vmId} from pool (${internalAddress})`);
+        return handle;
+      } catch (err) {
+        // Clean up on failure — stop the pooled VM
+        await this.firecracker.stopVm(vmId).catch(() => {});
+        console.log(`[browse-cloud] Pool VM ${vmId} failed, falling back to direct provision`);
+        // Fall through to direct VM creation
+      }
     }
 
     // Fall back to direct VM creation
