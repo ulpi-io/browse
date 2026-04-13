@@ -355,7 +355,17 @@ Delete `src/cloud/` (15 files), `src/sdk/` (6 files), and `test/cloud*.test.ts` 
 
 **CONCERN 4:** `vm-orchestrator.ts` line ~391 -- resumed VmSessionHandle doesn't set `allowedDomains` from `frozen.allowedDomains`. Fix: copy it.
 
-**VM networking guard:** VM networking is OUT OF SCOPE. It requires host-side tap/NAT/DHCP setup. Add a guard that THROWS (not warns) when VM mode is enabled without a `networkProvider`. This is a 5-line change in the VmOrchestrator constructor. After this change, Firecracker mode hard-fails at startup when no networkProvider is configured. The server.ts KVM check (line 185) catches the throw and falls back to direct mode — no server.ts changes needed.
+**VM networking guard:** VM networking is OUT OF SCOPE. It requires host-side tap/NAT/DHCP setup. Add a guard that THROWS (not warns) when VM mode is enabled without a `networkProvider`. This is a 5-line change in the VmOrchestrator constructor.
+
+**Caller fix in server.ts:** There is NO existing try/catch around the VmOrchestrator construction at server.ts:188. After the constructor throws, the process would crash. This task also wraps the construction in a try/catch that falls back to direct mode:
+```typescript
+try {
+  orchestrator = new VmOrchestrator({ ... });
+} catch (err: any) {
+  console.error('[cloud] VmOrchestrator init failed:', err.message, '— falling back to direct mode.');
+}
+```
+Write scope includes both `vm-orchestrator.ts` (throw guard) and `server.ts` (try/catch fallback).
 
 **Type:** bug
 **Effort:** S
