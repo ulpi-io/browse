@@ -15,3 +15,5 @@ export { ContainerReaper } from './reaper';
 export type { ReaperOptions } from './reaper';
 export { WarmPool } from './warm-pool';
 export type { WarmPoolOptions, PoolEntry } from './warm-pool';
+export { FirecrackerClient, FirecrackerApiError } from './firecracker';
+export type { VmConfig, FirecrackerClientOptions } from './firecracker';
