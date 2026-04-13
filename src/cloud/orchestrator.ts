@@ -173,10 +173,22 @@ export class ContainerOrchestrator implements Orchestrator {
   }
 
   async freeze(handle: SessionHandle): Promise<FrozenSession> {
+    // Persist default session state explicitly — closeAll() in the server
+    // skips "default" sessions during shutdown. Without this, the committed
+    // container image would have stale cookies/storage for the default session.
+    try {
+      await proxyCommand('state', ['save', 'freeze-checkpoint'], {
+        address: handle.internalAddress,
+        token: handle.internalToken,
+        timeout: 10_000,
+      });
+    } catch {
+      // state save may not be available — best-effort
+    }
+
     // Trigger a graceful stop on the in-container browse server so it
     // persists named-session state (cookies, localStorage) to disk before
-    // we commit the filesystem. Without this, the committed image would
-    // miss any state that the server only flushes during shutdown.
+    // we commit the filesystem.
     try {
       await proxyCommand('stop', [], {
         address: handle.internalAddress,

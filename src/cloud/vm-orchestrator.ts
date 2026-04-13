@@ -88,6 +88,7 @@ export interface VmOrchestratorOptions {
 /** Extended handle that tracks the VM ID alongside the standard SessionHandle fields. */
 interface VmSessionHandle extends SessionHandle {
   vmId: string;
+  allowedDomains?: string;
 }
 
 // ─── VmOrchestrator ───────────────────────────────────────────
@@ -176,6 +177,7 @@ export class VmOrchestrator implements Orchestrator {
           backendId: vmId,
           vmId,
           createdAt: new Date().toISOString(),
+          allowedDomains: opts?.allowedDomains,
         };
         this.trackHandle(handle);
         console.log(`[browse-cloud] Session "${sessionId}" claimed VM ${vmId} from pool (${internalAddress})`);
@@ -258,6 +260,7 @@ export class VmOrchestrator implements Orchestrator {
       backendId: vmId,
       vmId,
       createdAt: new Date().toISOString(),
+      allowedDomains: opts?.allowedDomains,
     };
 
     this.trackHandle(handle);
@@ -314,6 +317,8 @@ export class VmOrchestrator implements Orchestrator {
       // May already be stopped
     }
 
+    // Capture allowedDomains BEFORE untracking (handle is removed from map)
+    const frozenAllowedDomains = vmHandle?.allowedDomains;
     this.untrackHandle(handle);
 
     const frozen: FrozenSession = {
@@ -325,6 +330,8 @@ export class VmOrchestrator implements Orchestrator {
       // boots with the same in-process token — generating a new one would
       // make the handle unable to authenticate against the guest server.
       internalToken: handle.internalToken,
+      // Persist allowed domains so resume can verify restrictions are intact
+      allowedDomains: frozenAllowedDomains,
     };
 
     // Write frozen metadata to disk alongside snapshot files
