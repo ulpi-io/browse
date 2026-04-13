@@ -97,7 +97,7 @@ SessionManager, Session (type), RecordedStep (type)        // session/manager
 createBrowserTargetFactory, CreatedTarget (type),
   SessionTargetFactory (type), TargetCreateOptions (type)   // session/target-factory
 saveSessionState, loadSessionState, hasPersistedState,
-  freezeSession, hasFrozenManifest, loadFrozenManifest,
+  freezeSession, resumeSession, hasFrozenManifest, loadFrozenManifest,
   FrozenSessionManifest (type)                              // session/persist
 executeCommand, ExecuteOptions (type), ExecuteResult (type) // automation/executor
 registry, ensureDefinitionsRegistered                       // automation/registry
@@ -176,7 +176,7 @@ Create the full types + runtime pipeline so that `import { SessionManager } from
      ".": {
        "types": "./dist/types/lib.d.ts",
        "import": "./dist/lib.mjs",
-       "require": "./dist/browse.cjs"
+       "default": "./dist/lib.mjs"
      }
    }
    ```
@@ -279,7 +279,7 @@ from './test-server'               -> browse_cloud/test/test-helpers.ts (new)
 **Acceptance Criteria:**
 - [ ] 4 test files exist in `browse_cloud/test/` with all imports updated -- no references to `../src/cloud/` or `../src/session/` or `../src/commands/`
 - [ ] `npx tsc --noEmit` passes in browse_cloud covering ALL test files (proves boundary works for types)
-- [ ] `npx vitest run test/cloud-benchmarks.test.ts` passes in browse_cloud (proves tests actually compile and run)
+- [ ] `npx vitest run` in browse_cloud passes at least cloud-benchmarks.test.ts AND cloud-containers.test.ts (module-level, no browser). cloud.test.ts must compile but may skip if no browser.
 
 **Depends on:** TASK-001, TASK-003
 **Agent:** nodejs-cli-senior-engineer
@@ -355,7 +355,7 @@ Delete `src/cloud/` (15 files), `src/sdk/` (6 files), and `test/cloud*.test.ts` 
 
 **CONCERN 4:** `vm-orchestrator.ts` line ~391 -- resumed VmSessionHandle doesn't set `allowedDomains` from `frozen.allowedDomains`. Fix: copy it.
 
-**VM networking guard:** VM networking is OUT OF SCOPE. It requires host-side tap/NAT/DHCP setup. Add a guard that THROWS (not warns) when VM mode is enabled without a `networkProvider`. This is a 5-line change in the VmOrchestrator constructor.
+**VM networking guard:** VM networking is OUT OF SCOPE. It requires host-side tap/NAT/DHCP setup. Add a guard that THROWS (not warns) when VM mode is enabled without a `networkProvider`. This is a 5-line change in the VmOrchestrator constructor. After this change, Firecracker mode hard-fails at startup when no networkProvider is configured. The server.ts KVM check (line 185) catches the throw and falls back to direct mode — no server.ts changes needed.
 
 **Type:** bug
 **Effort:** S
