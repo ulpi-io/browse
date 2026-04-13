@@ -674,7 +674,7 @@ export async function main() {
   if (runtimeIdx !== -1 && runtimeIdx < findCommandIndex(args)) {
     runtimeName = args[runtimeIdx + 1];
     if (!runtimeName) {
-      console.error('Usage: browse --runtime <playwright|rebrowser|lightpanda|camoufox> <command> [args...]');
+      console.error('Usage: browse --runtime <playwright|rebrowser|lightpanda|camoufox|chrome> <command> [args...]');
       process.exit(1);
     }
     args.splice(runtimeIdx, 2);

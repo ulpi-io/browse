@@ -283,12 +283,12 @@ describe('profiles command', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('returns "(no camoufox profiles found)" when no profiles dir exists', () => {
+  test('listCamoufoxProfiles returns "(no camoufox profiles found)" when no dir', () => {
     const result = listCamoufoxProfiles(tmpDir);
     expect(result).toBe('(no camoufox profiles found)');
   });
 
-  test('lists profiles when profiles directory has JSON files', () => {
+  test('listCamoufoxProfiles lists profiles with key summary', () => {
     const profilesDir = path.join(tmpDir, 'camoufox-profiles');
     fs.mkdirSync(profilesDir, { recursive: true });
     fs.writeFileSync(
@@ -305,5 +305,15 @@ describe('profiles command', () => {
     expect(result).toContain('os, blockImages');
     expect(result).toContain('fast');
     expect(result).toContain('headless, enableCache');
+  });
+
+  test('handleProfileCommand("profiles") returns string through real command path', async () => {
+    // Exercises the actual command dispatch: handleProfileCommand -> case 'profiles' -> listCamoufoxProfiles(LOCAL_DIR)
+    // LOCAL_DIR is captured at module load from BROWSE_LOCAL_DIR, so the result depends on that path.
+    // We verify the wiring works (no throw, returns string) — the helper unit tests above cover correctness.
+    const result = await handleProfileCommand('profiles', [], bm);
+    expect(typeof result).toBe('string');
+    // Must be either the empty message or a profile listing
+    expect(result === '(no camoufox profiles found)' || result.includes('[')).toBe(true);
   });
 });
