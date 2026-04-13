@@ -108,7 +108,7 @@ Note: `src/camoufox.d.ts` stub stays minimal (3 keys + index signature) — it e
 
 ### TASK-002: --camoufox-profile CLI flag and browse profiles meta command
 
-Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` env on server spawn). Add `browse profiles` meta command in `src/commands/meta/profile.ts` (lists `.browse/camoufox-profiles/*.json`). Register in `src/automation/registry.ts`. Add `'profiles'` to `PROFILE_COMMANDS` set in `src/commands/meta/index.ts` (line 39) — dispatch is gated by this set.
+Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` env on server spawn). Add `'--camoufox-profile'` to the value-flag skip list in `findCommandIndex()` (src/cli.ts:587) — without this, the profile name is misidentified as the command. Add the flag to the Options block in `generateHelp()` (src/automation/registry.ts:1059) — help output is registry-derived, not CLI-only. Add `browse profiles` meta command in `src/commands/meta/profile.ts` (lists `.browse/camoufox-profiles/*.json`). Register in `src/automation/registry.ts`. Add `'profiles'` to `PROFILE_COMMANDS` set in `src/commands/meta/index.ts` (line 39) — dispatch is gated by this set.
 
 **Type:** feature
 **Effort:** M
@@ -149,7 +149,7 @@ Add 3 read commands to `src/automation/registry.ts`, implement in `src/commands/
 
 ### TASK-004: Tests for commands, config, profiles, and CLI flag
 
-Create `test/seo-commands.test.ts` + `test/fixtures/seo-page.html`. Covers: read commands (6 tests), config mapping (6 tests), CLI flag (1 test), camoufox integration (1 skipIf test), profiles command (2 tests).
+Create `test/seo-commands.test.ts` + `test/fixtures/seo-page.html`. Covers: read commands (6 tests), config mapping (6 tests + 1 key-list assertion), CLI flag (1 test), camoufox integration (1 skipIf test), profiles command (2 tests). The key-list assertion test calls `mapCamoufoxConfig()` with a full 26-key input and asserts the output contains exactly the 26 expected snake_case keys — this pins the contract locally without extending the d.ts stub.
 
 **Type:** test
 **Effort:** L
@@ -157,6 +157,7 @@ Create `test/seo-commands.test.ts` + `test/fixtures/seo-page.html`. Covers: read
 **Acceptance Criteria:**
 - [ ] All read command tests pass against fixture
 - [ ] Config mapping verifies camelCase → snake_case for all 26 keys
+- [ ] Key-list assertion: mapCamoufoxConfig() with full 26-key input produces exactly 26 expected snake_case keys
 - [ ] Profile merge: profile values override browse.json defaults
 - [ ] skipIf integration test calls launchOptions() with mapped config
 
@@ -287,6 +288,7 @@ GEO monitoring across Google, Perplexity, ChatGPT. References /browse-config + -
 | --camoufox-profile ignored on running server | TASK-002 | Same as --runtime. Document in CLI help + skills. |
 | Command name conflicts | TASK-003 | Verified: no existing schema/meta/headings/profiles |
 | Skills too vague for agents | TASK-006-010 | Exact commands in every step |
+| 26-key CamoufoxConfig drifts from camoufox-js (d.ts stub only types 3 keys + index sig) | TASK-001, TASK-004 | Accepted tradeoff: d.ts stays minimal. TASK-004 key-list assertion test pins the contract locally. |
 
 ## Test Coverage Map
 
@@ -304,6 +306,7 @@ GEO monitoring across Google, Perplexity, ChatGPT. References /browse-config + -
 | headings extracts tree | TASK-004 | integration |
 | schema empty page | TASK-004 | integration |
 | launchOptions() full config (skipIf) | TASK-004 | integration |
+| mapCamoufoxConfig() key-list assertion (26 snake_case keys) | TASK-004 | unit |
 
 ## Execution Summary
 
