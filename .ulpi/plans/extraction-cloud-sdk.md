@@ -106,6 +106,11 @@ SessionBuffers, LogEntry (type), NetworkEntry (type)        // network/buffers
 DEFAULTS, CLOUD_DEFAULTS                                    // constants
 ```
 
+Concurrency (TASK-009):
+```typescript
+ConcurrencyLimiter, ConcurrencyLimitError, withUserLimit    // session/concurrency
+```
+
 Tests only:
 ```typescript
 handleWriteCommand                                          // commands/write
@@ -373,7 +378,8 @@ Write scope includes both `vm-orchestrator.ts` (throw guard) and `server.ts` (tr
 
 **Acceptance Criteria:**
 - [ ] Resumed VmSessionHandle has allowedDomains copied from frozen.allowedDomains
-- [ ] VmOrchestrator constructor THROWS when no networkProvider is configured -- prevents silent allocation of unreachable IPs
+- [ ] VmOrchestrator constructor THROWS when no networkProvider is configured
+- [ ] Cloud server with KVM but no networkProvider logs error and falls back to direct mode (orchestrator stays null) — does NOT exit
 
 **Depends on:** TASK-003
 **Agent:** nodejs-cli-senior-engineer
@@ -439,7 +445,7 @@ End-to-end verification:
 **Acceptance Criteria:**
 - [ ] All three repos compile independently with `npx tsc --noEmit`
 - [ ] browse_cli `npm run build` + `npm test` pass with no cloud/sdk test references
-- [ ] browse_cloud `npx vitest run test/cloud-benchmarks.test.ts` runs and passes (proves boundary works end-to-end)
+- [ ] browse_cloud `npx vitest run` passes both cloud-benchmarks.test.ts AND cloud-containers.test.ts (proves boundary works with real test execution)
 
 **Depends on:** TASK-005, TASK-006, TASK-007, TASK-008, TASK-009
 **Agent:** nodejs-cli-senior-engineer
