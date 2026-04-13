@@ -1,0 +1,364 @@
+{
+  "title": "Phase 8: Cloud API Layer & SDK",
+  "branch": "feat/cloud-api-layer",
+  "mode": "EXPANSION",
+  "overview": "Add a cloud-deployable HTTP API gateway that provisions isolated browse sessions on demand for remote multi-tenant access, plus a TypeScript SDK (@ulpi/browse-sdk) that can talk to either a local browse server or the cloud endpoint. The cloud server wraps the existing server.ts command pipeline — same executeCommand(), same session multiplexing, same command registry — behind a new multi-tenant auth layer (API keys, JWT), session provisioning API, and WebSocket streaming for real-time events. Phase 8 of 10 in the browse roadmap.",
+  "scopeChallenge": "The existing server.ts already has the core pieces: HTTP server, session multiplexing via SessionManager, auth via Bearer token, command routing via executeCommand(). The cloud layer adds: (1) API key management replacing the single random UUID token, (2) session provisioning endpoints (create/list/delete/freeze), (3) tenant isolation boundaries, (4) a TypeScript SDK that abstracts local vs remote, (5) WebSocket transport for streaming events. The server.ts code is NOT modified — the cloud server is a separate entry point that imports and orchestrates the same domain modules.",
+  "prerequisites": [
+    {
+      "assumption": "Phases 1-7 features are merged to main",
+      "status": "requires-task",
+      "verification": "All phase branches merged"
+    },
+    {
+      "assumption": "SessionManager supports multi-session isolation with domain filters",
+      "status": "already-true",
+      "verification": "src/session/manager.ts — verified getOrCreate(), closeSession(), closeIdleSessions()"
+    },
+    {
+      "assumption": "executeCommand() is the shared pipeline for all command execution",
+      "status": "already-true",
+      "verification": "src/automation/executor.ts — used by both HTTP server and MCP server"
+    },
+    {
+      "assumption": "SessionTargetFactory decouples session creation from concrete target types",
+      "status": "already-true",
+      "verification": "src/session/target-factory.ts — factory pattern for browser/app targets"
+    },
+    {
+      "assumption": "Session state persistence (cookies, localStorage) exists",
+      "status": "already-true",
+      "verification": "src/session/persist.ts — saveSessionState/loadSessionState with encryption"
+    },
+    {
+      "assumption": "AES-256-GCM encryption infrastructure exists",
+      "status": "already-true",
+      "verification": "src/session/encryption.ts — encrypt/decrypt/resolveEncryptionKey"
+    }
+  ],
+  "nonGoals": [
+    "Container isolation per session (Phase 9)",
+    "MicroVM snapshot/restore (Phase 10)",
+    "Geographic distribution / edge routing",
+    "Usage-based billing / payment integration",
+    "Admin dashboard UI",
+    "Rate limiting beyond basic per-tenant caps (advanced rate limiting is Phase 9)",
+    "Custom Chromium builds or browser binary management",
+    "RBAC or team permissions (single API key per tenant for now)"
+  ],
+  "contracts": [
+    {
+      "boundary": "Cloud API Gateway → SessionManager",
+      "producer": "src/cloud/gateway.ts",
+      "consumer": "src/session/manager.ts",
+      "shape": "Gateway validates API key, resolves tenant, calls SessionManager.getOrCreate(tenantSessionId) with tenant-scoped session IDs",
+      "consistencyRule": "Session IDs are prefixed with tenant ID to prevent cross-tenant access. Gateway never passes raw user-supplied session IDs to SessionManager."
+    },
+    {
+      "boundary": "API Key Vault → Gateway Auth",
+      "producer": "src/cloud/auth.ts ApiKeyVault",
+      "consumer": "src/cloud/gateway.ts validateRequest()",
+      "shape": "ApiKeyVault.validate(apiKey) → { tenantId, permissions, rateLimit } | null",
+      "consistencyRule": "Keys are hashed (SHA-256) before storage. Raw key only visible at creation time. Validation is constant-time comparison on hash."
+    },
+    {
+      "boundary": "Cloud Gateway → executeCommand pipeline",
+      "producer": "src/cloud/gateway.ts handleCommand()",
+      "consumer": "src/automation/executor.ts executeCommand()",
+      "shape": "Same ExecuteOptions interface — lifecycle hooks, CommandContext with target/buffers/session",
+      "consistencyRule": "Cloud gateway constructs the same CommandContext the local server.ts does. No new command semantics — cloud is a transport layer."
+    },
+    {
+      "boundary": "SDK → Cloud API / Local Server",
+      "producer": "@ulpi/browse-sdk (separate package)",
+      "consumer": "User application code",
+      "shape": "BrowseClient { connect(opts): Session } — Session exposes command methods. opts.endpoint selects local vs cloud.",
+      "consistencyRule": "SDK method signatures mirror CLI command names. SDK returns typed results, not raw strings."
+    },
+    {
+      "boundary": "WebSocket → Session Events",
+      "producer": "src/cloud/ws.ts",
+      "consumer": "SDK / browser client",
+      "shape": "WS messages: { type: 'console'|'network'|'context'|'error', sessionId, data }",
+      "consistencyRule": "WebSocket connection is per-session. Auth via query param token. Events are best-effort — dropped events don't break command execution."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Command execution pipeline",
+      "existingCode": "src/automation/executor.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Session multiplexing and isolation",
+      "existingCode": "src/session/manager.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Session state persistence",
+      "existingCode": "src/session/persist.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "AES-256-GCM encryption",
+      "existingCode": "src/session/encryption.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Domain filtering per session",
+      "existingCode": "src/security/domain-filter.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Browser runtime resolution",
+      "existingCode": "src/engine/resolver.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Cloud provider pattern (Browserless, Browserbase)",
+      "existingCode": "src/engine/providers.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "HTTP server pattern",
+      "existingCode": "src/server.ts nodeServe()",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Command registry with MCP schemas",
+      "existingCode": "src/automation/registry.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Target factory pattern",
+      "existingCode": "src/session/target-factory.ts",
+      "source": "local",
+      "action": "reuse"
+    }
+  ],
+  "failureModes": [
+    { "risk": "Cross-tenant session leakage via session ID collision", "affectedTasks": ["TASK-001", "TASK-003"], "mitigation": "Tenant-prefixed session IDs with UUID generation. Session IDs are `tenant:<tenantId>:session:<uuid>` — never user-controlled." },
+    { "risk": "API key brute force", "affectedTasks": ["TASK-001"], "mitigation": "SHA-256 hashed storage, constant-time comparison, rate limiting on auth failures (10/min per IP)." },
+    { "risk": "Resource exhaustion — one tenant spawns too many sessions", "affectedTasks": ["TASK-003"], "mitigation": "Per-tenant session limit (default 10). Configurable per API key. Excess requests get 429." },
+    { "risk": "WebSocket connection leak", "affectedTasks": ["TASK-005"], "mitigation": "30-second ping/pong heartbeat. Idle connections closed after 5 minutes. Max 100 WS connections per tenant." },
+    { "risk": "SDK version drift from server API", "affectedTasks": ["TASK-006", "TASK-007"], "mitigation": "SDK includes API version header. Server returns 400 with upgrade hint on version mismatch." },
+    { "risk": "Local server.ts and cloud gateway diverge in command handling", "affectedTasks": ["TASK-003"], "mitigation": "Both import the same executeCommand() pipeline. Cloud gateway constructs identical CommandContext." },
+    { "risk": "SQLite single-writer limitation under multi-instance deployment", "affectedTasks": ["TASK-001", "TASK-002"], "mitigation": "Phase 8 is single-process — SQLite is sufficient. Multi-instance deployment requires migrating API key storage to PostgreSQL or Redis (out of scope for Phase 8, documented as a known limitation). Plan explicitly assumes single-process deployment." }
+  ],
+  "testCoverageMap": [
+    { "codepath": "API key creation, validation, revocation", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "JWT token generation and validation", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "Auth flow end-to-end (API key → JWT → command → revoke → reject)", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "Tenant isolation — cross-tenant session access blocked", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Session provisioning lifecycle (create → use → freeze → resume → delete)", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Cloud gateway routes command to correct session", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Per-tenant session limits enforced", "coveringTask": "TASK-003", "testType": "unit" },
+    { "codepath": "WebSocket event streaming for console/network", "coveringTask": "TASK-005", "testType": "integration" },
+    { "codepath": "SDK local transport connect and command round-trip", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "SDK cloud transport connect and command round-trip", "coveringTask": "TASK-008", "testType": "integration" },
+    { "codepath": "Cloud server startup and health check", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "Session freeze/resume via state persistence", "coveringTask": "TASK-004", "testType": "integration" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "API key vault and JWT auth module",
+      "description": "Create `src/cloud/auth.ts` with ApiKeyVault class and JWT token generation.\n\nApiKeyVault stores API keys as SHA-256 hashes in a SQLite database (reusing the existing better-sqlite3 dependency). Each key record: `{ id, tenantId, keyHash, name, permissions, maxSessions, maxConcurrent, createdAt, revokedAt }`. Keys are prefixed with `brw_` for identification.\n\nJWT implementation uses native Node.js `crypto` — no external library. Token format: base64url-encoded JSON header + payload + HMAC-SHA256 signature. Header: `{ alg: 'HS256', typ: 'JWT' }`. Payload: `{ tenantId, sessionId, permissions, iat, exp }`. Expiry: 15 minutes. Signing key from `BROWSE_CLOUD_JWT_SECRET` env var (64-char hex) or auto-generated via `crypto.randomBytes(32)` stored at `.browse/.cloud-jwt-key`. Use `crypto.timingSafeEqual()` for signature comparison. This avoids adding a `jsonwebtoken` dependency while providing standard JWT interop.\n\nExport: `ApiKeyVault` class, `createJwt()`, `validateJwt()`, `hashApiKey()`.\n\nRegister exports in `src/cloud/index.ts` barrel.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "ApiKeyVault.create(tenantId, name) returns a key starting with `brw_` and stores SHA-256 hash in SQLite",
+        "ApiKeyVault.validate(rawKey) returns tenant info for valid keys, null for invalid/revoked keys, and runs in constant time",
+        "createJwt() returns a signed JWT with 15-minute expiry containing tenantId and permissions; validateJwt() rejects expired or tampered tokens"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/cloud/auth.ts", "src/cloud/index.ts"],
+      "writeScope": ["src/cloud/auth.ts", "src/cloud/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/cloud/ directory",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Cloud server entry point and config",
+      "description": "Create `src/cloud/server.ts` as the cloud server entry point (separate from `src/server.ts`).\n\nThis server:\n1. Reads cloud config from env vars: `BROWSE_CLOUD_PORT` (default 8400), `BROWSE_CLOUD_HOST` (default 0.0.0.0), `BROWSE_CLOUD_JWT_SECRET`, `BROWSE_CLOUD_DB_PATH` (default .browse/cloud.db)\n2. Initializes ApiKeyVault (from TASK-001)\n3. Launches browser via getRuntime() (same as server.ts)\n4. Creates a SessionManager with the browser target factory\n5. Starts HTTP server with routes: `GET /health`, `POST /v1/sessions`, `GET /v1/sessions`, `DELETE /v1/sessions/:id`, `POST /v1/sessions/:id/command`, `POST /v1/keys` (admin)\n6. Listens on 0.0.0.0 (not 127.0.0.1 like local server)\n\nAdd `BROWSE_CLOUD_DEFAULTS` to `src/constants.ts` with cloud-specific defaults.\n\nAdd `\"cloud\"` script to package.json: `\"cloud\": \"tsx src/cloud/server.ts\"`.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "Cloud server starts on configured port, responds to GET /health with { status: 'healthy', sessions, version }",
+        "POST /v1/sessions/:id/command with valid JWT routes to executeCommand() and returns command output",
+        "Requests without valid API key or JWT receive 401 with clear error message"
+      ],
+      "filesToModify": ["src/constants.ts", "package.json"],
+      "filesToCreate": ["src/cloud/server.ts"],
+      "writeScope": ["src/cloud/server.ts", "src/constants.ts", "package.json"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/cloud/server.ts, revert constants.ts and package.json",
+      "agent": "express-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Session provisioning and tenant isolation",
+      "description": "Create `src/cloud/sessions.ts` with CloudSessionManager that wraps the existing SessionManager with tenant boundaries.\n\nCloudSessionManager:\n1. `provision(tenantId, opts?)` — creates a new session with tenant-scoped ID (`tenant:<tenantId>:session:<uuid>`), enforces per-tenant session limit (from API key's maxSessions), returns `{ sessionId, createdAt, expiresAt }`\n2. `list(tenantId)` — lists only sessions belonging to this tenant\n3. `get(tenantId, sessionId)` — returns session info if it belongs to tenant, 403 otherwise\n4. `terminate(tenantId, sessionId)` — closes session and cleans up, 403 if wrong tenant\n5. `freeze(tenantId, sessionId)` — saves session state via persist.ts, closes browser context, marks as frozen\n6. `resume(tenantId, sessionId)` — restores session state from persist.ts into fresh browser context\n\nTenant enforcement: all methods validate that the session's tenant prefix matches the requesting tenantId. Cross-tenant access throws a specific `TenantAccessError`.\n\nPer-tenant limits: tracked via a Map<tenantId, Set<sessionId>>. When limit reached, provision() returns 429.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "provision() creates a session with tenant-prefixed ID and enforces maxSessions limit (returns 429 when exceeded)",
+        "get(tenantA, sessionOwnedByTenantB) throws TenantAccessError — cross-tenant access is impossible",
+        "freeze() saves state via saveSessionState() and resume() restores into a fresh browser context with cookies/localStorage intact"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/cloud/sessions.ts"],
+      "writeScope": ["src/cloud/sessions.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/cloud/sessions.ts",
+      "agent": "express-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Session freeze/resume with state snapshots",
+      "description": "Extend `src/session/persist.ts` to support full session freeze/resume for cloud use.\n\nCurrent persist.ts saves cookies and localStorage. For cloud freeze/resume, also capture:\n1. Tab URLs (all open tabs, not just active)\n2. Active tab ID\n3. Context level setting\n4. Domain filter configuration\n5. Settle mode flag\n\nAdd `freezeSession(session, sessionDir, encryptionKey)` — saves full session state including all tab URLs, active tab, settings. Returns a `FrozenSessionManifest` with metadata.\n\nAdd `resumeSession(manifest, factory, buffers, encryptionKey)` — creates a new target via factory, restores cookies, navigates tabs to saved URLs, restores settings. Returns a fresh Session object.\n\nThe existing `saveSessionState`/`loadSessionState` remain unchanged for backward compatibility (they handle cookies/localStorage only). The new functions are additive.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "freezeSession() captures tab URLs, active tab ID, context level, domain filter config, and settle mode in addition to cookies/localStorage",
+        "resumeSession() restores a frozen session with all tabs navigated to saved URLs and active tab re-selected",
+        "Freeze/resume round-trip preserves cookies — verified by setting a cookie, freezing, resuming, and reading the cookie back"
+      ],
+      "filesToModify": ["src/session/persist.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/session/persist.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert persist.ts additions (existing functions untouched)",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "WebSocket event streaming",
+      "description": "Create `src/cloud/ws.ts` with WebSocket upgrade handler for real-time session event streaming.\n\nThe cloud server (TASK-002) upgrades HTTP connections on `/v1/sessions/:id/ws` to WebSocket. Auth via `?token=<jwt>` query parameter.\n\nEvent types streamed:\n1. `console` — console log entries from session buffers (tails the ring buffer)\n2. `network` — network request entries from session buffers\n3. `context` — action context deltas (page state changes after write commands)\n4. `error` — command execution errors\n5. `session` — session lifecycle events (created, frozen, resumed, terminated)\n\nImplementation: WebSocket handler subscribes to session's buffers by polling at 100ms interval (matching buffer flush interval). Uses the existing SessionBuffers addConsoleEntry/addNetworkEntry hooks — adds an optional `onEntry` callback to SessionBuffers that the WS handler registers.\n\nAdd `onConsoleEntry` and `onNetworkEntry` callback fields to `SessionBuffers` in `src/network/buffers.ts`.\n\nConnection lifecycle: ping/pong every 30s, idle disconnect after 5 min, max 100 connections per tenant.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-002", "TASK-003"],
+      "acceptanceCriteria": [
+        "WebSocket connection on /v1/sessions/:id/ws streams console entries in real-time as JSON messages with type='console'",
+        "Invalid JWT in query param results in WS close with code 4001 and reason 'Unauthorized'",
+        "Connection that misses 3 consecutive pings is terminated server-side"
+      ],
+      "filesToModify": ["src/network/buffers.ts"],
+      "filesToCreate": ["src/cloud/ws.ts"],
+      "writeScope": ["src/cloud/ws.ts", "src/network/buffers.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/cloud/ws.ts, revert buffers.ts callback additions",
+      "agent": "express-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "TypeScript SDK — core client and local transport",
+      "description": "Create the SDK as an in-repo module at `src/sdk/` — avoids introducing a monorepo workspace pattern. The SDK is built and bundled alongside the main CLI.\n\nCore classes:\n1. `BrowseClient` — main entry point. `BrowseClient.connect({ endpoint?, apiKey? })` returns a `BrowseSession`.\n2. `BrowseSession` — represents one browse session. Methods mirror CLI commands: `goto(url)`, `click(selector)`, `fill(selector, value)`, `text()`, `snapshot(opts?)`, `screenshot(path?)`, etc.\n3. `LocalTransport` — sends HTTP requests to local browse server (reads state file, auto-starts server).\n\nBrowseSession methods are typed: `goto()` returns `{ url: string }`, `text()` returns `string`, `snapshot()` returns `{ tree: string, refs: Map<string, string> }`.\n\nFiles: `src/sdk/index.ts` (barrel), `src/sdk/client.ts`, `src/sdk/session.ts`, `src/sdk/transports/local.ts`.\n\nExport from main package via `src/sdk/index.ts` — consumers import from `@ulpi/browse/sdk`. Add `\"./sdk\"` to package.json `exports` field.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "BrowseClient.connect() with no options connects to local browse server and returns a BrowseSession",
+        "session.goto('https://example.com') followed by session.text() returns page text content",
+        "SDK exports are typed — TypeScript consumers get autocomplete for all session methods"
+      ],
+      "filesToModify": ["package.json"],
+      "filesToCreate": ["src/sdk/index.ts", "src/sdk/client.ts", "src/sdk/session.ts", "src/sdk/transports/local.ts"],
+      "writeScope": ["src/sdk/index.ts", "src/sdk/client.ts", "src/sdk/session.ts", "src/sdk/transports/local.ts", "package.json"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/sdk/ directory, revert package.json exports",
+      "agent": "express-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-007",
+      "title": "SDK cloud transport and session lifecycle",
+      "description": "Add cloud transport to the SDK that connects to the browse cloud API.\n\nCreate `src/sdk/transports/cloud.ts`:\n1. `CloudTransport` — sends authenticated HTTP requests to cloud API endpoint\n2. Handles API key → JWT exchange (POST /v1/auth with API key, receives JWT)\n3. Session provisioning: `createSession()` → POST /v1/sessions, `deleteSession()` → DELETE /v1/sessions/:id\n4. Command execution: `execute(sessionId, command, args)` → POST /v1/sessions/:id/command\n5. Session freeze/resume: `freeze(sessionId)`, `resume(sessionId)`\n6. Optional WebSocket subscription for events: `subscribe(sessionId)` returns AsyncIterator of events\n\nUpdate `BrowseClient.connect()` to accept `{ endpoint: 'https://api.browse.dev', apiKey: 'brw_...' }` and automatically use CloudTransport.\n\nAdd `src/sdk/transports/index.ts` barrel export.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-006", "TASK-002"],
+      "acceptanceCriteria": [
+        "BrowseClient.connect({ endpoint, apiKey }) authenticates and returns a BrowseSession backed by CloudTransport",
+        "session.goto() sends POST /v1/sessions/:id/command with JWT auth header and returns typed result",
+        "session.freeze() and session.resume() call the correct cloud API endpoints and session continues working after resume"
+      ],
+      "filesToModify": ["src/sdk/client.ts"],
+      "filesToCreate": ["src/sdk/transports/cloud.ts", "src/sdk/transports/index.ts"],
+      "writeScope": ["src/sdk/transports/cloud.ts", "src/sdk/transports/index.ts", "src/sdk/client.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete cloud transport files, revert client.ts",
+      "agent": "express-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Cloud API integration tests",
+      "description": "Create `test/cloud.test.ts` with integration tests for the cloud API layer. This is P1 because it covers security-sensitive auth paths that must be tested at ship cut.\n\nTests:\n1. **Auth flow** (security-critical): create API key → validate → issue JWT → use JWT for commands → revoke key → JWT rejected → expired JWT rejected → tampered JWT rejected\n2. **Session provisioning**: create session → list sessions → execute command → freeze → resume → verify state preserved → delete session\n3. **Tenant isolation** (security-critical): create session as tenant A → attempt access as tenant B → verify 403\n4. **Rate limiting**: exceed maxSessions → verify 429 response\n5. **WebSocket streaming**: connect WS → execute `goto` → verify console/network events received\n6. **Health endpoint**: verify /health returns correct structure before and during active sessions\n\nTest setup: start cloud server on random port, create test API key programmatically, run tests against HTTP endpoints. Use the existing test-server.ts for HTML fixtures.\n\nAlso create `test/cloud-sdk.test.ts` for SDK tests:\n1. **Local transport**: SDK connects to local server, executes goto + text\n2. **Cloud transport**: SDK connects to test cloud server, provisions session, executes commands",
+      "type": "test",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": ["TASK-002", "TASK-003", "TASK-005", "TASK-007"],
+      "acceptanceCriteria": [
+        "All cloud API integration tests pass including auth flow, session lifecycle, tenant isolation, and rate limiting",
+        "SDK tests verify both local and cloud transport round-trips with typed results",
+        "Tenant isolation test proves that tenant A cannot access tenant B's session (receives 403 or TenantAccessError)"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/cloud.test.ts", "test/cloud-sdk.test.ts"],
+      "writeScope": ["test/cloud.test.ts", "test/cloud-sdk.test.ts"],
+      "validateCommand": "npm test -- test/cloud",
+      "rollbackPlan": "Delete test files",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 8,
+    "layerCount": 4,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-006"] },
+      { "layer": 1, "tasks": ["TASK-002", "TASK-007"] },
+      { "layer": 2, "tasks": ["TASK-003", "TASK-004", "TASK-005"] },
+      { "layer": 3, "tasks": ["TASK-008"] }
+    ],
+    "criticalPath": ["TASK-001", "TASK-002", "TASK-003", "TASK-008"]
+  },
+  "notes": "TASK-008 is P1 (not P2) because it covers security-sensitive auth integration paths. It remains in layer 3 due to dependency on TASK-003/005/007."
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-001", "TASK-002"],
+    "TASK-004": ["TASK-002"],
+    "TASK-005": ["TASK-002", "TASK-003"],
+    "TASK-006": [],
+    "TASK-007": ["TASK-006", "TASK-002"],
+    "TASK-008": ["TASK-002", "TASK-003", "TASK-005", "TASK-007"]
+  }
+}

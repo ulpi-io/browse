@@ -1,0 +1,266 @@
+{
+  "title": "Phase 9: Container Isolation Per Session",
+  "branch": "feat/container-isolation",
+  "mode": "EXPANSION",
+  "overview": "Replace the single-process multi-session model with per-session container isolation. Each cloud session gets its own Docker container running the browse server, providing OS-level isolation between tenants. The cloud gateway (Phase 8) becomes an orchestrator that provisions, routes to, and manages containers via Docker Engine API. Warm container pools minimize cold start latency. Container resource limits (CPU, memory, network) enforce fair usage. Phase 9 of 10 in the browse roadmap.",
+  "scopeChallenge": "Phase 8's cloud server runs all sessions in one Node.js process sharing one Chromium instance via SessionManager. This works for trusted single-tenant use but lacks isolation for multi-tenant: a Chromium crash in one session kills all sessions, memory leaks affect neighbors, and browser-level exploits could escape the BrowserContext sandbox. Container isolation solves all three by giving each session its own Chromium process in its own container. The key architectural change: the gateway no longer calls SessionManager.getOrCreate() directly — it provisions a container, then proxies HTTP commands to the container's internal browse server.",
+  "prerequisites": [
+    {
+      "assumption": "Phase 8 cloud API gateway exists with auth, session provisioning, and WebSocket streaming",
+      "status": "requires-task",
+      "verification": "Phase 8 plan"
+    },
+    {
+      "assumption": "Docker Engine API accessible on the host (Docker Desktop or Docker CE)",
+      "status": "external",
+      "verification": "docker version"
+    },
+    {
+      "assumption": "browse server can run inside a container with Chromium (Playwright Docker images exist)",
+      "status": "external",
+      "verification": "mcr.microsoft.com/playwright:v1.52.0-noble"
+    },
+    {
+      "assumption": "Node.js http module can proxy requests to container-internal servers",
+      "status": "already-true",
+      "verification": "Standard HTTP proxying — no special deps needed"
+    }
+  ],
+  "nonGoals": [
+    "MicroVM isolation (Phase 10)",
+    "Kubernetes orchestration (Docker-only for now)",
+    "Geographic distribution / multi-region",
+    "Custom Chromium builds per container",
+    "GPU passthrough for WebGL-heavy sites",
+    "Container image caching / registry management",
+    "Live migration of containers between hosts"
+  ],
+  "contracts": [
+    {
+      "boundary": "Gateway → Container Orchestrator",
+      "producer": "src/cloud/orchestrator.ts",
+      "consumer": "src/cloud/server.ts (gateway routes)",
+      "shape": "ContainerOrchestrator { provision(tenantId, opts): ContainerHandle, terminate(containerId), freeze(containerId): FrozenSnapshot, resume(snapshot): ContainerHandle, list(tenantId) }",
+      "consistencyRule": "Orchestrator owns container lifecycle. Gateway never talks to Docker directly. ContainerHandle includes the internal port for command proxying."
+    },
+    {
+      "boundary": "Container Orchestrator → Docker Engine API",
+      "producer": "src/cloud/docker.ts",
+      "consumer": "src/cloud/orchestrator.ts",
+      "shape": "DockerClient { create(image, opts): Container, start(id), stop(id), remove(id), exec(id, cmd), inspect(id), listByLabel(label) }",
+      "consistencyRule": "All containers labeled with browse-cloud metadata (tenantId, sessionId, createdAt). Orphaned containers detected by label scan and reaped."
+    },
+    {
+      "boundary": "Gateway → Container (command proxy)",
+      "producer": "src/cloud/proxy.ts",
+      "consumer": "Container-internal browse server on internal port",
+      "shape": "HTTP proxy: Gateway receives POST /v1/sessions/:id/command → looks up container port → forwards POST /command with Bearer token → returns response",
+      "consistencyRule": "Each container has its own internal auth token. Gateway stores the token at provision time. Container port is on an internal Docker network — not exposed to host."
+    },
+    {
+      "boundary": "Warm Pool → Orchestrator",
+      "producer": "src/cloud/warm-pool.ts",
+      "consumer": "src/cloud/orchestrator.ts provision()",
+      "shape": "WarmPool { claim(): ContainerHandle | null, replenish(), size(): number, drain() }",
+      "consistencyRule": "Pool maintains N pre-started containers (default 5). claim() returns a ready container in <100ms. replenish() runs on interval (every 30s) to maintain pool size. Containers in pool have no session assigned yet."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Browse server inside container",
+      "existingCode": "src/server.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Session state freeze/resume",
+      "existingCode": "src/session/persist.ts (Phase 8 extensions)",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Cloud auth and tenant isolation",
+      "existingCode": "src/cloud/auth.ts, src/cloud/sessions.ts (Phase 8)",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Health check endpoint",
+      "existingCode": "src/server.ts /health route",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Playwright Docker images",
+      "existingCode": "mcr.microsoft.com/playwright",
+      "source": "external",
+      "action": "reuse"
+    }
+  ],
+  "failureModes": [
+    { "risk": "Docker socket not available in cloud deployment", "affectedTasks": ["TASK-002"], "mitigation": "Support both Unix socket (/var/run/docker.sock) and TCP (DOCKER_HOST env var). Test both paths." },
+    { "risk": "Container startup time >2s causing poor UX", "affectedTasks": ["TASK-004"], "mitigation": "Warm pool of pre-started containers. Pool size configurable via BROWSE_CLOUD_WARM_POOL_SIZE." },
+    { "risk": "Orphaned containers from gateway crash", "affectedTasks": ["TASK-005"], "mitigation": "Container reaper scans for browse-cloud labeled containers with no matching gateway session. Runs every 60s." },
+    { "risk": "Port exhaustion from too many containers", "affectedTasks": ["TASK-003"], "mitigation": "Containers communicate via Docker internal network, not host ports. Gateway proxies via container IP on the Docker bridge." },
+    { "risk": "Container OOM kills from Chromium memory spikes", "affectedTasks": ["TASK-001"], "mitigation": "Memory limit set to 512MB default with --oom-kill-disable=false. Container restart policy: none (session is lost, gateway provisions new)." },
+    { "risk": "State loss when container dies unexpectedly", "affectedTasks": ["TASK-003"], "mitigation": "Gateway catches container exit event, marks session as terminated, returns clear error to client. Client can provision a new session." }
+  ],
+  "testCoverageMap": [
+    { "codepath": "Docker client create/start/stop/remove lifecycle", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "Container provision with browse server health check", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Command proxy gateway → container → response", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Warm pool claim/replenish cycle", "coveringTask": "TASK-004", "testType": "unit" },
+    { "codepath": "Container freeze (commit) and resume (start from image)", "coveringTask": "TASK-005", "testType": "integration" },
+    { "codepath": "Orphan container reaper", "coveringTask": "TASK-005", "testType": "unit" },
+    { "codepath": "Resource limits enforced (memory, CPU)", "coveringTask": "TASK-001", "testType": "integration" },
+    { "codepath": "End-to-end: SDK → cloud gateway → container → browse command → response", "coveringTask": "TASK-006", "testType": "e2e" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Dockerfile and container image for browse sessions",
+      "description": "Create `docker/Dockerfile.session` — the container image that runs a single browse session.\n\nBased on `mcr.microsoft.com/playwright:v1.52.0-noble` (includes Chromium + deps). Layers:\n1. Base: Playwright image with Chromium\n2. Copy: browse server bundle (`dist/browse.cjs`) + package.json\n3. Install: production deps only (`npm ci --production`)\n4. Entrypoint: `node dist/browse.cjs --server` with env vars: `BROWSE_PORT=9400`, `BROWSE_IDLE_TIMEOUT=300000` (5 min), `__BROWSE_SERVER_MODE=1`\n5. Health check: `HEALTHCHECK CMD curl -f http://localhost:9400/health || exit 1`\n\nResource defaults (overridable at run time):\n- Memory: 512MB\n- CPU: 0.5 cores\n- No network egress restrictions (Phase 10 adds network policies)\n\nAlso create `docker/docker-compose.cloud.yml` for local development: runs the gateway + one session container for testing.\n\nCreate `docker/.dockerignore` to exclude test/, node_modules/, .git/.",
+      "type": "infra",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "docker build -f docker/Dockerfile.session -t browse-session . succeeds and produces an image under 1.2GB",
+        "docker run browse-session starts and responds to GET /health within 5 seconds",
+        "Container exits cleanly when BROWSE_IDLE_TIMEOUT fires after 5 minutes of inactivity"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["docker/Dockerfile.session", "docker/docker-compose.cloud.yml", "docker/.dockerignore"],
+      "writeScope": ["docker/Dockerfile.session", "docker/docker-compose.cloud.yml", "docker/.dockerignore"],
+      "validateCommand": "docker build -f docker/Dockerfile.session -t browse-session .",
+      "rollbackPlan": "Delete docker/ directory",
+      "agent": "devops-docker-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Docker Engine API client",
+      "description": "Create `src/cloud/docker.ts` — a minimal Docker Engine API client using Node.js native http module (no external deps).\n\nThe client talks to the Docker daemon via Unix socket (`/var/run/docker.sock`) or TCP (`DOCKER_HOST` env var).\n\nMethods:\n1. `create(image, opts)` — POST /containers/create with Labels, HostConfig (Memory, NanoCPUs, NetworkMode), Env\n2. `start(id)` — POST /containers/{id}/start\n3. `stop(id, timeout?)` — POST /containers/{id}/stop\n4. `remove(id, force?)` — DELETE /containers/{id}\n5. `inspect(id)` — GET /containers/{id}/json (returns IP, state, ports)\n6. `listByLabel(label, value)` — GET /containers/json?filters=... (for reaping orphans)\n7. `waitForHealthy(id, timeoutMs)` — poll inspect() until State.Health.Status === 'healthy'\n8. `commit(id, repo, tag)` — POST /commit?container={id} (for freeze)\n\nAll methods return typed results. Errors include Docker API error messages.\n\nExport from `src/cloud/index.ts` barrel.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "DockerClient.create() + start() + waitForHealthy() provisions a container that responds to health checks",
+        "DockerClient.stop() + remove() cleans up the container with no orphans",
+        "DockerClient works via both Unix socket and TCP (DOCKER_HOST) — tested by creating a container through each path",
+        "Unit tests in test/cloud-docker-unit.test.ts verify: request building (correct HTTP method, path, headers for each Docker API call), label filtering query string construction, and error handling (non-200 responses throw with Docker API error message). These run without Docker."
+      ],
+      "filesToModify": ["src/cloud/index.ts"],
+      "filesToCreate": ["src/cloud/docker.ts"],
+      "writeScope": ["src/cloud/docker.ts", "src/cloud/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/cloud/docker.ts, revert index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Container orchestrator and command proxy",
+      "description": "Create the shared `Orchestrator` interface in `src/cloud/orchestrator-interface.ts` — this is the abstraction that both ContainerOrchestrator (this phase) and VmOrchestrator (Phase 10) implement:\n```typescript\ninterface Orchestrator {\n  provision(tenantId: string, opts?): Promise<SessionHandle>;\n  executeCommand(handle: SessionHandle, command: string, args: string[]): Promise<string>;\n  terminate(handle: SessionHandle): Promise<void>;\n  freeze(handle: SessionHandle): Promise<FrozenSession>;\n  resume(tenantId: string, sessionId: string): Promise<SessionHandle>;\n  list(tenantId: string): SessionHandle[];\n}\n```\n\nThen create `src/cloud/orchestrator.ts` — ContainerOrchestrator implementing this interface:\n1. `provision(tenantId, opts?)` — creates a Docker container from browse-session image, starts it, waits for health check, stores container metadata (id, internalIp, authToken, tenantId, sessionId). Returns SessionHandle.\n2. `executeCommand(handle, command, args)` — proxies HTTP POST to container's internal browse server at `http://<internalIp>:9400/command` with the container's auth token. Returns command output.\n3. `terminate(handle)` — stops and removes container, cleans up metadata.\n4. `list(tenantId)` — returns all active containers for a tenant.\n\nCreate `src/cloud/proxy.ts` — HTTP proxy utility that forwards requests from the gateway to container-internal browse servers. Handles timeouts, connection errors (container died), and response streaming.\n\nUpdate `src/cloud/server.ts` (from Phase 8) to use ContainerOrchestrator (via the Orchestrator interface) instead of direct SessionManager when `BROWSE_CLOUD_ISOLATION=container` env var is set. When isolation is off, falls back to Phase 8's direct SessionManager (for development/testing).",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "provision() creates a container, waits for health, and executeCommand() proxies a 'goto' + 'text' flow with correct results",
+        "terminate() stops the container and subsequent executeCommand() returns a clear 'session terminated' error",
+        "Gateway with BROWSE_CLOUD_ISOLATION=container routes commands through ContainerOrchestrator; with BROWSE_CLOUD_ISOLATION unset, uses direct SessionManager"
+      ],
+      "filesToModify": ["src/cloud/server.ts"],
+      "filesToCreate": ["src/cloud/orchestrator-interface.ts", "src/cloud/orchestrator.ts", "src/cloud/proxy.ts"],
+      "writeScope": ["src/cloud/orchestrator-interface.ts", "src/cloud/orchestrator.ts", "src/cloud/proxy.ts", "src/cloud/server.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete orchestrator.ts and proxy.ts, revert server.ts",
+      "agent": "express-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Warm container pool",
+      "description": "Create `src/cloud/warm-pool.ts` — pre-starts containers to minimize cold start latency.\n\nWarmPool:\n1. `claim()` — returns a ready ContainerHandle from the pool (or null if empty). Removes it from pool.\n2. `replenish()` — starts new containers to maintain target pool size (default 5, configurable via `BROWSE_CLOUD_WARM_POOL_SIZE`). Non-blocking — runs in background.\n3. `size()` — current pool size.\n4. `drain()` — stops and removes all pool containers (for shutdown).\n\nPool lifecycle:\n- On gateway startup: fill pool to target size\n- Every 30s: check pool size, start containers if below target\n- On claim: start background replenish if pool drops below 50%\n- On shutdown: drain all\n\nContainers in the pool have no tenant/session assigned. They run the browse server in idle mode (no commands yet). When claimed, the orchestrator assigns tenant metadata and starts using the container.\n\nIntegrate with ContainerOrchestrator: `provision()` tries `pool.claim()` first, falls back to direct container creation if pool is empty.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002", "TASK-003"],
+      "acceptanceCriteria": [
+        "claim() returns a healthy container in under 100ms when pool is populated",
+        "Pool replenishes to target size within 60s of being depleted below 50%",
+        "drain() on shutdown stops and removes all pool containers with no orphans"
+      ],
+      "filesToModify": ["src/cloud/orchestrator.ts"],
+      "filesToCreate": ["src/cloud/warm-pool.ts"],
+      "writeScope": ["src/cloud/warm-pool.ts", "src/cloud/orchestrator.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete warm-pool.ts, revert orchestrator.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Container freeze/resume and orphan reaper",
+      "description": "Add container-level freeze/resume to the orchestrator and an orphan reaper for crash recovery.\n\nFreeze: `orchestrator.freeze(handle)` → docker commit (creates image snapshot of container state) → stop container → remove container → store snapshot reference (image ID + metadata in SQLite). The snapshot captures Chromium's in-memory state: page DOM, cookies, localStorage, open tabs — everything.\n\nResume: `orchestrator.resume(tenantId, sessionId)` → docker create from snapshot image → start → wait for health → return new ContainerHandle. The browse server inside restarts but Chromium's profile data is in the filesystem layer captured by commit.\n\nOrphan reaper: `src/cloud/reaper.ts` — runs every 60s, scans Docker containers with label `browse-cloud=true` that don't have a matching session in the gateway's active session map. Stops and removes them. Also reaps committed snapshot images older than configurable TTL (default 1 hour).\n\nRegister reaper in gateway startup (start interval) and shutdown (final cleanup).",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-003"],
+      "acceptanceCriteria": [
+        "freeze() commits container state to an image, stops the container, and stores snapshot metadata in the database",
+        "resume() creates a new container from the snapshot image and the browse server comes up healthy with preserved page state",
+        "Reaper detects and removes orphaned containers that have been running for >5 minutes with no matching gateway session"
+      ],
+      "filesToModify": ["src/cloud/orchestrator.ts"],
+      "filesToCreate": ["src/cloud/reaper.ts"],
+      "writeScope": ["src/cloud/reaper.ts", "src/cloud/orchestrator.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete reaper.ts, revert orchestrator.ts",
+      "agent": "devops-docker-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Container isolation integration tests",
+      "description": "Create `test/cloud-containers.test.ts` with integration tests for container isolation.\n\nPrerequisite: Docker must be available (tests skip with clear message if not).\n\nTests:\n1. **Container lifecycle**: provision → health check → execute goto + text → terminate → verify container removed\n2. **Warm pool**: fill pool to 3 → claim 2 → verify pool replenishes → drain\n3. **Freeze/resume**: provision → goto → freeze → resume → verify page state preserved (cookies, URL)\n4. **Tenant isolation**: provision container for tenant A → attempt command as tenant B → verify rejection\n5. **Resource limits**: provision container → verify memory limit via docker inspect\n6. **Orphan reaper**: provision container → remove from gateway session map without terminating → run reaper → verify container removed\n7. **Fallback mode**: start gateway without BROWSE_CLOUD_ISOLATION → verify direct SessionManager mode works\n\nTest timeout: 60s per test (containers take time). Use `test.skipIf(!dockerAvailable)` pattern.",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004", "TASK-005"],
+      "acceptanceCriteria": [
+        "All 7 test scenarios pass when Docker is available",
+        "Tests skip gracefully with descriptive message when Docker is not available",
+        "Freeze/resume test proves cookies and URL survive the round-trip across container recreation"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/cloud-containers.test.ts"],
+      "writeScope": ["test/cloud-containers.test.ts"],
+      "validateCommand": "npm test -- test/cloud-containers",
+      "rollbackPlan": "Delete test file",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 6,
+    "layerCount": 4,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002"] },
+      { "layer": 1, "tasks": ["TASK-003"] },
+      { "layer": 2, "tasks": ["TASK-004", "TASK-005"] },
+      { "layer": 3, "tasks": ["TASK-006"] }
+    ],
+    "criticalPath": ["TASK-002", "TASK-003", "TASK-005", "TASK-006"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-001", "TASK-002"],
+    "TASK-004": ["TASK-002", "TASK-003"],
+    "TASK-005": ["TASK-003"],
+    "TASK-006": ["TASK-003", "TASK-004", "TASK-005"]
+  }
+}

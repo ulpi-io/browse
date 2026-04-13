@@ -1,0 +1,277 @@
+{
+  "title": "Phase 10: MicroVM Isolation & Snapshot/Restore",
+  "branch": "feat/microvm-snapshot-restore",
+  "mode": "EXPANSION",
+  "overview": "Replace Docker containers with Firecracker microVMs for VM-level session isolation with sub-second boot times and memory-snapshot-based freeze/restore. Each session runs in a dedicated microVM with its own Linux kernel — eliminating the shared-kernel attack surface of containers. Snapshot/restore captures the entire VM memory state (including Chromium's in-process state) and restores it in ~200ms, enabling instant session resume and cost-efficient hibernation. Warm VM pools with pre-booted Chromium reduce cold starts to near zero. Phase 10 of 10 in the browse roadmap.",
+  "scopeChallenge": "Phase 9 uses Docker containers — they share the host kernel, so a kernel exploit in Chromium could escape the container. Firecracker microVMs run a separate Linux kernel per session with KVM hardware virtualization, providing the same isolation as a full VM with <125ms boot time. The key architectural change: the ContainerOrchestrator (Phase 9) is replaced by a VmOrchestrator that talks to Firecracker's API socket instead of Docker's. The warm pool, proxy, and reaper patterns from Phase 9 carry over with minimal changes — the abstraction boundary is at the orchestrator level.\n\nFirecracker requires: Linux host with KVM enabled, a rootfs image, and a kernel binary. This limits deployment to Linux hosts (no macOS/Windows). The gateway can still run on any OS — only the VM backend requires Linux+KVM.",
+  "prerequisites": [
+    {
+      "assumption": "Phase 8 cloud API gateway with auth, session provisioning, SDK",
+      "status": "requires-task",
+      "verification": "Phase 8 plan complete"
+    },
+    {
+      "assumption": "Phase 9 container orchestrator pattern established (orchestrator, proxy, warm pool, reaper)",
+      "status": "requires-task",
+      "verification": "Phase 9 plan complete"
+    },
+    {
+      "assumption": "Firecracker binary available on Linux deployment hosts",
+      "status": "external",
+      "verification": "https://github.com/firecracker-microvm/firecracker/releases — v1.10+"
+    },
+    {
+      "assumption": "KVM enabled on deployment hosts (/dev/kvm accessible)",
+      "status": "external",
+      "verification": "ls -la /dev/kvm"
+    },
+    {
+      "assumption": "Linux kernel binary (vmlinux) for Firecracker guest",
+      "status": "external",
+      "verification": "Firecracker CI publishes compatible kernels"
+    }
+  ],
+  "nonGoals": [
+    "macOS/Windows microVM support (Firecracker is Linux-only)",
+    "GPU passthrough for WebGL",
+    "Live VM migration between hosts",
+    "Custom kernel builds per tenant",
+    "Nested virtualization",
+    "VM-to-VM networking (each VM only needs outbound internet)",
+    "Kubernetes integration (direct Firecracker management only)",
+    "Billing or metering system"
+  ],
+  "contracts": [
+    {
+      "boundary": "VmOrchestrator → Firecracker API",
+      "producer": "src/cloud/firecracker.ts",
+      "consumer": "src/cloud/vm-orchestrator.ts",
+      "shape": "FirecrackerClient { create(vmId, config): void, start(vmId): void, pause(vmId): void, resume(vmId): void, snapshot(vmId, path): void, restore(vmId, path): void, stop(vmId): void }",
+      "consistencyRule": "Firecracker API socket is per-VM at /tmp/firecracker-<vmId>.sock. Client creates socket, configures VM (kernel, rootfs, network, resources), then starts. Snapshot captures full VM memory to disk."
+    },
+    {
+      "boundary": "VmOrchestrator → Gateway",
+      "producer": "src/cloud/vm-orchestrator.ts",
+      "consumer": "src/cloud/server.ts",
+      "shape": "Same interface as ContainerOrchestrator: provision(), executeCommand(), terminate(), freeze(), resume(), list(). Gateway doesn't know if backend is Docker or Firecracker.",
+      "consistencyRule": "VmOrchestrator implements the same Orchestrator interface as ContainerOrchestrator. Gateway selects via BROWSE_CLOUD_ISOLATION=firecracker|container|none."
+    },
+    {
+      "boundary": "VM Rootfs → Browse Session",
+      "producer": "scripts/build-rootfs.sh",
+      "consumer": "Firecracker VM boot",
+      "shape": "ext4 rootfs image containing: Alpine Linux base, Node.js 18+, Chromium, browse server bundle, systemd unit for browse server",
+      "consistencyRule": "Rootfs is immutable — built once, used for all VMs. Per-session state lives in a writable overlay or memory. Snapshot captures the overlay+memory."
+    },
+    {
+      "boundary": "VM Warm Pool → VmOrchestrator",
+      "producer": "src/cloud/vm-warm-pool.ts",
+      "consumer": "src/cloud/vm-orchestrator.ts provision()",
+      "shape": "Same WarmPool interface as Phase 9: claim(), replenish(), drain(). But pools pre-booted VMs with Chromium launched instead of Docker containers.",
+      "consistencyRule": "Warm VMs are created from a golden snapshot: boot VM → launch Chromium → wait for health → snapshot → use snapshot for instant clone. Clone time: ~200ms."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Orchestrator interface and gateway integration",
+      "existingCode": "src/cloud/orchestrator.ts (Phase 9)",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Command proxy to session server",
+      "existingCode": "src/cloud/proxy.ts (Phase 9)",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Warm pool pattern",
+      "existingCode": "src/cloud/warm-pool.ts (Phase 9)",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Orphan reaper pattern",
+      "existingCode": "src/cloud/reaper.ts (Phase 9)",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Browse server inside VM",
+      "existingCode": "src/server.ts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Firecracker API reference",
+      "existingCode": "https://github.com/firecracker-microvm/firecracker/blob/main/src/api_server/swagger/firecracker.yaml",
+      "source": "external",
+      "action": "reuse"
+    }
+  ],
+  "failureModes": [
+    { "risk": "KVM not available on deployment host", "affectedTasks": ["TASK-002"], "mitigation": "FirecrackerClient.checkKvm() runs at gateway startup — returns clear error if /dev/kvm missing. Gateway falls back to container isolation automatically." },
+    { "risk": "Rootfs image too large (>2GB)", "affectedTasks": ["TASK-001"], "mitigation": "Use Alpine Linux base (~50MB) + minimal Chromium install. Target: <800MB rootfs. Multi-stage build strips unnecessary files." },
+    { "risk": "Snapshot restore fails or produces corrupt state", "affectedTasks": ["TASK-004"], "mitigation": "Validate restored VM health within 5s. If unhealthy, discard snapshot and provision fresh VM. Log snapshot failure for debugging." },
+    { "risk": "Memory snapshot files consume too much disk", "affectedTasks": ["TASK-004"], "mitigation": "512MB VM = 512MB snapshot max. Compress with zstd (2-4x compression). Reaper deletes snapshots older than TTL (default 1 hour). S3 tiering for long-lived snapshots." },
+    { "risk": "Network config (tap device) requires root privileges", "affectedTasks": ["TASK-001"], "mitigation": "Pre-create tap devices at host setup time. Firecracker jailer handles the rest. Document host setup requirements." },
+    { "risk": "Firecracker version incompatibility across deployments", "affectedTasks": ["TASK-002"], "mitigation": "Pin Firecracker version in deployment scripts. Validate version at gateway startup." }
+  ],
+  "testCoverageMap": [
+    { "codepath": "Firecracker API client create/start/stop lifecycle", "coveringTask": "TASK-002", "testType": "integration" },
+    { "codepath": "VM provision with browse server health check", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Command proxy gateway → VM → response", "coveringTask": "TASK-003", "testType": "integration" },
+    { "codepath": "Golden snapshot creation and clone", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "VM freeze (memory snapshot) and restore", "coveringTask": "TASK-004", "testType": "integration" },
+    { "codepath": "Warm VM pool claim/replenish from golden snapshot", "coveringTask": "TASK-005", "testType": "unit" },
+    { "codepath": "Orchestrator interface compatibility (Docker ↔ Firecracker)", "coveringTask": "TASK-003", "testType": "unit" },
+    { "codepath": "End-to-end: SDK → gateway → microVM → browse → response", "coveringTask": "TASK-006", "testType": "e2e" }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "MicroVM rootfs image and kernel setup",
+      "description": "Create `scripts/build-rootfs.sh` — builds the ext4 rootfs image for Firecracker guest VMs.\n\nThe rootfs contains:\n1. Alpine Linux base (musl, lightweight — ~50MB)\n2. Node.js 18+ (Alpine package)\n3. Chromium + Playwright deps (Alpine packages: chromium, nss, freetype, harfbuzz, etc.)\n4. Browse server bundle: copy `dist/browse.cjs` + minimal `package.json`\n5. Init system: OpenRC or simple shell init that starts the browse server on boot\n6. Network config: dhcpcd on eth0 (Firecracker assigns IP via MMDS or tap device)\n\nAlso create `scripts/download-kernel.sh` — downloads a Firecracker-compatible Linux kernel (vmlinux) from the Firecracker CI artifacts.\n\nCreate `docker/Makefile.microvm` with targets: `rootfs`, `kernel`, `golden-snapshot`, `clean`.\n\nTarget rootfs size: <800MB. Kernel: ~30MB.",
+      "type": "infra",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "build-rootfs.sh produces an ext4 image under 800MB containing Node.js, Chromium, and browse server bundle",
+        "Firecracker can boot the rootfs + kernel combination and reach a shell (verified manually or via serial console)",
+        "Browse server starts inside the VM and responds to health check on the configured port"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["scripts/build-rootfs.sh", "scripts/download-kernel.sh", "docker/Makefile.microvm"],
+      "writeScope": ["scripts/build-rootfs.sh", "scripts/download-kernel.sh", "docker/Makefile.microvm"],
+      "validateCommand": "bash scripts/build-rootfs.sh && ls -lh rootfs.ext4",
+      "rollbackPlan": "Delete scripts and Makefile",
+      "agent": "devops-docker-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Firecracker API client",
+      "description": "Create `src/cloud/firecracker.ts` — Node.js client for the Firecracker REST API.\n\nFirecracker exposes a REST API over a Unix socket (one socket per VM). The client manages VM lifecycle:\n\n1. `checkKvm()` — verifies /dev/kvm exists and is accessible. Returns boolean.\n2. `createVm(vmId, config)` — creates the API socket, configures the VM via PUT /machine-config (vcpu, mem_size), PUT /boot-source (kernel, boot_args), PUT /drives/rootfs (rootfs image path, read-only with overlay), PUT /network-interfaces/eth0 (tap device).\n3. `startVm(vmId)` — PUT /actions { action_type: 'InstanceStart' }\n4. `pauseVm(vmId)` — PATCH /vm { state: 'Paused' }\n5. `resumeVm(vmId)` — PATCH /vm { state: 'Resumed' }\n6. `snapshotVm(vmId, snapshotPath, memPath)` — PUT /snapshot/create { snapshot_type: 'Full', snapshot_path, mem_file_path }\n7. `restoreVm(vmId, snapshotPath, memPath)` — PUT /snapshot/load { snapshot_path, mem_file_path }\n8. `stopVm(vmId)` — send SIGTERM to Firecracker process\n\nAll communication is via HTTP over Unix socket using Node.js http module. Each vmId maps to a socket path: `/tmp/firecracker-{vmId}.sock`.\n\nExport from `src/cloud/index.ts`.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "checkKvm() returns true on Linux with /dev/kvm, false otherwise — verified on both Linux and macOS",
+        "createVm() + startVm() boots a Firecracker VM that becomes reachable via the configured network interface within 2 seconds",
+        "snapshotVm() creates memory + state files on disk; restoreVm() with those files produces a running VM with identical state"
+      ],
+      "filesToModify": ["src/cloud/index.ts"],
+      "filesToCreate": ["src/cloud/firecracker.ts"],
+      "writeScope": ["src/cloud/firecracker.ts", "src/cloud/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete firecracker.ts, revert index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "VM orchestrator with shared interface",
+      "description": "Create `src/cloud/vm-orchestrator.ts` implementing the `Orchestrator` interface already defined in `src/cloud/orchestrator-interface.ts` (created in Phase 9 TASK-003).\n\nVmOrchestrator implements this interface using FirecrackerClient:\n1. `provision()` — create VM via Firecracker API, configure network, start, wait for browse server health\n2. `executeCommand()` — proxy HTTP to VM's internal IP (same proxy.ts from Phase 9)\n3. `terminate()` — stop VM, cleanup socket and tap device\n4. `freeze()` — pause VM → snapshot → stop → store metadata\n5. `resume()` — restore from snapshot → resume → verify health\n\nUpdate `src/cloud/server.ts` to select orchestrator based on `BROWSE_CLOUD_ISOLATION`: `firecracker` → VmOrchestrator, `container` → ContainerOrchestrator, `none` → direct SessionManager.",
+      "type": "feature",
+      "effort": "L",
+      "priority": "P1",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "VmOrchestrator.provision() + executeCommand('goto', ['https://example.com']) + executeCommand('text', []) returns page text through a Firecracker microVM",
+        "Gateway with BROWSE_CLOUD_ISOLATION=firecracker uses VmOrchestrator; =container uses ContainerOrchestrator; =none uses direct SessionManager — all three paths work",
+        "VmOrchestrator.freeze() + resume() preserves page URL and cookies across the snapshot/restore cycle"
+      ],
+      "filesToModify": ["src/cloud/server.ts", "src/cloud/orchestrator-interface.ts"],
+      "filesToCreate": ["src/cloud/vm-orchestrator.ts"],
+      "writeScope": ["src/cloud/vm-orchestrator.ts", "src/cloud/orchestrator-interface.ts", "src/cloud/server.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete new files, revert server.ts and orchestrator.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Golden snapshot and instant VM clone",
+      "description": "Create `src/cloud/golden-snapshot.ts` — builds and manages golden VM snapshots for instant clone.\n\nGolden snapshot flow:\n1. Boot a fresh VM from rootfs + kernel\n2. Wait for browse server to start and Chromium to launch (health check passes)\n3. Navigate to about:blank (ensures Chromium renderer is fully initialized)\n4. Pause VM → create snapshot (memory + state files)\n5. Stop VM → store snapshot as the 'golden' baseline\n\nInstant clone: instead of booting a VM from scratch (1-2s), restore from the golden snapshot (~200ms). The cloned VM starts with Chromium already running and healthy.\n\nGoldenSnapshotManager:\n1. `build(rootfsPath, kernelPath)` — creates the golden snapshot. Runs once at gateway startup if no golden snapshot exists.\n2. `clone(vmId)` — copies golden snapshot files, creates new VM via restore. Returns when health check passes.\n3. `rebuild()` — rebuilds golden snapshot (e.g., after rootfs update)\n4. `isReady()` — whether a golden snapshot exists and is usable\n\nGolden snapshot files stored at `BROWSE_CLOUD_SNAPSHOT_DIR` (default `/var/lib/browse-cloud/golden/`).",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001", "TASK-002"],
+      "acceptanceCriteria": [
+        "build() creates golden snapshot files (memory + state) from a fresh VM with healthy Chromium in under 10 seconds",
+        "clone() restores from golden snapshot and produces a healthy VM in under 500ms",
+        "Cloned VM can immediately execute browse commands (goto + text) without any additional initialization"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["src/cloud/golden-snapshot.ts"],
+      "writeScope": ["src/cloud/golden-snapshot.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete golden-snapshot.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "VM warm pool with snapshot-based provisioning",
+      "description": "Create `src/cloud/vm-warm-pool.ts` — warm pool that uses golden snapshots for near-instant VM provisioning.\n\nUnlike Phase 9's container warm pool (which pre-starts containers), the VM warm pool pre-clones from the golden snapshot and keeps VMs in a paused state. Claiming a VM just resumes it — sub-100ms.\n\nVmWarmPool:\n1. `claim()` — resume a paused VM from pool. Returns SessionHandle.\n2. `replenish()` — clone from golden snapshot, pause immediately, add to pool.\n3. `size()` / `drain()` — same as Phase 9 pattern.\n\nPool lifecycle:\n- Gateway startup: build golden snapshot (if needed), fill pool\n- Every 30s: maintain pool at target size (default 10 for VMs since they're cheaper to hold paused)\n- On claim: background replenish if below 50%\n\nIntegrate with VmOrchestrator: provision() tries pool.claim() first, falls back to direct clone from golden snapshot.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004"],
+      "acceptanceCriteria": [
+        "claim() resumes a paused VM from pool in under 100ms and the browse server responds to commands immediately",
+        "replenish() fills pool to target size using golden snapshot clones, all clones are paused and consume minimal CPU",
+        "VmOrchestrator.provision() uses pool when available, falls back to direct golden snapshot clone when pool is empty"
+      ],
+      "filesToModify": ["src/cloud/vm-orchestrator.ts"],
+      "filesToCreate": ["src/cloud/vm-warm-pool.ts"],
+      "writeScope": ["src/cloud/vm-warm-pool.ts", "src/cloud/vm-orchestrator.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete vm-warm-pool.ts, revert vm-orchestrator.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "MicroVM integration tests and benchmarks",
+      "description": "Create `test/cloud-microvm.test.ts` with integration tests for the microVM backend.\n\nPrerequisite: Linux with KVM (tests skip on macOS/Windows or without /dev/kvm).\n\nTests:\n1. **VM lifecycle**: provision via Firecracker → health check → goto + text → terminate\n2. **Golden snapshot**: build → clone → verify cloned VM is healthy and can execute commands\n3. **Freeze/resume**: provision → goto → set cookie → freeze → resume → verify cookie and URL preserved\n4. **Warm pool**: fill pool from golden → claim → verify resume time <100ms → replenish\n5. **Orchestrator interface parity**: run same test suite against both ContainerOrchestrator and VmOrchestrator — verify identical behavior\n6. **Resource isolation**: provision two VMs → fill one's memory → verify other is unaffected\n\nAlso create `test/cloud-benchmarks.test.ts` (separate from correctness tests):\n- Cold start time (no pool): measure provision() latency\n- Warm start time (from pool): measure claim() latency\n- Freeze time: measure freeze() latency\n- Resume time: measure resume() latency\n- Report as structured JSON for tracking over time",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004", "TASK-005"],
+      "acceptanceCriteria": [
+        "All 6 correctness tests pass on Linux with KVM — tests skip with clear message on unsupported platforms",
+        "Orchestrator parity test proves ContainerOrchestrator and VmOrchestrator produce identical command outputs for the same sequence",
+        "Benchmark test reports cold start <2s, warm start <200ms, freeze <1s, resume <500ms (on typical hardware)"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/cloud-microvm.test.ts", "test/cloud-benchmarks.test.ts"],
+      "writeScope": ["test/cloud-microvm.test.ts", "test/cloud-benchmarks.test.ts"],
+      "validateCommand": "npm test -- test/cloud-microvm",
+      "rollbackPlan": "Delete test files",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 6,
+    "layerCount": 4,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002"] },
+      { "layer": 1, "tasks": ["TASK-003", "TASK-004"] },
+      { "layer": 2, "tasks": ["TASK-005"] },
+      { "layer": 3, "tasks": ["TASK-006"] }
+    ],
+    "criticalPath": ["TASK-002", "TASK-003", "TASK-005", "TASK-006"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-001", "TASK-002"],
+    "TASK-004": ["TASK-001", "TASK-002"],
+    "TASK-005": ["TASK-003", "TASK-004"],
+    "TASK-006": ["TASK-003", "TASK-004", "TASK-005"]
+  }
+}
