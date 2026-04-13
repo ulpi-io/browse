@@ -3,7 +3,7 @@
  *
  * Automatically selects the right transport based on options:
  *   - No endpoint/apiKey  -> LocalTransport (HTTP to local server)
- *   - endpoint + apiKey   -> CloudTransport (future TASK-007)
+ *   - endpoint + apiKey   -> CloudTransport (HTTPS to browse cloud)
  */
 
 import { BrowseSession } from './session.js';
@@ -35,9 +35,9 @@ export class BrowseClient {
    *   const session = await BrowseClient.connect();
    *   const session = await BrowseClient.connect({ session: 'agent-1' });
    *
-   * Cloud (future):
+   * Cloud:
    *   const session = await BrowseClient.connect({
-   *     endpoint: 'https://cloud.browse.ulpi.io',
+   *     endpoint: 'https://api.browse.dev',
    *     apiKey: 'brw_...',
    *   });
    */
@@ -49,11 +49,16 @@ export class BrowseClient {
           'Provide both or neither (for local transport).',
         );
       }
-      // Cloud transport will be added in TASK-007
-      throw new Error(
-        'Cloud transport not yet implemented. ' +
-        'Use local transport by omitting endpoint/apiKey.',
-      );
+      // Dynamic import to avoid pulling in cloud transport for local-only usage
+      const { CloudTransport } = await import('./transports/cloud.js');
+      const transport = new CloudTransport({
+        endpoint: opts.endpoint,
+        apiKey: opts.apiKey,
+        sessionId: opts.session,
+        timeout: opts.timeout,
+      });
+      await transport.connect();
+      return new BrowseSession(transport, transport.sessionId);
     }
 
     // Local transport — connect to running browse server

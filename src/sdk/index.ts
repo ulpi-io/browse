@@ -14,3 +14,4 @@
 export { BrowseClient, type ConnectOptions } from './client.js';
 export { BrowseSession, type Transport, type SnapshotOptions } from './session.js';
 export { LocalTransport, type LocalTransportOptions } from './transports/local.js';
+export { CloudTransport, CloudApiError, type CloudTransportOptions } from './transports/cloud.js';

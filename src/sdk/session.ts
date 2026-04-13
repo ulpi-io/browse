@@ -12,7 +12,7 @@
  * Transport contract — any mechanism that can send a browse command
  * and return its text output. Implementations:
  *   - LocalTransport (HTTP to local server)
- *   - CloudTransport (HTTPS to browse cloud — future TASK-007)
+ *   - CloudTransport (HTTPS to browse cloud API)
  */
 export interface Transport {
   execute(command: string, args: string[]): Promise<string>;

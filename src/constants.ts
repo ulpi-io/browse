@@ -30,3 +30,11 @@ export const DEFAULTS = {
   SERP_FASTPATH: false,          // BROWSE_SERP_FASTPATH=1 to enable (or --serp flag)
   COMMAND_LOCK: true,            // BROWSE_COMMAND_LOCK=0 to disable (escape hatch)
 } as const;
+
+export const CLOUD_DEFAULTS = {
+  PORT: 8400,
+  HOST: '0.0.0.0',
+  DB_PATH: '.browse/cloud.db',
+  MAX_SESSIONS_PER_TENANT: 10,
+  SESSION_IDLE_TIMEOUT_MS: 5 * 60 * 1000, // 5 min (shorter than local's 30 min)
+} as const;

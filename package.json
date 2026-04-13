@@ -60,6 +60,7 @@
     "test": "vitest run",
     "start": "tsx src/server.ts",
     "postinstall": "npx playwright install chromium",
+    "cloud": "tsx src/cloud/server.ts",
     "benchmark": "echo 'Benchmarks moved to separate repo'"
   },
   "type": "module",
