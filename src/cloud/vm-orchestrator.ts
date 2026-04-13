@@ -48,6 +48,16 @@ const HEALTH_POLL_INTERVAL_MS = 200;
 
 // ─── Types ─────────────────────────────────────────────────────
 
+/**
+ * Callback that provisions host-side networking for a VM.
+ * Must create the tap device, assign IPs, and configure NAT/routing.
+ * Returns the guest IP that the VM will be reachable at.
+ *
+ * If not provided, the orchestrator uses a fabricated IP scheme that
+ * will NOT work without external network setup.
+ */
+export type NetworkProvider = (vmId: string, tapDevice: string) => Promise<{ guestIp: string }>;
+
 export interface VmOrchestratorOptions {
   /** Firecracker client */
   firecracker: FirecrackerClient;
@@ -67,6 +77,12 @@ export interface VmOrchestratorOptions {
   snapshotDir?: string;
   /** Optional VM warm pool for pre-cloned paused VMs */
   pool?: VmWarmPool | null;
+  /**
+   * Host-side network provisioning callback. Creates tap device, assigns IPs,
+   * configures NAT. Returns the guest IP. Required for production use.
+   * When omitted, falls back to fabricated 172.16.0.x IPs (development only).
+   */
+  networkProvider?: NetworkProvider;
 }
 
 /** Extended handle that tracks the VM ID alongside the standard SessionHandle fields. */
@@ -86,6 +102,7 @@ export class VmOrchestrator implements Orchestrator {
   private healthTimeout: number;
   private snapshotDir: string;
   private pool: VmOrchestratorOptions['pool'];
+  private networkProvider: NetworkProvider | null;
 
   /** Active session handles keyed by sessionId */
   private handles = new Map<string, VmSessionHandle>();
@@ -113,6 +130,7 @@ export class VmOrchestrator implements Orchestrator {
     this.healthTimeout = opts.healthTimeout ?? DEFAULT_HEALTH_TIMEOUT_MS;
     this.snapshotDir = opts.snapshotDir ?? DEFAULT_SNAPSHOT_DIR;
     this.pool = opts.pool ?? null;
+    this.networkProvider = opts.networkProvider ?? null;
   }
 
   // ── Orchestrator interface ───────────────────────────────────
@@ -177,18 +195,35 @@ export class VmOrchestrator implements Orchestrator {
     // Fall back to direct VM creation
     const vmId = `vm-${crypto.randomUUID().slice(0, 8)}`;
     const internalToken = crypto.randomUUID();
-    const guestIp = this.allocateGuestIp();
     const tapDevice = `tap-${vmId.slice(0, 8)}`;
 
-    // Create and configure the microVM.
-    // The auth token is injected via kernel boot args — the rootfs init
-    // script must parse /proc/cmdline for BROWSE_AUTH_TOKEN and export it.
-    // See scripts/build-rootfs.sh for the init script that does this.
-    const bootArgs = [
+    // Provision host-side networking (tap device, IP assignment, NAT).
+    // If a networkProvider is configured, it handles the real setup.
+    // Otherwise fall back to fabricated IPs (development only — health
+    // check will fail without real networking).
+    let guestIp: string;
+    if (this.networkProvider) {
+      const net = await this.networkProvider(vmId, tapDevice);
+      guestIp = net.guestIp;
+    } else {
+      guestIp = this.allocateGuestIp();
+      console.log(
+        `[browse-cloud] WARNING: No networkProvider configured. ` +
+        `Using fabricated IP ${guestIp} — VM will be unreachable without host-side tap setup.`,
+      );
+    }
+
+    // Build kernel boot args — the rootfs init script parses /proc/cmdline
+    // for BROWSE_* env vars and exports them before launching the server.
+    const bootArgParts = [
       'console=ttyS0 reboot=k panic=1 pci=off',
       `BROWSE_AUTH_TOKEN=${internalToken}`,
       `BROWSE_PORT=${this.browsePort}`,
-    ].join(' ');
+    ];
+    if (opts?.allowedDomains) {
+      bootArgParts.push(`BROWSE_ALLOWED_DOMAINS=${opts.allowedDomains}`);
+    }
+    const bootArgs = bootArgParts.join(' ');
 
     await this.firecracker.createVm(vmId, {
       kernelPath: this.kernelPath,
@@ -286,7 +321,18 @@ export class VmOrchestrator implements Orchestrator {
       tenantId: handle.tenantId,
       snapshotRef: snapshotSessionDir,
       frozenAt: new Date().toISOString(),
+      // Persist the auth token so resume() can reuse it. The restored VM
+      // boots with the same in-process token — generating a new one would
+      // make the handle unable to authenticate against the guest server.
+      internalToken: handle.internalToken,
     };
+
+    // Write frozen metadata to disk alongside snapshot files
+    fs.writeFileSync(
+      path.join(snapshotSessionDir, 'frozen.json'),
+      JSON.stringify(frozen, null, 2),
+      { mode: 0o600 },
+    );
 
     console.log(`[browse-cloud] Session "${handle.sessionId}" frozen to ${snapshotSessionDir}`);
     return frozen;
@@ -294,8 +340,31 @@ export class VmOrchestrator implements Orchestrator {
 
   async resume(tenantId: string, frozen: FrozenSession): Promise<SessionHandle> {
     const vmId = `vm-${crypto.randomUUID().slice(0, 8)}`;
-    const internalToken = crypto.randomUUID();
-    const guestIp = this.allocateGuestIp();
+
+    // Reuse the token from the frozen session. The snapshot was taken with
+    // the browse server holding this token in memory — generating a new one
+    // would make the handle unable to authenticate against the restored guest.
+    const internalToken = frozen.internalToken || (() => {
+      // Fallback: try reading from the frozen.json file on disk
+      try {
+        const metaPath = path.join(frozen.snapshotRef, 'frozen.json');
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+        if (meta.internalToken) return meta.internalToken as string;
+      } catch { /* fall through */ }
+      // Last resort: generate new token (will likely fail to auth, but
+      // at least the handle is structurally valid)
+      console.log('[browse-cloud] WARNING: no persisted token for frozen session, generating new (auth may fail)');
+      return crypto.randomUUID();
+    })();
+
+    const tapDevice = `tap-${vmId.slice(0, 8)}`;
+    let guestIp: string;
+    if (this.networkProvider) {
+      const net = await this.networkProvider(vmId, tapDevice);
+      guestIp = net.guestIp;
+    } else {
+      guestIp = this.allocateGuestIp();
+    }
 
     const snapshotPath = path.join(frozen.snapshotRef, 'snapshot');
     const memPath = path.join(frozen.snapshotRef, 'memory');

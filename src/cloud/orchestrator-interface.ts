@@ -38,6 +38,11 @@ export interface FrozenSession {
   snapshotRef: string;
   /** When the session was frozen (ISO 8601) */
   frozenAt: string;
+  /** Auth token from the original session — must be reused on resume
+   *  because VM snapshots restore with the same in-process token. */
+  internalToken?: string;
+  /** Allowed domains from the original session — must be reapplied on resume. */
+  allowedDomains?: string;
 }
 
 // ─── Orchestrator contract ─────────────────────────────────────

@@ -10,8 +10,8 @@
  *   POST /v1/sessions     (JWT)                  -> { sessionId, createdAt }
  *   POST /v1/sessions/:id/command  { command, args } -> { output, durationMs }
  *   DELETE /v1/sessions/:id                       -> 204
- *   POST /v1/sessions/:id/freeze                  -> 200 (future)
- *   POST /v1/sessions/:id/resume                  -> 200 (future)
+ *   POST /v1/sessions/:id/freeze                  -> 200
+ *   POST /v1/sessions/:id/resume                  -> 200
  */
 
 import * as http from 'http';
@@ -144,7 +144,7 @@ export class CloudTransport implements Transport {
 
   /**
    * Freeze the cloud session (persist state for later resume).
-   * Stub — server support is future work.
+   * Requires cloud server with freeze/resume routes (POST /v1/sessions/:id/freeze|resume).
    */
   async freeze(): Promise<void> {
     await this.ensureValidJwt();
@@ -153,7 +153,7 @@ export class CloudTransport implements Transport {
 
   /**
    * Resume a previously frozen cloud session.
-   * Stub — server support is future work.
+   * Requires cloud server with freeze/resume routes (POST /v1/sessions/:id/freeze|resume).
    */
   async resume(): Promise<void> {
     await this.ensureValidJwt();

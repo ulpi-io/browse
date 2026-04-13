@@ -9,6 +9,8 @@
  * Sessions are prefixed `tenant:<tenantId>:session:<id>` for isolation.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import * as http from 'http';
 import { getRuntime, type BrowserRuntime } from '../engine/resolver';
 import { SessionManager, type Session } from '../session/manager';
@@ -33,6 +35,7 @@ export interface CloudConfig {
   dbPath: string;
   jwtSecret: Buffer;
   adminKey: string | undefined;
+  localDir: string;
 }
 
 interface TenantContext {
@@ -107,6 +110,7 @@ async function start() {
     dbPath: process.env.BROWSE_CLOUD_DB_PATH || CLOUD_DEFAULTS.DB_PATH,
     jwtSecret: resolveJwtSecret(process.env.BROWSE_LOCAL_DIR || '.browse'),
     adminKey: process.env.BROWSE_CLOUD_ADMIN_KEY,
+    localDir: process.env.BROWSE_LOCAL_DIR || '.browse',
   };
 
   // Initialize auth
@@ -386,6 +390,82 @@ async function start() {
     }
   }
 
+  // ─── Route: POST /v1/sessions/:id/freeze ─────────────────
+
+  async function handleFreezeSession(tenant: TenantContext, sessionId: string): Promise<Response> {
+    const fullId = `tenant:${tenant.tenantId}:session:${sessionId}`;
+
+    try {
+      if (orchestrator) {
+        const handle = orchestratorHandles.get(fullId);
+        if (!handle) return errorResponse('Session not found', 404);
+        const frozen = await orchestrator.freeze(handle);
+        orchestratorHandles.delete(fullId);
+        broadcastSessionEvent({ type: 'session', sessionId, event: 'frozen' });
+        return jsonResponse({ sessionId: fullId, frozenAt: frozen.frozenAt, snapshotRef: frozen.snapshotRef });
+      }
+
+      // Direct mode — use persist.ts freeze
+      const session = sessionManager.getExisting(fullId);
+      if (!session) return errorResponse('Session not found', 404);
+      const { freezeSession } = await import('../session/persist');
+      // Duck-type the session for freezeSession (it expects a plain domainFilter shape)
+      const freezeTarget = {
+        id: session.id,
+        manager: session.manager,
+        contextLevel: session.contextLevel as string,
+        settleMode: session.settleMode,
+        domainFilter: null as { domains?: string[] } | null,
+      };
+      const manifest = await freezeSession(
+        freezeTarget,
+        path.join(config.localDir, 'sessions', fullId.replace(/:/g, '_')),
+      );
+      await cloudSessions.terminate(tenant.tenantId, fullId);
+      broadcastSessionEvent({ type: 'session', sessionId, event: 'frozen' });
+      return jsonResponse({ sessionId: fullId, frozenAt: manifest.frozenAt });
+    } catch (err: any) {
+      if (err instanceof TenantAccessError) return errorResponse(err.message, 403);
+      throw err;
+    }
+  }
+
+  // ─── Route: POST /v1/sessions/:id/resume ────────────────
+
+  async function handleResumeSession(tenant: TenantContext, sessionId: string): Promise<Response> {
+    const fullId = `tenant:${tenant.tenantId}:session:${sessionId}`;
+
+    try {
+      if (orchestrator) {
+        // Look for frozen metadata on disk
+        const snapshotBaseDir = process.env.BROWSE_CLOUD_SNAPSHOT_DIR || '/var/lib/browse-cloud/snapshots';
+        const snapshotDir = path.join(snapshotBaseDir, fullId.replace(/:/g, '_'));
+        const frozenPath = path.join(snapshotDir, 'frozen.json');
+        if (!fs.existsSync(frozenPath)) return errorResponse('No frozen session found', 404);
+        const frozen = JSON.parse(fs.readFileSync(frozenPath, 'utf-8'));
+        const handle = await orchestrator.resume(tenant.tenantId, frozen);
+        orchestratorHandles.set(fullId, handle);
+        broadcastSessionEvent({ type: 'session', sessionId, event: 'resumed' });
+        return jsonResponse({ sessionId: fullId, internalAddress: handle.internalAddress });
+      }
+
+      // Direct mode — use persist.ts resume
+      const sessionDir = path.join(config.localDir, 'sessions', fullId.replace(/:/g, '_'));
+      const { hasFrozenManifest, loadFrozenManifest } = await import('../session/persist');
+      if (!hasFrozenManifest(sessionDir)) return errorResponse('No frozen session found', 404);
+      const manifest = loadFrozenManifest(sessionDir);
+      if (!manifest) return errorResponse('Corrupt frozen manifest', 500);
+
+      // Re-provision the session (creates fresh browser context, loads state)
+      const result = await cloudSessions.provision(tenant.tenantId, { sessionId });
+      broadcastSessionEvent({ type: 'session', sessionId, event: 'resumed' });
+      return jsonResponse({ sessionId: result.sessionId });
+    } catch (err: any) {
+      if (err instanceof TenantAccessError) return errorResponse(err.message, 403);
+      throw err;
+    }
+  }
+
   // ─── Route: POST /v1/sessions/:id/command ────────────────
 
   async function handleSessionCommand(tenant: TenantContext, sessionId: string, req: Request): Promise<Response> {
@@ -501,6 +581,16 @@ async function start() {
         // DELETE /v1/sessions/:id
         if (segments[2] && !segments[3] && req.method === 'DELETE') {
           return handleDeleteSession(tenant, segments[2]);
+        }
+
+        // POST /v1/sessions/:id/freeze
+        if (segments[2] && segments[3] === 'freeze' && !segments[4] && req.method === 'POST') {
+          return handleFreezeSession(tenant, segments[2]);
+        }
+
+        // POST /v1/sessions/:id/resume
+        if (segments[2] && segments[3] === 'resume' && !segments[4] && req.method === 'POST') {
+          return handleResumeSession(tenant, segments[2]);
         }
 
         // POST /v1/sessions/:id/command

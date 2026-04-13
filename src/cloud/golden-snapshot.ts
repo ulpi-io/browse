@@ -25,6 +25,7 @@
  *   {snapshotDir}/golden-metadata.json — Build metadata for validation
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -74,6 +75,9 @@ interface GoldenMetadata {
   vcpuCount: number;
   browsePort: number;
   buildDurationMs: number;
+  /** The auth token baked into the golden snapshot's browse server.
+   *  All clones from this snapshot share this token. */
+  authToken: string;
 }
 
 // ─── GoldenSnapshotManager ────────────────────────────────────
@@ -90,6 +94,8 @@ export class GoldenSnapshotManager {
   private network: VmConfig['network'] | undefined;
 
   private ready = false;
+  /** The auth token baked into the golden snapshot. All clones share it. */
+  private _authToken = '';
   private snapshotPath: string;
   private memPath: string;
   private metadataPath: string;
@@ -108,6 +114,11 @@ export class GoldenSnapshotManager {
     this.snapshotPath = path.join(this.snapshotDir, 'snapshot');
     this.memPath = path.join(this.snapshotDir, 'memory');
     this.metadataPath = path.join(this.snapshotDir, 'golden-metadata.json');
+  }
+
+  /** The auth token baked into the golden snapshot. All clones inherit it. */
+  get authToken(): string {
+    return this._authToken;
   }
 
   // ── Public API ──────────────────────────────────────────────
@@ -136,11 +147,22 @@ export class GoldenSnapshotManager {
     // Ensure snapshot directory exists
     fs.mkdirSync(this.snapshotDir, { recursive: true, mode: 0o700 });
 
+    // Generate a well-known token for the golden snapshot. All clones
+    // inherit this token since the browse server's in-memory state is
+    // captured in the snapshot. The warm pool passes this token through
+    // so the orchestrator can authenticate against cloned VMs.
+    this._authToken = crypto.randomUUID();
+
     const vmConfig: VmConfig = {
       kernelPath: this.kernelPath,
       rootfsPath: this.rootfsPath,
       memSizeMb: this.memSizeMb,
       vcpuCount: this.vcpuCount,
+      bootArgs: [
+        'console=ttyS0 reboot=k panic=1 pci=off',
+        `BROWSE_AUTH_TOKEN=${this._authToken}`,
+        `BROWSE_PORT=${this.browsePort}`,
+      ].join(' '),
       network: this.network,
     };
 
@@ -196,6 +218,7 @@ export class GoldenSnapshotManager {
         vcpuCount: this.vcpuCount,
         browsePort: this.browsePort,
         buildDurationMs,
+        authToken: this._authToken,
       };
 
       fs.writeFileSync(this.metadataPath, JSON.stringify(metadata, null, 2), {
@@ -312,6 +335,12 @@ export class GoldenSnapshotManager {
           `(snapshot: ${metadata.rootfsPath}, current: ${this.rootfsPath})`,
         );
         return false;
+      }
+
+      // Restore the auth token from metadata
+      this._authToken = metadata.authToken || '';
+      if (!this._authToken) {
+        console.log('[browse-golden] WARNING: golden snapshot has no authToken — warm pool will be disabled');
       }
 
       this.ready = true;
