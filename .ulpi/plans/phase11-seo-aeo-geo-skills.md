@@ -2,109 +2,99 @@
 
 > Generated: 2026-04-13
 > Branch: `feat/seo-aeo-geo`
-> Mode: HOLD
+> Mode: EXPANSION
 > Review: none
 
 ## Overview
 
-Surface all 19 camoufox-js launch options through `browse.json` config and named profiles with a `--camoufox-profile` CLI flag. Add 3 convenience read commands (`schema`, `meta`, `headings`). Create 5 skills: `browse-config` (guided config generator), `browse-stealth` (rewrite), `browse-seo`, `browse-aeo`, `browse-geo`.
+Surface 26 of 27 camoufox-js launch options (all except webgl_config) through `browse.json` config and named profiles with a `--camoufox-profile` CLI flag. Add 3 convenience read commands (`schema`, `meta`, `headings`). Update browse skill command docs. Create 5 skills: `browse-config` (guided config generator), `browse-stealth` (rewrite), `browse-seo`, `browse-aeo`, `browse-geo`.
 
 ## Scope Challenge
 
-The camoufox runtime currently hardcodes 3 of 19 available launch options (`headless`, `humanize`, `enable_cache`). Critical stealth options like `geoip`, `os`, `locale`, `block_webrtc` are not exposed — making the fingerprint inconsistent with the proxy IP/locale. The fix is a `camoufox` section in `browse.json` + named profiles, not 19 env vars. One env var (`BROWSE_CAMOUFOX_PROFILE`) selects a profile. A new `browse-config` skill generates the config via guided flow.
+This is EXPANSION: new config surface (CamoufoxConfig type + loadCamoufoxConfig), new CLI flag (--camoufox-profile), new meta command (profiles), 3 new read commands, 5 new/rewritten skills, new test file + fixture, and user-facing doc updates. Not a simple extension.
+
+## Camoufox Options — Full Coverage (26 keys)
+
+| # | camoufox-js key | Config key | Type |
+|---|----------------|-----------|------|
+| 1 | `os` | `os` | `string \| string[]` |
+| 2 | `block_images` | `blockImages` | `boolean` |
+| 3 | `block_webrtc` | `blockWebrtc` | `boolean` |
+| 4 | `block_webgl` | `blockWebgl` | `boolean` |
+| 5 | `disable_coop` | `disableCoop` | `boolean` |
+| 6 | `geoip` | `geoip` | `string \| boolean` |
+| 7 | `humanize` | `humanize` | `boolean \| number` |
+| 8 | `locale` | `locale` | `string \| string[]` |
+| 9 | `addons` | `addons` | `string[]` |
+| 10 | `fonts` | `fonts` | `string[]` |
+| 11 | `custom_fonts_only` | `customFontsOnly` | `boolean` |
+| 12 | `screen` | `screen` | `{ min/maxWidth, min/maxHeight }` |
+| 13 | `window` | `window` | `[width, height]` |
+| 14 | `fingerprint` | `fingerprint` | `object` |
+| 15 | `ff_version` | `ffVersion` | `number` |
+| 16 | `headless` | `headless` | `boolean \| 'virtual'` |
+| 17 | `main_world_eval` | `mainWorldEval` | `boolean` |
+| 18 | `firefox_user_prefs` | `firefoxUserPrefs` | `Record<string, any>` |
+| 19 | `proxy` | `proxy` | `string \| { server, username, password }` |
+| 20 | `enable_cache` | `enableCache` | `boolean` |
+| 21 | `debug` | `debug` | `boolean` |
+| 22 | `exclude_addons` | `excludeAddons` | `string[]` |
+| 23 | `executable_path` | `executablePath` | `string` |
+| 24 | `args` | `args` | `string[]` |
+| 25 | `env` | `env` | `Record<string, string>` |
+| 26 | `virtual_display` | `virtualDisplay` | `string` |
+
+Excluded: `webgl_config` — camoufox auto-generates from fingerprint, manual override not needed.
 
 ## Architecture
 
 ```
-browse.json (project root)                  .browse/profiles/*.json
-┌──────────────────────────┐               ┌────────────────────────┐
-│ {                         │               │ stealth-google.json     │
-│   "runtime": "camoufox", │               │ fast-scrape.json        │
-│   "camoufox": {           │  ◄── merge ── │ perplexity.json         │
-│     "geoip": true,        │   TASK-001     │                        │
-│     "os": "windows",      │   TASK-002     └────────────────────────┘
-│     "blockWebrtc": true   │
-│   }                       │
-│ }                         │
-└──────────┬───────────────┘
-           │
-           ▼
-  src/config.ts                    src/engine/resolver.ts
-  CamoufoxConfig type  ────────►  camoufox loader reads config
-  TASK-001                        maps camelCase → snake_case
-                                  passes to launchOptions()
-                                  TASK-001
+browse.json                           .browse/profiles/*.json
+┌───────────────────┐                ┌──────────────────────┐
+│ { "camoufox": {   │                │ stealth-google.json   │
+│   "geoip": true   │  ◄── merge ── │ fast-scrape.json      │
+│ }}                 │   TASK-001     └──────────────────────┘
+└────────┬──────────┘
+         │
+         ▼
+  src/config.ts                     src/engine/resolver.ts
+  CamoufoxConfig type               camoufox loader calls
+  loadCamoufoxConfig()  ──────────► loadCamoufoxConfig()
+  mapCamoufoxConfig()               maps keys, passes to
+  TASK-001                          launchOptions()  TASK-001
 
-  src/cli.ts                      .browse/profiles/
-  --camoufox-profile flag ──────► profile JSON loaded + merged
-  TASK-002                        TASK-002
+  src/cli.ts                        src/commands/meta/profile.ts
+  --camoufox-profile flag           browse profiles command
+  sets BROWSE_CAMOUFOX_PROFILE      lists .browse/profiles/*.json
+  TASK-002                          TASK-002
 
-  src/commands/read.ts             skill/browse-config/
-  schema, meta, headings ◄──────  guided flow generates config
-  TASK-003                        TASK-005
+  src/automation/registry.ts        src/commands/read.ts
+  register schema/meta/headings     implement page.evaluate()
+  register profiles command         TASK-003
+  TASK-002 + TASK-003
 
-  skill/browse-stealth/           skill/browse-seo/
-  references /browse-config       uses schema/meta/headings
-  TASK-006                        TASK-007
+  skill/browse/references/          skill/browse-config/
+  commands.md updated               guided config generator
+  TASK-005                          TASK-006
 
-  skill/browse-aeo/               skill/browse-geo/
-  page audit + SERP analysis      multi-engine GEO monitoring
-  TASK-008                        TASK-009
+  skill/browse-stealth/             skill/browse-seo|aeo|geo/
+  rewrite, refs /browse-config      SEO/AEO/GEO workflows
+  TASK-007                          TASK-008/009/010
 ```
-
-## Existing Code Leverage
-
-| Sub-problem | Existing Code | Action |
-|------------|---------------|--------|
-| Config file loading | `src/config.ts loadConfig()` | Extend (add CamoufoxConfig) |
-| Camoufox launch | `src/engine/resolver.ts:171-182` | Extend (read config, not hardcode) |
-| CLI flag parsing | `src/cli.ts cliFlags` | Extend (add --camoufox-profile) |
-| JSON-LD extraction | `browse js` command | Extend (new schema command) |
-| Skill file structure | `skill/browse/SKILL.md` | Reuse pattern |
-
-## Camoufox Options — Full Coverage
-
-All 19 camoufox-js LaunchOptions exposed via `browse.json` camoufox section:
-
-| Option | Config Key | Type | Default |
-|--------|-----------|------|---------|
-| `headless` | `headless` | `boolean \| 'virtual'` | from `BROWSE_HEADED` |
-| `humanize` | `humanize` | `boolean \| number` | `true` |
-| `enable_cache` | `enableCache` | `boolean` | `true` |
-| `os` | `os` | `string \| string[]` | random |
-| `block_images` | `blockImages` | `boolean` | `false` |
-| `block_webrtc` | `blockWebrtc` | `boolean` | `false` |
-| `block_webgl` | `blockWebgl` | `boolean` | `false` |
-| `disable_coop` | `disableCoop` | `boolean` | `false` |
-| `geoip` | `geoip` | `string \| boolean` | `false` |
-| `locale` | `locale` | `string \| string[]` | system |
-| `addons` | `addons` | `string[]` | `[]` |
-| `fonts` | `fonts` | `string[]` | OS defaults |
-| `custom_fonts_only` | `customFontsOnly` | `boolean` | `false` |
-| `screen` | `screen` | `{ min/maxWidth, min/maxHeight }` | random |
-| `window` | `window` | `[width, height]` | random |
-| `fingerprint` | `fingerprint` | `object` | auto-generated |
-| `ff_version` | `ffVersion` | `number` | current |
-| `main_world_eval` | `mainWorldEval` | `boolean` | `false` |
-| `firefox_user_prefs` | `firefoxUserPrefs` | `Record<string, any>` | `{}` |
-| `proxy` | `proxy` | `string \| { server, username, password }` | from `BROWSE_PROXY` |
-| `debug` | `debug` | `boolean` | `false` |
 
 ## Tasks
 
-### TASK-001: Add camoufox config to BrowseConfig and resolver
+### TASK-001: CamoufoxConfig type, loadCamoufoxConfig(), and resolver integration
 
-Extend `src/config.ts` with `CamoufoxConfig` interface (all 19 options). Add `camoufox?: CamoufoxConfig` to `BrowseConfig`. Add `loadCamoufoxConfig(localDir?)` function that: (1) reads browse.json camoufox section, (2) checks `BROWSE_CAMOUFOX_PROFILE` env var, (3) if set, loads `.browse/profiles/<name>.json` and merges (profile wins), (4) returns merged config. Update `src/engine/resolver.ts` camoufox loader to call `loadCamoufoxConfig()`, map camelCase → snake_case, pass to `launchOptions()`. No changes to `getRuntime()` signature — resolver reads config internally.
-
-Note: `headless: 'virtual'` requires Linux with Xvfb. Document in JSDoc. camoufox-js throws on unsupported platforms — the try/catch fallback handles it.
+Extend `src/config.ts` with `CamoufoxConfig` interface (26 keys), `loadCamoufoxConfig()` (reads browse.json + merges profile), `mapCamoufoxConfig()` (camelCase → snake_case). Update `src/engine/resolver.ts` camoufox loader to use these. Wrap in try/catch with fallback to defaults.
 
 **Type:** feature
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] browse.json `{ "camoufox": { "geoip": true, "os": "windows" } }` causes launchOptions() to receive those values
-- [ ] Missing camoufox section falls back to current defaults
-- [ ] Invalid config key logs warning but doesn't crash
+- [ ] browse.json `{ camoufox: { geoip: true, os: 'windows' } }` reaches launchOptions()
+- [ ] BROWSE_CAMOUFOX_PROFILE merges profile on top of browse.json
+- [ ] Malformed profile JSON logs warning, falls back to browse.json without crash
 
 **Write Scope:** `src/config.ts`, `src/engine/resolver.ts`
 **Validation:** `npx tsc --noEmit`
@@ -114,19 +104,19 @@ Note: `headless: 'virtual'` requires Linux with Xvfb. Document in JSDoc. camoufo
 
 ---
 
-### TASK-002: Named camoufox profiles and --camoufox-profile flag
+### TASK-002: --camoufox-profile CLI flag and browse profiles meta command
 
-Add `--camoufox-profile <name>` CLI flag. The flag sets `BROWSE_CAMOUFOX_PROFILE` env var on server spawn (same pattern as `BROWSE_RUNTIME`). The resolver's `loadCamoufoxConfig()` (TASK-001) reads this env var and loads the profile — no server.ts changes needed for config plumbing. Add `browse profiles` meta command to list available profiles.
+Add `--camoufox-profile <name>` to `src/cli.ts` (sets `BROWSE_CAMOUFOX_PROFILE` env on server spawn). Add `browse profiles` meta command in `src/commands/meta/profile.ts` (lists `.browse/profiles/*.json`). Register in `src/automation/registry.ts`.
 
 **Type:** feature
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `--camoufox-profile stealth-google` loads `.browse/profiles/stealth-google.json` and merges with browse.json
-- [ ] Missing profile file produces clear error with list of available profiles
-- [ ] `browse profiles` lists all .json files in `.browse/profiles/`
+- [ ] `--camoufox-profile stealth-google` sets env var on server spawn
+- [ ] `browse profiles` lists profiles with key summary
+- [ ] `browse profiles` returns empty message when no profiles exist
 
-**Write Scope:** `src/cli.ts`, `src/server.ts`
+**Write Scope:** `src/cli.ts`, `src/commands/meta/profile.ts`, `src/automation/registry.ts`
 **Validation:** `npx tsc --noEmit`
 
 **Depends on:** TASK-001
@@ -137,15 +127,15 @@ Add `--camoufox-profile <name>` CLI flag. The flag sets `BROWSE_CAMOUFOX_PROFILE
 
 ### TASK-003: Register schema, meta, and headings read commands
 
-Add 3 new read commands to `src/automation/registry.ts`, implement in `src/commands/read.ts`, update CLI help text in `src/cli.ts`.
+Add 3 read commands to `src/automation/registry.ts`, implement in `src/commands/read.ts`, update CLI help in `src/cli.ts`.
 
 **Type:** feature
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] `browse schema` on a page with JSON-LD returns parsed structured data
-- [ ] `browse meta` on a page returns title, description, canonical, OG tags
-- [ ] `browse headings` on a page with no headings returns `(no headings found)`
+- [ ] `browse schema` extracts JSON-LD from current page
+- [ ] `browse meta` returns structured meta tag text
+- [ ] `browse headings` on empty page returns `(no headings found)`
 
 **Write Scope:** `src/automation/registry.ts`, `src/commands/read.ts`, `src/cli.ts`
 **Validation:** `npx tsc --noEmit`
@@ -155,42 +145,62 @@ Add 3 new read commands to `src/automation/registry.ts`, implement in `src/comma
 
 ---
 
-### TASK-004: Tests for new commands and camoufox config
+### TASK-004: Tests for commands, config, profiles, and CLI flag
 
-Create `test/seo-commands.test.ts` + `test/fixtures/seo-page.html` for schema/meta/headings tests. Add camoufox config unit tests for key mapping and profile merging.
+Create `test/seo-commands.test.ts` + `test/fixtures/seo-page.html`. Covers: read commands (6 tests), config mapping (6 tests), CLI flag (1 test), camoufox integration (1 skipIf test), profiles command (2 tests).
 
 **Type:** test
-**Effort:** M
+**Effort:** L
 
 **Acceptance Criteria:**
-- [ ] All schema/meta/headings tests pass against HTML fixture
-- [ ] Config mapping test verifies camelCase → snake_case for all 19 options
-- [ ] Profile merge test verifies profile values override browse.json defaults
-- [ ] Integration test (`test.skipIf(!camoufoxAvailable)`) calls `launchOptions()` with mapped config
+- [ ] All read command tests pass against fixture
+- [ ] Config mapping verifies camelCase → snake_case for all 26 keys
+- [ ] Profile merge: profile values override browse.json defaults
+- [ ] skipIf integration test calls launchOptions() with mapped config
 
 **Write Scope:** `test/fixtures/seo-page.html`, `test/seo-commands.test.ts`, `test/test-server.ts`
 **Validation:** `npm test -- test/seo-commands`
 
-**Depends on:** TASK-001, TASK-003
+**Depends on:** TASK-001, TASK-002, TASK-003
 **Agent:** nodejs-cli-senior-engineer
 **Priority:** P1
 
 ---
 
-### TASK-005: Create browse-config skill
+### TASK-005: Update browse skill command docs
 
-Create `skill/browse-config/SKILL.md` — guided flow using AskUserQuestion. Asks: what are you doing? have a proxy? need images? Generates browse.json camoufox section or named profile JSON. Referenced by browse-stealth.
+Update `skill/browse/references/commands.md` and `skill/browse/SKILL.md` to document schema, meta, headings, profiles commands, --camoufox-profile flag, BROWSE_CAMOUFOX_PROFILE env var.
+
+**Type:** docs
+**Effort:** S
+
+**Acceptance Criteria:**
+- [ ] commands.md lists schema, meta, headings with syntax
+- [ ] commands.md lists profiles under Meta commands
+- [ ] --camoufox-profile documented with server-spawn-only note
+
+**Write Scope:** `skill/browse/references/commands.md`, `skill/browse/SKILL.md`
+**Validation:** `grep -c 'schema\|headings\|profiles' skill/browse/references/commands.md`
+
+**Depends on:** TASK-002, TASK-003
+**Agent:** general-purpose
+**Priority:** P1
+
+---
+
+### TASK-006: Create browse-config skill
+
+Guided flow via AskUserQuestion → generates browse.json or named profile. Referenced by browse-stealth.
 
 **Type:** docs
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] Uses AskUserQuestion for guided config choices
-- [ ] Generated JSON is valid with correct camoufox options for selected use case
-- [ ] Shows exact CLI command to use the generated config
+- [ ] Uses AskUserQuestion for guided choices
+- [ ] Generated JSON is valid per use case
+- [ ] Shows exact CLI command to use config
 
 **Write Scope:** `skill/browse-config/SKILL.md`
-**Validation:** `head -5 skill/browse-config/SKILL.md`
 
 **Depends on:** TASK-001, TASK-002
 **Agent:** general-purpose
@@ -198,41 +208,34 @@ Create `skill/browse-config/SKILL.md` — guided flow using AskUserQuestion. Ask
 
 ---
 
-### TASK-006: Rewrite browse-stealth skill
+### TASK-007: Rewrite browse-stealth skill
 
-Full rewrite of `skill/browse-stealth/SKILL.md`. Step 0 references `/browse-config` for setup. Covers Turnstile bypass, Google blocks, auth sessions, proxy rotation. Every step has exact commands.
+References /browse-config for setup. Covers Turnstile, Google blocks, auth, proxy. Documents --camoufox-profile is server-spawn-only.
 
 **Type:** docs
 **Effort:** M
 
 **Acceptance Criteria:**
-- [ ] Step 0 references /browse-config for setup
-- [ ] Every step includes exact browse CLI commands
-- [ ] Turnstile bypass includes mouse movement and token verification
+- [ ] Step 0 references /browse-config
+- [ ] Every step has exact browse commands
+- [ ] Documents server-spawn-only behavior of --camoufox-profile
 
 **Write Scope:** `skill/browse-stealth/SKILL.md`
-**Validation:** `head -5 skill/browse-stealth/SKILL.md`
 
-**Depends on:** TASK-005
+**Depends on:** TASK-006
 **Agent:** general-purpose
 **Priority:** P1
 
 ---
 
-### TASK-007: Create browse-seo skill
+### TASK-008: Create browse-seo skill
 
-Create `skill/browse-seo/SKILL.md` — SEO audit using schema/meta/headings + existing commands. References /browse-config for stealth setup.
+SEO audit using schema/meta/headings. References /browse-config.
 
 **Type:** docs
 **Effort:** M
-
-**Acceptance Criteria:**
-- [ ] Complete audit: meta, headings, schema, perf, links, mobile, images
-- [ ] Uses new schema/meta/headings commands
-- [ ] References /browse-config for camoufox setup
 
 **Write Scope:** `skill/browse-seo/SKILL.md`
-**Validation:** `head -5 skill/browse-seo/SKILL.md`
 
 **Depends on:** TASK-003
 **Agent:** general-purpose
@@ -240,20 +243,14 @@ Create `skill/browse-seo/SKILL.md` — SEO audit using schema/meta/headings + ex
 
 ---
 
-### TASK-008: Create browse-aeo skill
+### TASK-009: Create browse-aeo skill
 
-Create `skill/browse-aeo/SKILL.md` — AEO page audit + SERP analysis. Agent interprets snapshots. References /browse-config.
+AEO page audit + SERP analysis. Agent interprets snapshots. References /browse-config.
 
 **Type:** docs
 **Effort:** M
 
-**Acceptance Criteria:**
-- [ ] Covers audit mode (page) and SERP mode (search results)
-- [ ] SERP mode: agent interprets snapshot @refs, no magic parsing
-- [ ] References /browse-config for camoufox setup
-
 **Write Scope:** `skill/browse-aeo/SKILL.md`
-**Validation:** `head -5 skill/browse-aeo/SKILL.md`
 
 **Depends on:** TASK-003
 **Agent:** general-purpose
@@ -261,20 +258,14 @@ Create `skill/browse-aeo/SKILL.md` — AEO page audit + SERP analysis. Agent int
 
 ---
 
-### TASK-009: Create browse-geo skill
+### TASK-010: Create browse-geo skill
 
-Create `skill/browse-geo/SKILL.md` — GEO monitoring across Google, Perplexity, ChatGPT Search. Exact navigation per engine. References /browse-config + --profile for auth.
+GEO monitoring across Google, Perplexity, ChatGPT. References /browse-config + --profile.
 
 **Type:** docs
 **Effort:** L
 
-**Acceptance Criteria:**
-- [ ] Covers Google, Perplexity, ChatGPT with exact commands per engine
-- [ ] Multi-engine comparison with domain visibility report
-- [ ] References /browse-config and --profile for authenticated engines
-
 **Write Scope:** `skill/browse-geo/SKILL.md`
-**Validation:** `head -5 skill/browse-geo/SKILL.md`
 
 **Depends on:** TASK-003
 **Agent:** general-purpose
@@ -286,39 +277,48 @@ Create `skill/browse-geo/SKILL.md` — GEO monitoring across Google, Perplexity,
 
 | Risk | Affected Tasks | Mitigation |
 |------|---------------|------------|
-| Invalid camoufox config crashes launch | TASK-001 | try/catch around launchOptions(), fall back to defaults |
-| headless: 'virtual' requires Xvfb (Linux only) | TASK-001 | Document in JSDoc. camoufox-js throws on unsupported platforms — try/catch handles it. |
-| Profile file not found | TASK-002 | Clear error listing available profiles |
-| Command name conflicts | TASK-003 | Verified: no existing schema/meta/headings |
-| Skills too vague for agents | TASK-005-009 | Exact browse commands in every step |
+| Invalid camoufox config crashes launch | TASK-001 | try/catch, log error key, fall back to defaults |
+| headless: 'virtual' needs Xvfb (Linux) | TASK-001 | Document in JSDoc. camoufox-js throws — try/catch handles. |
+| Malformed profile JSON | TASK-001 | Log warning, return browse.json config only |
+| Invalid merge precedence | TASK-001 | Simple Object.assign — profile wins. Documented. |
+| Profile file not found | TASK-001 | Error with list of available profiles |
+| --camoufox-profile ignored on running server | TASK-002 | Same as --runtime. Document in CLI help + skills. |
+| Command name conflicts | TASK-003 | Verified: no existing schema/meta/headings/profiles |
+| Skills too vague for agents | TASK-006-010 | Exact commands in every step |
 
 ## Test Coverage Map
 
-| New Codepath | Covering Task | Test Type |
-|-------------|--------------|-----------|
-| Camoufox config from browse.json | TASK-004 | unit |
-| Profile load + merge | TASK-004 | unit |
-| camelCase → snake_case mapping | TASK-004 | unit |
+| Codepath | Task | Type |
+|----------|------|------|
+| Config from browse.json → launchOptions() | TASK-004 | unit |
+| camelCase → snake_case (26 keys) | TASK-004 | unit |
+| Profile load + merge (profile wins) | TASK-004 | unit |
+| Malformed profile fallback | TASK-004 | unit |
+| Missing profile error | TASK-004 | unit |
+| --camoufox-profile flag parsing | TASK-004 | unit |
+| browse profiles listing | TASK-004 | integration |
 | schema extracts JSON-LD | TASK-004 | integration |
-| meta extracts title/OG/canonical | TASK-004 | integration |
-| headings extracts H1-H6 tree | TASK-004 | integration |
-| launchOptions() with full mapped config (skipIf) | TASK-004 | integration |
+| meta extracts tags | TASK-004 | integration |
+| headings extracts tree | TASK-004 | integration |
+| schema empty page | TASK-004 | integration |
+| launchOptions() full config (skipIf) | TASK-004 | integration |
 
 ## Execution Summary
 
 | Item | Value |
 |------|-------|
-| Task Count | 9 |
-| Layer Count | 3 |
-| Critical Path | TASK-001 → TASK-002 → TASK-005 → TASK-006 |
+| Task Count | 10 |
+| Layer Count | 4 |
+| Critical Path | TASK-001 → TASK-002 → TASK-006 → TASK-007 |
 
 ### Parallel Layers
 
 | Layer | Tasks | Notes |
 |-------|-------|-------|
-| 0 | TASK-001, TASK-003 | Config + new commands (independent) |
-| 1 | TASK-002, TASK-004, TASK-007, TASK-008, TASK-009 | Profiles + tests + 3 skills |
-| 2 | TASK-005, TASK-006 | Config skill + stealth rewrite (depend on profiles) |
+| 0 | TASK-001, TASK-003 | Config + read commands (independent) |
+| 1 | TASK-002, TASK-008, TASK-009, TASK-010 | CLI flag + 3 skills |
+| 2 | TASK-004, TASK-005, TASK-006 | Tests + docs + config skill |
+| 3 | TASK-007 | Stealth rewrite (depends on config skill) |
 
 ## Task Dependencies
 
@@ -327,11 +327,12 @@ Create `skill/browse-geo/SKILL.md` — GEO monitoring across Google, Perplexity,
   "TASK-001": [],
   "TASK-002": ["TASK-001"],
   "TASK-003": [],
-  "TASK-004": ["TASK-001", "TASK-003"],
-  "TASK-005": ["TASK-001", "TASK-002"],
-  "TASK-006": ["TASK-005"],
-  "TASK-007": ["TASK-003"],
+  "TASK-004": ["TASK-001", "TASK-002", "TASK-003"],
+  "TASK-005": ["TASK-002", "TASK-003"],
+  "TASK-006": ["TASK-001", "TASK-002"],
+  "TASK-007": ["TASK-006"],
   "TASK-008": ["TASK-003"],
-  "TASK-009": ["TASK-003"]
+  "TASK-009": ["TASK-003"],
+  "TASK-010": ["TASK-003"]
 }
 ```
