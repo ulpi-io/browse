@@ -18,6 +18,9 @@ import { ensureDefinitionsRegistered } from '../automation/registry';
 import { ApiKeyVault, createJwt, validateJwt, resolveJwtSecret } from './auth';
 import { CloudSessionManager, TenantAccessError } from './sessions';
 import { handleUpgrade, closeAllConnections, broadcastSessionEvent } from './ws';
+import { DockerClient } from './docker';
+import { ContainerOrchestrator } from './orchestrator';
+import type { Orchestrator, SessionHandle } from './orchestrator-interface';
 import { CLOUD_DEFAULTS } from '../constants';
 import type { Browser } from 'playwright';
 
@@ -144,6 +147,29 @@ async function start() {
     CLOUD_DEFAULTS.MAX_SESSIONS_PER_TENANT,
   );
 
+  // ─── Container orchestrator (optional) ──────────────────
+
+  const isolation = process.env.BROWSE_CLOUD_ISOLATION;
+  let orchestrator: Orchestrator | null = null;
+
+  // Track orchestrator sessions for the command handler
+  const orchestratorHandles = new Map<string, SessionHandle>();
+
+  if (isolation === 'container') {
+    const docker = new DockerClient();
+    const reachable = await docker.ping();
+
+    if (!reachable) {
+      console.error('[cloud] Docker not reachable. Falling back to direct mode.');
+    } else {
+      orchestrator = new ContainerOrchestrator({
+        docker,
+        imageName: process.env.BROWSE_CLOUD_IMAGE || 'browse-session',
+      });
+      console.log('[cloud] Container isolation enabled');
+    }
+  }
+
   // ─── Auth middleware ─────────────────────────────────────
 
   function authenticateJwt(req: Request): TenantContext | null {
@@ -235,6 +261,21 @@ async function start() {
     }
 
     try {
+      // Container isolation path — provision via orchestrator
+      if (orchestrator) {
+        const handle = await orchestrator.provision(tenant.tenantId, {
+          sessionId: body.sessionId || undefined,
+          allowedDomains: body.allowedDomains || undefined,
+        });
+        orchestratorHandles.set(handle.sessionId, handle);
+
+        return jsonResponse({
+          sessionId: shortSessionId(handle.sessionId),
+          createdAt: handle.createdAt,
+        }, 201);
+      }
+
+      // Direct mode — provision via CloudSessionManager
       const result = await cloudSessions.provision(tenant.tenantId, {
         sessionId: body.sessionId || undefined,
         allowedDomains: body.allowedDomains || undefined,
@@ -259,6 +300,18 @@ async function start() {
   // ─── Route: GET /v1/sessions ─────────────────────────────
 
   function handleListSessions(tenant: TenantContext): Response {
+    // Container isolation — list from orchestrator
+    if (orchestrator) {
+      const handles = orchestrator.list(tenant.tenantId);
+      const sessions = handles.map((h) => ({
+        sessionId: shortSessionId(h.sessionId),
+        backendId: h.backendId,
+        createdAt: h.createdAt,
+      }));
+      return jsonResponse({ sessions });
+    }
+
+    // Direct mode — list from CloudSessionManager
     const sessions = cloudSessions.list(tenant.tenantId).map((s) => ({
       sessionId: shortSessionId(s.id),
       tabs: s.tabs,
@@ -275,6 +328,19 @@ async function start() {
     const fullId = `tenant:${tenant.tenantId}:session:${sessionId}`;
 
     try {
+      // Container isolation — terminate via orchestrator
+      if (orchestrator) {
+        const handle = orchestratorHandles.get(fullId);
+        if (!handle) {
+          return errorResponse('Session not found', 404);
+        }
+        await orchestrator.terminate(handle);
+        orchestratorHandles.delete(fullId);
+        broadcastSessionEvent({ type: 'session', sessionId, event: 'terminated' });
+        return jsonResponse({ deleted: true });
+      }
+
+      // Direct mode — terminate via CloudSessionManager
       await cloudSessions.terminate(tenant.tenantId, fullId);
       broadcastSessionEvent({ type: 'session', sessionId, event: 'terminated' });
       return jsonResponse({ deleted: true });
@@ -307,7 +373,18 @@ async function start() {
     }
 
     try {
-      // Ensure session exists (lazy-create on first command)
+      // Container isolation — proxy to the container's internal server
+      if (orchestrator) {
+        const handle = orchestratorHandles.get(fullId);
+        if (!handle) {
+          return errorResponse('Session not found. Provision a session first.', 404);
+        }
+
+        const output = await orchestrator.executeCommand(handle, command, args);
+        return jsonResponse({ output });
+      }
+
+      // Direct mode — execute in-process via SessionManager
       const session: Session = await cloudSessions.getOrCreate(tenant.tenantId, fullId);
 
       const result = await executeCommand(command, args, {
@@ -430,6 +507,12 @@ async function start() {
 
     clearInterval(cleanupInterval);
     closeAllConnections();
+
+    // Shut down orchestrator-managed containers first
+    if (orchestrator) {
+      await orchestrator.shutdown().catch(() => {});
+      orchestratorHandles.clear();
+    }
 
     await sessionManager.closeAll().catch(() => {});
     browser.removeAllListeners('disconnected');

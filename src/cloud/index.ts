@@ -6,3 +6,8 @@ export { handleUpgrade, closeAllConnections, broadcastSessionEvent } from './ws'
 export type { WsConnection, HandleUpgradeOpts } from './ws';
 export { DockerClient, DockerApiError } from './docker';
 export type { ContainerCreateOptions, ContainerInfo, DockerClientOptions } from './docker';
+export type { Orchestrator, SessionHandle, FrozenSession } from './orchestrator-interface';
+export { ContainerOrchestrator } from './orchestrator';
+export type { ContainerOrchestratorOptions } from './orchestrator';
+export { proxyCommand, ProxyError } from './proxy';
+export type { ProxyOptions } from './proxy';

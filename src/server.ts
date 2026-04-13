@@ -57,7 +57,7 @@ function nodeServe(opts: { port: number; hostname: string; fetch: (req: Request)
 export { type LogEntry, type NetworkEntry };
 
 // ─── Auth (inline) ─────────────────────────────────────────────
-const AUTH_TOKEN = crypto.randomUUID();
+const AUTH_TOKEN = process.env.BROWSE_AUTH_TOKEN || crypto.randomUUID();
 const DEBUG_PORT = parseInt(process.env.BROWSE_DEBUG_PORT || '0', 10);
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10); // 0 = auto-scan
 const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || '';
