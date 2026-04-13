@@ -2,7 +2,7 @@
  * Read commands — extract data from pages without side effects
  *
  * text, html, links, forms, accessibility, js, eval, css, attrs, state,
- * console, network, cookies, storage, perf
+ * console, network, cookies, storage, perf, schema, meta, headings
  */
 
 import type { BrowserTarget } from '../browser/target';
@@ -519,6 +519,112 @@ export async function handleReadCommand(
         return `No devices matching "${filter}". Run "browse devices" to see all.`;
       }
       return filtered.join('\n');
+    }
+
+    case 'schema': {
+      const result = await evalCtx.evaluate(() => {
+        const data: unknown[] = [];
+        // JSON-LD
+        document.querySelectorAll('script[type="application/ld+json"]').forEach(el => {
+          try { data.push(JSON.parse(el.textContent || '')); } catch {}
+        });
+        // Microdata
+        document.querySelectorAll('[itemscope]').forEach(el => {
+          const item: Record<string, string> = {};
+          const itemType = el.getAttribute('itemtype');
+          if (itemType) item['@type'] = itemType;
+          el.querySelectorAll('[itemprop]').forEach(prop => {
+            const name = prop.getAttribute('itemprop') || '';
+            item[name] = (prop as HTMLElement).getAttribute('content')
+              || (prop as HTMLAnchorElement).href
+              || (prop as HTMLElement).textContent?.trim() || '';
+          });
+          if (Object.keys(item).length > 0) data.push({ '@microdata': true, ...item });
+        });
+        // RDFa
+        document.querySelectorAll('[typeof]').forEach(el => {
+          const item: Record<string, string> = { '@type': el.getAttribute('typeof') || '' };
+          el.querySelectorAll('[property]').forEach(prop => {
+            const name = prop.getAttribute('property') || '';
+            item[name] = (prop as HTMLElement).getAttribute('content')
+              || (prop as HTMLElement).textContent?.trim() || '';
+          });
+          if (Object.keys(item).length > 1) data.push({ '@rdfa': true, ...item });
+        });
+        return data;
+      });
+      if (!result || (Array.isArray(result) && result.length === 0)) {
+        return '(no structured data found)';
+      }
+      return JSON.stringify(result, null, 2);
+    }
+
+    case 'meta': {
+      const result = await evalCtx.evaluate(() => {
+        const lines: string[] = [];
+        // Title
+        const title = document.title;
+        if (title) lines.push(`title: ${title}`);
+        // Meta tags
+        const getMeta = (name: string): string | null => {
+          const el = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
+          return el?.getAttribute('content') || null;
+        };
+        const desc = getMeta('description');
+        if (desc) lines.push(`description: ${desc}`);
+        // Canonical
+        const canonical = document.querySelector('link[rel="canonical"]');
+        if (canonical) lines.push(`canonical: ${(canonical as HTMLLinkElement).href}`);
+        // Robots
+        const robots = getMeta('robots');
+        if (robots) lines.push(`robots: ${robots}`);
+        // Viewport
+        const viewport = getMeta('viewport');
+        if (viewport) lines.push(`viewport: ${viewport}`);
+        // Open Graph
+        const ogTags = ['og:title', 'og:description', 'og:image', 'og:url', 'og:type', 'og:site_name', 'og:locale'];
+        for (const tag of ogTags) {
+          const val = getMeta(tag);
+          if (val) lines.push(`${tag}: ${val}`);
+        }
+        // Twitter Card
+        const twTags = ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image', 'twitter:site'];
+        for (const tag of twTags) {
+          const val = getMeta(tag);
+          if (val) lines.push(`${tag}: ${val}`);
+        }
+        // Hreflang
+        document.querySelectorAll('link[rel="alternate"][hreflang]').forEach(el => {
+          lines.push(`hreflang:${(el as HTMLLinkElement).hreflang}: ${(el as HTMLLinkElement).href}`);
+        });
+        return lines;
+      });
+      if (!result || result.length === 0) return '(no meta information found)';
+      return result.join('\n');
+    }
+
+    case 'headings': {
+      const result = await evalCtx.evaluate(() => {
+        const headings: { level: number; text: string }[] = [];
+        document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(el => {
+          headings.push({
+            level: parseInt(el.tagName[1], 10),
+            text: (el as HTMLElement).textContent?.trim() || '',
+          });
+        });
+        return headings;
+      });
+      if (!result || result.length === 0) return '(no headings found)';
+      // Count summary
+      const counts: Record<string, number> = {};
+      for (const h of result) {
+        const key = `h${h.level}`;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      const summary = Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(' ');
+      // Indented tree
+      const lines = result.map(h => `${'  '.repeat(h.level - 1)}h${h.level}: ${h.text}`);
+      return `[${summary}]\n${lines.join('\n')}`;
     }
 
     default:

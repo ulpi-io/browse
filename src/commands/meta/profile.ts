@@ -2,6 +2,8 @@
  * Profile, React DevTools, and Cloud Provider commands — profile, react-devtools, provider
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { BrowserTarget } from '../../browser/target';
 
 const LOCAL_DIR = process.env.BROWSE_LOCAL_DIR || '/tmp';
@@ -144,7 +146,38 @@ export async function handleProfileCommand(
       );
     }
 
+    case 'profiles': {
+      return listCamoufoxProfiles(LOCAL_DIR);
+    }
+
     default:
       throw new Error(`Unknown profile command: ${command}`);
   }
+}
+
+/**
+ * List camoufox profiles from <localDir>/camoufox-profiles/*.json.
+ * Exported so tests can call with a controlled directory.
+ */
+export function listCamoufoxProfiles(localDir: string): string {
+  const profilesDir = path.join(localDir, 'camoufox-profiles');
+
+  if (!fs.existsSync(profilesDir)) return '(no camoufox profiles found)';
+
+  const files = fs.readdirSync(profilesDir).filter(f => f.endsWith('.json'));
+  if (files.length === 0) return '(no camoufox profiles found)';
+
+  const lines: string[] = [];
+  for (const file of files) {
+    const name = file.replace('.json', '');
+    try {
+      const raw = fs.readFileSync(path.join(profilesDir, file), 'utf-8');
+      const config = JSON.parse(raw);
+      const keys = Object.keys(config).join(', ');
+      lines.push(`${name}  [${keys}]`);
+    } catch {
+      lines.push(`${name}  (invalid JSON)`);
+    }
+  }
+  return lines.join('\n');
 }

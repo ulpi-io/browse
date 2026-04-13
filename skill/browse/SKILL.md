@@ -33,6 +33,7 @@ Before running any browse command, decide the correct target:
 | Open a URL, test a website, scrape web content | **Browser** (default) | `browse goto <url>` |
 | Test a local dev server (`localhost`) | **Browser** | `browse goto http://localhost:3000` |
 | Browse a site that blocks bots (Cloudflare, Turnstile) | **Camoufox** | `browse --runtime camoufox --headed goto <url>` |
+| Browse with a specific camoufox fingerprint profile | **Camoufox** | `browse --runtime camoufox --camoufox-profile <name> --headed goto <url>` |
 | Search Google, YouTube, Amazon, etc. | **Browser** | `browse goto @google "query"` |
 | Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
 | Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
@@ -255,12 +256,17 @@ All macros: @google, @youtube, @amazon, @reddit, @reddit_subreddit, @wikipedia, 
 | `BROWSE_READINESS=1` or `--ready` | OFF | Wait for hydration after goto |
 | `BROWSE_SERP_FASTPATH=1` or `--serp` | OFF | Google SERP DOM extraction (fast, no refs) |
 | `BROWSE_COMMAND_LOCK=0` | ON | Disable per-session command serialization |
+| `BROWSE_CAMOUFOX_PROFILE=<name>` | OFF | Use a named camoufox profile (`.browse/camoufox-profiles/<name>.json`) |
 
 ### New Commands
 | Command | Description |
 |---------|------------|
 | `images [sel] [--limit N] [--inline]` | List page images with src/alt/dimensions |
 | `youtube-transcript <url> [--lang en]` | Extract YouTube captions via yt-dlp or browser |
+| `schema` | Extract JSON-LD, Microdata, RDFa structured data (parsed JSON) |
+| `meta` | Extract page meta tags (title, description, canonical, OG, Twitter, hreflang, robots, viewport) |
+| `headings` | Extract H1-H6 heading hierarchy with counts and indented tree |
+| `profiles` | List available camoufox profiles from `.browse/camoufox-profiles/` |
 
 ### Snapshot Windowing
 Large snapshots (>80K chars) are automatically paginated:

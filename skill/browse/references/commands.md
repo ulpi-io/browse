@@ -250,6 +250,9 @@ browse images             List page images (src, alt, dimensions)
 browse images [selector]  Images within a specific element
 browse images --limit 20  Limit number of images returned
 browse images --inline    Include base64-encoded image data
+browse schema             Extract JSON-LD, Microdata, RDFa structured data (parsed JSON)
+browse meta               Extract page meta tags (title, description, canonical, OG, Twitter, hreflang, robots, viewport)
+browse headings           Extract H1-H6 heading hierarchy with counts and indented tree
 ```
 
 ## Snapshot (ref-based element selection)
@@ -450,6 +453,7 @@ browse --profile <name> <cmd>             Use persistent browser profile
 browse profile list                       List profiles with disk size
 browse profile delete <name>              Delete a profile
 browse profile clean [--older-than <d>]   Remove old profiles (default: 7 days)
+browse profiles                           List available camoufox profiles from .browse/camoufox-profiles/
 ```
 
 ## State persistence
@@ -667,6 +671,7 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--context` | Show state changes after commands |
 | `--context delta` | ARIA diff with refs |
 | `--context full` | Complete snapshot with refs after write commands |
+| `--camoufox-profile <name>` | Use a named camoufox profile for browser launch (JSON in `.browse/camoufox-profiles/<name>.json`). Only applies when starting a new server. |
 | `--platform <ios\|android>` | Target native app platform |
 | `--app <id-or-path>` | Target app by bundle ID, package name, or file path (.app/.ipa/.apk) |
 | `--device <name>` | Simulator/emulator device name (e.g. "iPhone 15", "Pixel 7") |

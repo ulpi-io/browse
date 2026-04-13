@@ -169,15 +169,33 @@ const registry: Record<string, RuntimeLoader> = {
   },
 
   camoufox: async () => {
+    // Load user config first — propagate config errors (missing profile, bad JSON) immediately
+    const { loadCamoufoxConfig, mapCamoufoxConfig } = await import('../config');
+    const userConfig = loadCamoufoxConfig();
+    const mapped = mapCamoufoxConfig(userConfig);
+    const headless: boolean = process.env.BROWSE_HEADED === '1' ? false : (mapped.headless === false ? false : true);
+    const opts = { humanize: true, enable_cache: true, ...mapped, headless };
+
+    // Launch camoufox — fall back to defaults only for downstream launch failures
     try {
       const camou = await import('camoufox-js');
-      const camoufoxOpts = await camou.launchOptions({ headless: true, humanize: true, enable_cache: true });
+      const camoufoxOpts = await camou.launchOptions(opts);
       const pw = await import('playwright-core');
       return { name: 'camoufox', chromium: pw.firefox, launchOptions: camoufoxOpts };
-    } catch {
-      throw new Error(
-        'camoufox-js not installed. Run: npm install camoufox-js'
-      );
+    } catch (err) {
+      if ((err as Error).message?.includes('not installed') || (err as Error).message?.includes('Cannot find module')) {
+        throw new Error('camoufox-js not installed. Run: npm install camoufox-js');
+      }
+      // Launch error with user config — fall back to defaults
+      console.error(`[browse] Camoufox launch error: ${(err as Error).message}. Falling back to defaults.`);
+      try {
+        const camou = await import('camoufox-js');
+        const camoufoxOpts = await camou.launchOptions({ headless: true, humanize: true, enable_cache: true });
+        const pw = await import('playwright-core');
+        return { name: 'camoufox', chromium: pw.firefox, launchOptions: camoufoxOpts };
+      } catch {
+        throw new Error('camoufox-js not installed. Run: npm install camoufox-js');
+      }
     }
   },
 

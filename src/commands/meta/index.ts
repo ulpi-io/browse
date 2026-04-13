@@ -36,7 +36,7 @@ const AUTH_COMMANDS = new Set(['auth', 'cookie-import']);
 
 const SYSTEM_COMMANDS = new Set(['status', 'url', 'stop', 'restart', 'chain', 'doctor', 'upgrade']);
 
-const PROFILE_COMMANDS = new Set(['profile', 'react-devtools', 'provider']);
+const PROFILE_COMMANDS = new Set(['profile', 'react-devtools', 'provider', 'profiles']);
 
 const WORKFLOW_COMMANDS = new Set(['flow', 'retry', 'watch']);
 

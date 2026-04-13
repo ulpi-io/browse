@@ -164,6 +164,21 @@ registry.registerAll([
       return args;
     },
   } }),
+  r('schema',         'Extract JSON-LD, Microdata, RDFa structured data', { safeToRetry: true, pageContent: true, mcp: {
+    description: 'Extract structured data from the current page: JSON-LD scripts, Microdata items, and RDFa. Returns parsed JSON. Use for SEO audits and data extraction.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
+  r('meta',           'Extract page meta tags (title, description, OG, canonical)', { safeToRetry: true, pageContent: true, mcp: {
+    description: 'Extract meta information from the current page: title, description, canonical URL, Open Graph tags, Twitter cards, hreflang, robots, and viewport. Returns structured text.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
+  r('headings',       'Extract H1-H6 heading hierarchy',                 { safeToRetry: true, pageContent: true, mcp: {
+    description: 'Extract all headings (H1-H6) from the current page as an indented hierarchy with counts. Use for content structure analysis and SEO audits.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
 ]);
 
 // ─── Write Commands ──────────────────────────────────────────────
@@ -728,6 +743,11 @@ registry.registerAll([
       return args;
     },
   } }),
+  m('profiles',         'List camoufox profiles',                           { safeToRetry: true, mcp: {
+    description: 'List available camoufox profiles from .browse/camoufox-profiles/. Shows profile names and their configured options.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
   m('provider',         'Cloud provider management',                        { usage: 'save|list|delete <name> [api-key]', safeToRetry: true, mcp: {
     description: 'Manage cloud browser providers (Browserless, Browserbase). Save API keys, list configured providers, or delete credentials. Use "save" to store a provider API key, then set BROWSE_CDP_URL to connect via CDP.',
     inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Operation to perform.', enum: ['save', 'list', 'delete'] }, name: { type: 'string', description: 'Provider name (e.g. "browserless", "browserbase"). Required for save and delete.' }, api_key: { type: 'string', description: 'API key for the provider. Required for save.' } }, required: ['action'] },
@@ -1072,7 +1092,8 @@ export function generateHelp(): string {
   lines.push('  --connect                Auto-discover and connect to running Chrome');
   lines.push('  --cdp <port>             Connect to Chrome on specific debugging port');
   lines.push('  --provider <name>        Cloud browser provider (browserless, browserbase)');
-  lines.push('  --runtime <name>         Browser engine (playwright, rebrowser, lightpanda)');
+  lines.push('  --runtime <name>         Browser engine (playwright, rebrowser, lightpanda, camoufox, chrome)');
+  lines.push('  --camoufox-profile <name> Camoufox named profile (server-spawn-only)');
   lines.push('  --mcp                    Run as MCP server (for Cursor, Windsurf, Cline)');
   lines.push('  --mcp --json             MCP server with JSON-wrapped responses');
   lines.push('');
