@@ -45,6 +45,10 @@ export class SessionBuffers {
   consoleErrorCount = 0;
   networkPendingCount = 0;
 
+  // Optional streaming callbacks — used by cloud WebSocket to push events
+  onConsoleEntry?: (entry: LogEntry) => void;
+  onNetworkEntry?: (entry: NetworkEntry) => void;
+
   addConsoleEntry(entry: LogEntry) {
     if (this.consoleBuffer.length >= DEFAULTS.BUFFER_HIGH_WATER_MARK) {
       const evicted = this.consoleBuffer.shift()!;
@@ -53,6 +57,7 @@ export class SessionBuffers {
     this.consoleBuffer.push(entry);
     this.consoleTotalAdded++;
     if (entry.level === 'error') this.consoleErrorCount++;
+    this.onConsoleEntry?.(entry);
   }
 
   addNetworkEntry(entry: NetworkEntry) {
@@ -63,6 +68,7 @@ export class SessionBuffers {
     this.networkBuffer.push(entry);
     this.networkTotalAdded++;
     if (entry.status == null) this.networkPendingCount++;
+    this.onNetworkEntry?.(entry);
   }
 
   /** Called when a network entry gets its status (response arrived). */

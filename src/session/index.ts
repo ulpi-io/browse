@@ -5,6 +5,11 @@ export {
   loadSessionState,
   hasPersistedState,
   cleanOldStates,
+  freezeSession,
+  resumeSession,
+  hasFrozenManifest,
+  loadFrozenManifest,
+  type FrozenSessionManifest,
 } from './persist';
 export { resolveEncryptionKey, encrypt, decrypt } from './encryption';
 export { TabLock, TabLockTimeoutError } from './tab-lock';

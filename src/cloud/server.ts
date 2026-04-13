@@ -9,7 +9,6 @@
  * Sessions are prefixed `tenant:<tenantId>:session:<id>` for isolation.
  */
 
-import * as crypto from 'crypto';
 import * as http from 'http';
 import { getRuntime, type BrowserRuntime } from '../engine/resolver';
 import { SessionManager, type Session } from '../session/manager';
@@ -17,6 +16,8 @@ import { createBrowserTargetFactory } from '../session/target-factory';
 import { executeCommand } from '../automation/executor';
 import { ensureDefinitionsRegistered } from '../automation/registry';
 import { ApiKeyVault, createJwt, validateJwt, resolveJwtSecret } from './auth';
+import { CloudSessionManager, TenantAccessError } from './sessions';
+import { handleUpgrade, closeAllConnections, broadcastSessionEvent } from './ws';
 import { CLOUD_DEFAULTS } from '../constants';
 import type { Browser } from 'playwright';
 
@@ -75,20 +76,10 @@ function errorResponse(error: string, status: number, hint?: string): Response {
   return jsonResponse(hint ? { error, hint } : { error }, status);
 }
 
-/** Build the tenant-scoped session ID */
-function tenantSessionId(tenantId: string, sessionId: string): string {
-  return `tenant:${tenantId}:session:${sessionId}`;
-}
-
 /** Extract the short session ID from a tenant-scoped ID */
 function shortSessionId(fullId: string): string {
   const parts = fullId.split(':session:');
   return parts.length > 1 ? parts[1] : fullId;
-}
-
-/** Check if a full session ID belongs to a tenant */
-function isOwnedByTenant(fullId: string, tenantId: string): boolean {
-  return fullId.startsWith(`tenant:${tenantId}:session:`);
 }
 
 /** Extract Bearer token from Authorization header */
@@ -145,6 +136,12 @@ async function start() {
   const sessionManager = new SessionManager(
     createBrowserTargetFactory(browser),
     process.env.BROWSE_LOCAL_DIR || '.browse',
+  );
+
+  // Cloud session manager — tenant-scoped wrapper
+  const cloudSessions = new CloudSessionManager(
+    sessionManager,
+    CLOUD_DEFAULTS.MAX_SESSIONS_PER_TENANT,
   );
 
   // ─── Auth middleware ─────────────────────────────────────
@@ -237,62 +234,65 @@ async function start() {
       return errorResponse('Invalid JSON body', 400);
     }
 
-    const sessionId = body.sessionId || crypto.randomUUID();
-    const fullId = tenantSessionId(tenant.tenantId, sessionId);
+    try {
+      const result = await cloudSessions.provision(tenant.tenantId, {
+        sessionId: body.sessionId || undefined,
+        allowedDomains: body.allowedDomains || undefined,
+      });
 
-    // Check tenant session limit
-    const tenantSessions = sessionManager.getAllSessions()
-      .filter(s => isOwnedByTenant(s.id, tenant.tenantId));
-    if (tenantSessions.length >= CLOUD_DEFAULTS.MAX_SESSIONS_PER_TENANT) {
-      return errorResponse(
-        `Session limit reached (max ${CLOUD_DEFAULTS.MAX_SESSIONS_PER_TENANT} per tenant)`,
-        429,
-      );
+      return jsonResponse({
+        sessionId: shortSessionId(result.sessionId),
+        createdAt: result.createdAt,
+      }, 201);
+    } catch (err: any) {
+      if (err instanceof TenantAccessError) {
+        return errorResponse(err.message, 403);
+      }
+      // Session limit exceeded — the message already says "Session limit reached"
+      if (err.message?.includes('Session limit reached')) {
+        return errorResponse(err.message, 429);
+      }
+      throw err;
     }
-
-    const allowedDomains = body.allowedDomains || undefined;
-    await sessionManager.getOrCreate(fullId, allowedDomains);
-
-    return jsonResponse({
-      sessionId,
-      createdAt: new Date().toISOString(),
-    }, 201);
   }
 
   // ─── Route: GET /v1/sessions ─────────────────────────────
 
   function handleListSessions(tenant: TenantContext): Response {
-    const all = sessionManager.listSessions();
-    const tenantSessions = all
-      .filter(s => isOwnedByTenant(s.id, tenant.tenantId))
-      .map(s => ({
-        sessionId: shortSessionId(s.id),
-        tabs: s.tabs,
-        url: s.url,
-        idleSeconds: s.idleSeconds,
-      }));
+    const sessions = cloudSessions.list(tenant.tenantId).map((s) => ({
+      sessionId: shortSessionId(s.id),
+      tabs: s.tabs,
+      url: s.url,
+      idleSeconds: s.idleSeconds,
+    }));
 
-    return jsonResponse({ sessions: tenantSessions });
+    return jsonResponse({ sessions });
   }
 
   // ─── Route: DELETE /v1/sessions/:id ──────────────────────
 
   async function handleDeleteSession(tenant: TenantContext, sessionId: string): Promise<Response> {
-    const fullId = tenantSessionId(tenant.tenantId, sessionId);
+    const fullId = `tenant:${tenant.tenantId}:session:${sessionId}`;
 
-    const existing = sessionManager.getExisting(fullId);
-    if (!existing) {
-      return errorResponse('Session not found', 404);
+    try {
+      await cloudSessions.terminate(tenant.tenantId, fullId);
+      broadcastSessionEvent({ type: 'session', sessionId, event: 'terminated' });
+      return jsonResponse({ deleted: true });
+    } catch (err: any) {
+      if (err instanceof TenantAccessError) {
+        return errorResponse(err.message, 403);
+      }
+      if (err.message?.includes('not found')) {
+        return errorResponse('Session not found', 404);
+      }
+      throw err;
     }
-
-    await sessionManager.closeSession(fullId);
-    return jsonResponse({ deleted: true });
   }
 
   // ─── Route: POST /v1/sessions/:id/command ────────────────
 
   async function handleSessionCommand(tenant: TenantContext, sessionId: string, req: Request): Promise<Response> {
-    const fullId = tenantSessionId(tenant.tenantId, sessionId);
+    const fullId = `tenant:${tenant.tenantId}:session:${sessionId}`;
 
     let body: any;
     try {
@@ -306,10 +306,10 @@ async function start() {
       return errorResponse('Missing or invalid "command" field', 400);
     }
 
-    // Ensure session exists (lazy-create on first command)
-    const session: Session = await sessionManager.getOrCreate(fullId);
-
     try {
+      // Ensure session exists (lazy-create on first command)
+      const session: Session = await cloudSessions.getOrCreate(tenant.tenantId, fullId);
+
       const result = await executeCommand(command, args, {
         context: {
           args,
@@ -325,6 +325,9 @@ async function start() {
         durationMs: result.durationMs,
       });
     } catch (err: any) {
+      if (err instanceof TenantAccessError) {
+        return errorResponse(err.message, 403);
+      }
       return jsonResponse({ error: err.message }, 500);
     }
   }
@@ -336,6 +339,7 @@ async function start() {
     const closed = await sessionManager.closeIdleSessions(CLOUD_DEFAULTS.SESSION_IDLE_TIMEOUT_MS);
     for (const id of closed) {
       console.log(`[cloud] Session "${id}" idle — closed`);
+      broadcastSessionEvent({ type: 'session', sessionId: shortSessionId(id), event: 'terminated' });
     }
   }, 60_000);
 
@@ -401,6 +405,20 @@ async function start() {
     },
   });
 
+  // ─── WebSocket upgrade ──────────────────────────────────
+
+  server.on('upgrade', (req, socket, head) => {
+    handleUpgrade(req, socket, head, {
+      jwtSecret: config.jwtSecret,
+      getSessionBuffers: (tenantId: string, sessionId: string) => {
+        // Validate tenant ownership via the session ID prefix
+        if (!sessionId.startsWith(`tenant:${tenantId}:`)) return null;
+        const session = sessionManager.getExisting(sessionId);
+        return session?.buffers ?? null;
+      },
+    });
+  });
+
   // ─── Shutdown ────────────────────────────────────────────
 
   let isShuttingDown = false;
@@ -411,6 +429,7 @@ async function start() {
     console.log('[cloud] Shutting down...');
 
     clearInterval(cleanupInterval);
+    closeAllConnections();
 
     await sessionManager.closeAll().catch(() => {});
     browser.removeAllListeners('disconnected');

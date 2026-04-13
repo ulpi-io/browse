@@ -2,8 +2,31 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { BrowserContext } from 'playwright';
 import { encrypt, decrypt } from './encryption';
+import type { AutomationTarget } from '../automation/target';
+import { SessionBuffers } from '../network/buffers';
 
 const STATE_FILENAME = 'state.json';
+const FROZEN_MANIFEST_FILENAME = 'frozen-manifest.json';
+
+// ─── Freeze / Resume Types ──────────────────────────────────────
+
+/** Full session state for cloud freeze/resume */
+export interface FrozenSessionManifest {
+  version: 1;
+  sessionId: string;
+  frozenAt: string;
+  /** All tab URLs at freeze time */
+  tabUrls: string[];
+  /** Active tab index in tabUrls array */
+  activeTabIndex: number;
+  /** Session settings */
+  contextLevel: string;
+  settleMode: boolean;
+  /** Domain filter domains (null if no filter) */
+  allowedDomains: string[] | null;
+  /** Path to cookies/storage state file (relative to session dir) */
+  stateFile: string;
+}
 
 /**
  * Save session state (cookies + localStorage) to disk.
@@ -189,4 +212,209 @@ export function cleanOldStates(
   }
 
   return { deleted };
+}
+
+// ─── Freeze / Resume Functions ──────────────────────────────────
+
+/**
+ * Freeze a session to disk — captures tabs, cookies, localStorage, and settings.
+ *
+ * Writes a FrozenSessionManifest to `<sessionDir>/frozen-manifest.json` and
+ * delegates cookie/storage persistence to `saveSessionState()`.
+ *
+ * Graceful: never throws. Logs warnings on partial failure and returns a
+ * best-effort manifest (empty tab list, etc.).
+ */
+export async function freezeSession(
+  session: {
+    id: string;
+    manager: AutomationTarget;
+    contextLevel: string;
+    settleMode: boolean;
+    domainFilter: { domains?: string[] } | null;
+  },
+  sessionDir: string,
+  encryptionKey?: Buffer,
+): Promise<FrozenSessionManifest> {
+  let tabUrls: string[] = [];
+  let activeTabIndex = 0;
+
+  // 1. Collect tab URLs via duck-typed getTabList (BrowserTarget has it, others may not)
+  try {
+    const mgr = session.manager as unknown as Record<string, unknown>;
+    if ('getTabList' in session.manager && typeof mgr.getTabList === 'function') {
+      const tabs = mgr.getTabList() as Array<{ id: number; url: string; title: string; active: boolean }>;
+      tabUrls = tabs.map((t) => t.url);
+      const activeIdx = tabs.findIndex((t) => t.active);
+      activeTabIndex = activeIdx >= 0 ? activeIdx : 0;
+    } else {
+      // Fallback: single location from the target contract
+      const loc = session.manager.getCurrentLocation();
+      if (loc) tabUrls = [loc];
+    }
+  } catch (err: any) {
+    console.log(`[session-persist] Warning: failed to collect tab URLs during freeze: ${err.message}`);
+  }
+
+  // 2. Persist cookies/localStorage via existing saveSessionState
+  try {
+    const mgr = session.manager as unknown as Record<string, unknown>;
+    if ('getContext' in session.manager && typeof mgr.getContext === 'function') {
+      const context = mgr.getContext() as BrowserContext | null;
+      if (context) {
+        await saveSessionState(sessionDir, context, encryptionKey);
+      }
+    }
+  } catch (err: any) {
+    console.log(`[session-persist] Warning: failed to save browser state during freeze: ${err.message}`);
+  }
+
+  // 3. Build manifest
+  const allowedDomains = session.domainFilter?.domains ?? null;
+
+  const manifest: FrozenSessionManifest = {
+    version: 1,
+    sessionId: session.id,
+    frozenAt: new Date().toISOString(),
+    tabUrls,
+    activeTabIndex,
+    contextLevel: session.contextLevel,
+    settleMode: session.settleMode,
+    allowedDomains: allowedDomains && allowedDomains.length > 0 ? allowedDomains : null,
+    stateFile: STATE_FILENAME,
+  };
+
+  // 4. Write manifest to disk
+  try {
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionDir, FROZEN_MANIFEST_FILENAME),
+      JSON.stringify(manifest, null, 2),
+      { mode: 0o600 },
+    );
+  } catch (err: any) {
+    console.log(`[session-persist] Warning: failed to write frozen manifest: ${err.message}`);
+  }
+
+  return manifest;
+}
+
+/**
+ * Resume a session from a frozen manifest — creates a fresh target, restores
+ * cookies/localStorage, and navigates to the previously open tabs.
+ *
+ * Graceful: never throws. Returns the created target even if state restore
+ * or tab navigation partially fails (logs warnings).
+ */
+export async function resumeSession(
+  manifest: FrozenSessionManifest,
+  sessionDir: string,
+  factory: { create(buffers: SessionBuffers, reuseContext: boolean): Promise<any> },
+  encryptionKey?: Buffer,
+): Promise<{
+  target: AutomationTarget;
+  createdTarget: any;
+}> {
+  // 1. Create a fresh target
+  const buffers = new SessionBuffers();
+  const createdTarget = await factory.create(buffers, false);
+  const target: AutomationTarget = createdTarget.target;
+
+  // 2. Restore cookies/localStorage if browser context is available
+  try {
+    if (typeof createdTarget.getContext === 'function') {
+      const context = createdTarget.getContext() as BrowserContext | null;
+      if (context) {
+        await loadSessionState(sessionDir, context, encryptionKey);
+      }
+    }
+  } catch (err: any) {
+    console.log(`[session-persist] Warning: failed to restore state during resume: ${err.message}`);
+  }
+
+  // 3. Navigate to saved tab URLs
+  if (manifest.tabUrls.length > 0) {
+    // Navigate the first (already-open) tab to the first URL
+    try {
+      const mgr = target as unknown as Record<string, unknown>;
+      if ('getPage' in target && typeof mgr.getPage === 'function') {
+        const page = mgr.getPage() as { goto(url: string, opts?: any): Promise<any> };
+        await page.goto(manifest.tabUrls[0], { waitUntil: 'domcontentloaded', timeout: 10000 });
+      }
+    } catch (err: any) {
+      console.log(`[session-persist] Warning: failed to navigate first tab to ${manifest.tabUrls[0]}: ${err.message}`);
+    }
+
+    // Open additional tabs for remaining URLs
+    for (let i = 1; i < manifest.tabUrls.length; i++) {
+      try {
+        const mgr = target as unknown as Record<string, unknown>;
+        if ('newTab' in target && typeof mgr.newTab === 'function') {
+          await (mgr.newTab as (url?: string) => Promise<unknown>)(manifest.tabUrls[i]);
+        }
+      } catch (err: any) {
+        console.log(`[session-persist] Warning: failed to open tab for ${manifest.tabUrls[i]}: ${err.message}`);
+      }
+    }
+
+    // Switch to the previously active tab
+    if (manifest.activeTabIndex > 0 && manifest.activeTabIndex < manifest.tabUrls.length) {
+      try {
+        const mgr = target as unknown as Record<string, unknown>;
+        if ('getTabList' in target && typeof mgr.getTabList === 'function') {
+          const tabs = (mgr.getTabList as () => Array<{ id: number }>)();
+          if (tabs[manifest.activeTabIndex]) {
+            if ('switchTab' in target && typeof mgr.switchTab === 'function') {
+              await (mgr.switchTab as (id: number) => Promise<void>)(tabs[manifest.activeTabIndex].id);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.log(`[session-persist] Warning: failed to switch to active tab index ${manifest.activeTabIndex}: ${err.message}`);
+      }
+    }
+  }
+
+  return { target, createdTarget };
+}
+
+/**
+ * Check whether a frozen manifest file exists for a session directory.
+ */
+export function hasFrozenManifest(sessionDir: string): boolean {
+  try {
+    return fs.existsSync(path.join(sessionDir, FROZEN_MANIFEST_FILENAME));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load and parse a frozen manifest from a session directory.
+ * Returns null if the file is missing, unreadable, or corrupt.
+ */
+export function loadFrozenManifest(sessionDir: string): FrozenSessionManifest | null {
+  const manifestPath = path.join(sessionDir, FROZEN_MANIFEST_FILENAME);
+  try {
+    if (!fs.existsSync(manifestPath)) return null;
+    const raw = fs.readFileSync(manifestPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+
+    // Basic structural validation
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.version === 1 &&
+      typeof parsed.sessionId === 'string' &&
+      Array.isArray(parsed.tabUrls)
+    ) {
+      return parsed as FrozenSessionManifest;
+    }
+
+    console.log('[session-persist] Warning: frozen manifest has invalid structure');
+    return null;
+  } catch (err: any) {
+    console.log(`[session-persist] Warning: failed to read frozen manifest: ${err.message}`);
+    return null;
+  }
 }
