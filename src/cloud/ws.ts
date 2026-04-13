@@ -345,16 +345,61 @@ function getTenantConnectionCount(tenantId: string): number {
 // ─── Session subscription ──────────────────────────────────────
 
 /**
+ * Per-buffer listener sets — replaces the single-callback chain pattern
+ * which was unsafe when connections closed out of order (closing an older
+ * connection would restore its prevHandler, silently unregistering newer
+ * listeners). With a Set, each subscriber is independent.
+ */
+const bufferConsoleListeners = new WeakMap<SessionBuffers, Set<(entry: LogEntry) => void>>();
+const bufferNetworkListeners = new WeakMap<SessionBuffers, Set<(entry: NetworkEntry) => void>>();
+
+/**
+ * Ensure a SessionBuffers instance has a fan-out dispatcher installed.
+ * The dispatcher iterates the listener Set and calls each one.
+ * Only installs once per buffer (idempotent).
+ */
+function ensureBufferDispatcher(buffers: SessionBuffers): void {
+  if (!bufferConsoleListeners.has(buffers)) {
+    const consoleSet = new Set<(entry: LogEntry) => void>();
+    bufferConsoleListeners.set(buffers, consoleSet);
+
+    // Preserve any pre-existing callback (e.g., from non-WS code)
+    const originalConsole = buffers.onConsoleEntry;
+    buffers.onConsoleEntry = (entry: LogEntry): void => {
+      originalConsole?.(entry);
+      for (const listener of consoleSet) {
+        try { listener(entry); } catch { /* ignore per-listener errors */ }
+      }
+    };
+  }
+
+  if (!bufferNetworkListeners.has(buffers)) {
+    const networkSet = new Set<(entry: NetworkEntry) => void>();
+    bufferNetworkListeners.set(buffers, networkSet);
+
+    const originalNetwork = buffers.onNetworkEntry;
+    buffers.onNetworkEntry = (entry: NetworkEntry): void => {
+      originalNetwork?.(entry);
+      for (const listener of networkSet) {
+        try { listener(entry); } catch { /* ignore per-listener errors */ }
+      }
+    };
+  }
+}
+
+/**
  * Subscribe a WebSocket connection to a session's buffer events.
  *
- * Registers callbacks on the SessionBuffers instance. When the connection
- * closes, the callbacks are removed to prevent memory leaks.
+ * Uses a Set-based listener list per buffer so multiple connections
+ * can subscribe/unsubscribe independently without corrupting each other.
  */
 function subscribeToSession(
   conn: WsConnectionImpl,
   buffers: SessionBuffers,
   sessionId: string,
 ): void {
+  ensureBufferDispatcher(buffers);
+
   const consoleHandler = (entry: LogEntry): void => {
     if (!conn.isOpen) return;
     conn.send(JSON.stringify({ type: 'console', sessionId, data: entry }));
@@ -365,28 +410,13 @@ function subscribeToSession(
     conn.send(JSON.stringify({ type: 'network', sessionId, data: entry }));
   };
 
-  // Store previous handlers to chain them (multiple WS connections per session)
-  const prevConsoleHandler = buffers.onConsoleEntry;
-  const prevNetworkHandler = buffers.onNetworkEntry;
+  bufferConsoleListeners.get(buffers)!.add(consoleHandler);
+  bufferNetworkListeners.get(buffers)!.add(networkHandler);
 
-  buffers.onConsoleEntry = (entry: LogEntry): void => {
-    prevConsoleHandler?.(entry);
-    consoleHandler(entry);
-  };
-
-  buffers.onNetworkEntry = (entry: NetworkEntry): void => {
-    prevNetworkHandler?.(entry);
-    networkHandler(entry);
-  };
-
-  // On close: restore previous handlers.
-  // For the typical case (single or few connections per session) this
-  // correctly unwinds the chain. If connections are removed out of order,
-  // the worst case is that some events are no longer forwarded to a
-  // closed connection (which is harmless since the guard checks isOpen).
+  // On close: remove this connection's listeners (safe regardless of close order)
   conn.onClose(() => {
-    buffers.onConsoleEntry = prevConsoleHandler;
-    buffers.onNetworkEntry = prevNetworkHandler;
+    bufferConsoleListeners.get(buffers)?.delete(consoleHandler);
+    bufferNetworkListeners.get(buffers)?.delete(networkHandler);
   });
 }
 

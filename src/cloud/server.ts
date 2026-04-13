@@ -521,6 +521,19 @@ async function start() {
       getSessionBuffers: (tenantId: string, sessionId: string) => {
         // Validate tenant ownership via the session ID prefix
         if (!sessionId.startsWith(`tenant:${tenantId}:`)) return null;
+
+        // In direct mode (no orchestrator), buffers live on the SessionManager.
+        // In container/VM mode, the session runs in a separate process — its
+        // buffers are NOT accessible from the gateway. For isolated sessions,
+        // WS streaming is not supported yet (would require a shared event
+        // stream or per-container WS relay). Return null so the client gets
+        // a clear 404 instead of a silent no-op subscription.
+        // In container/VM isolation mode, sessions run in separate
+        // processes. Their buffers are not accessible from the gateway.
+        // WebSocket streaming requires an event relay (TODO).
+        // For now, return null — the client gets 404 "Session not found".
+        if (orchestrator) return null;
+
         const session = sessionManager.getExisting(sessionId);
         return session?.buffers ?? null;
       },
