@@ -230,6 +230,9 @@ browse perf-audit compare baseline
 ## Navigation
 ```
 browse goto <url>         Navigate current tab
+browse goto <url> --ready Wait for hydration/readiness after navigation
+browse goto @google "query"   Search macro — expands to Google search URL
+browse goto @youtube "query"  Search macro — YouTube, Amazon, Reddit, Wikipedia, etc.
 browse back               Go back
 browse forward            Go forward
 browse reload             Reload page
@@ -243,6 +246,13 @@ browse html [selector]    innerHTML of element, or full page HTML
 browse links              All links as "text -> href"
 browse forms              All forms + fields as JSON
 browse accessibility      Accessibility tree snapshot (ARIA)
+browse images             List page images (src, alt, dimensions)
+browse images [selector]  Images within a specific element
+browse images --limit 20  Limit number of images returned
+browse images --inline    Include base64-encoded image data
+browse schema             Extract JSON-LD, Microdata, RDFa structured data (parsed JSON)
+browse meta               Extract page meta tags (title, description, canonical, OG, Twitter, hreflang, robots, viewport)
+browse headings           Extract H1-H6 heading hierarchy with counts and indented tree
 ```
 
 ## Snapshot (ref-based element selection)
@@ -255,6 +265,9 @@ browse snapshot -c        Compact (no empty structural elements)
 browse snapshot -C        Cursor-interactive (detect divs with cursor:pointer/onclick/tabindex)
 browse snapshot -d <N>    Limit depth to N levels
 browse snapshot -s <sel>  Scope to CSS selector
+browse snapshot --offset <N>    Start output from line N (windowing for large snapshots)
+browse snapshot --max-chars <N> Limit snapshot output to N characters
+browse snapshot --serp    Google SERP fast extraction (structured results, no refs)
 browse snapshot-diff      Compare current vs previous snapshot
 ```
 
@@ -273,6 +286,7 @@ Refs are invalidated on navigation -- run `snapshot` again after `goto`.
 ## Interaction
 ```
 browse click <selector>        Click element (CSS selector or @ref)
+browse click <sel> --force     Force-click through overlay interception (bypasses actionability checks)
 browse click <sel> --if-exists Click only if element exists (no error if missing)
 browse click <sel> --if-visible Click only if element is visible
 browse click <x>,<y>           Click at page coordinates (e.g. 590,461)
@@ -328,6 +342,7 @@ browse viewport <WxH>          Set viewport size (e.g. 375x812)
 browse upload <sel> <files>    Upload file(s) to a file input
 browse highlight <selector>    Highlight element (visual debugging)
 browse download <sel> [path]   Download file triggered by click
+browse download <sel> --inline Return file content as base64 (no disk write)
 browse dialog-accept [value]   Set dialogs to auto-accept
 browse dialog-dismiss          Set dialogs to auto-dismiss (default)
 browse emulate <device>        Emulate device (iphone, pixel, etc.)
@@ -438,6 +453,7 @@ browse --profile <name> <cmd>             Use persistent browser profile
 browse profile list                       List profiles with disk size
 browse profile delete <name>              Delete a profile
 browse profile clean [--older-than <d>]   Remove old profiles (default: 7 days)
+browse profiles                           List available camoufox profiles from .browse/camoufox-profiles/
 ```
 
 ## State persistence
@@ -549,6 +565,12 @@ browse initscript show                   Show current init script
 browse initscript clear                  Remove init script
 ```
 
+## YouTube transcript
+```
+browse youtube-transcript <url>            Extract captions from YouTube video
+browse youtube-transcript <url> --lang en  Specify caption language
+```
+
 ## API requests
 ```
 browse api <method> <url>                          Make HTTP request (GET, POST, PUT, DELETE, etc.)
@@ -641,11 +663,15 @@ browse inspect                 Open DevTools (requires BROWSE_DEBUG_PORT)
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--provider <name>` | Cloud browser provider (browserless, browserbase) |
-| `--runtime <name>` | Browser engine: playwright (default), rebrowser (stealth), lightpanda, chrome |
+| `--runtime <name>` | Browser engine: playwright (default), camoufox (anti-detection Firefox), rebrowser (stealth), lightpanda, chrome |
+| `--ready` | Wait for hydration/readiness after goto |
+| `--force` | Force-click through overlay interception |
+| `--serp` | Google SERP fast extraction mode |
 | `--mcp` | Run as MCP server (for Cursor, Windsurf, Cline) |
 | `--context` | Show state changes after commands |
 | `--context delta` | ARIA diff with refs |
 | `--context full` | Complete snapshot with refs after write commands |
+| `--camoufox-profile <name>` | Use a named camoufox profile for browser launch (JSON in `.browse/camoufox-profiles/<name>.json`). Only applies when starting a new server. |
 | `--platform <ios\|android>` | Target native app platform |
 | `--app <id-or-path>` | Target app by bundle ID, package name, or file path (.app/.ipa/.apk) |
 | `--device <name>` | Simulator/emulator device name (e.g. "iPhone 15", "Pixel 7") |

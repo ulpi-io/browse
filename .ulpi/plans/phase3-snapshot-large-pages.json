@@ -1,0 +1,373 @@
+{
+  "title": "Phase 3: Snapshot & Large Page Handling",
+  "branch": "feat/snapshot-large-pages",
+  "mode": "EXPANSION",
+  "overview": "Add snapshot windowing/pagination, Google SERP fast-path extraction, and DOM image extraction to browse_cli. Snapshot windowing truncates ARIA snapshots exceeding 80K chars with offset-based pagination and preserves navigation/pagination links at the tail. Google SERP fast-path uses DOM-based extraction on google.com/search pages instead of ariaSnapshot for ~2x faster structured results. The images command lists page images with metadata and optional inline base64. All three features are runtime-agnostic (work with Playwright, Camoufox, or any BrowserTarget). Phase 3 of 6 in the camoufox integration roadmap.",
+  "scopeChallenge": "handleSnapshot() in src/browser/snapshot.ts returns a plain string from ariaSnapshot(). For large pages (e.g. search results, dashboards, long articles), this string can exceed 80K characters, overwhelming AI agent context windows. The windowing solution wraps the output post-render with offset-based pagination, preserving tail navigation links (~5K chars). This is a pure post-processing wrapper that does not touch the ref-map building or locator assignment — it operates on the final rendered string only. The SERP fast-path short-circuits the snapshot path entirely when the URL matches google.com/search, returning structured DOM extraction instead of ARIA tree parsing. The images command is a new read command following the existing registry pattern (register in registry.ts, implement in read.ts, wire via registerReadDefinitions).",
+  "prerequisites": [
+    {
+      "assumption": "handleSnapshot() returns a rendered string and stores refMap via bm.setRefMap()",
+      "status": "already-true",
+      "verification": "src/browser/snapshot.ts:547-549 — builds output.join('\\n'), calls bm.setLastSnapshot(), returns rendered string"
+    },
+    {
+      "assumption": "handleSnapshot is called from inspection.ts (meta command) and action-context.ts (finalize)",
+      "status": "already-true",
+      "verification": "src/commands/meta/inspection.ts:49, src/automation/action-context.ts:397"
+    },
+    {
+      "assumption": "Command registry pattern supports adding new read commands with MCP schemas",
+      "status": "already-true",
+      "verification": "src/automation/registry.ts:29-127 — r() helper + registerAll() with inputSchema and argDecode"
+    },
+    {
+      "assumption": "registerReadDefinitions() in src/commands/read.ts wires registry specs to handleReadCommand dispatch",
+      "status": "already-true",
+      "verification": "src/commands/read.ts:472-495 — iterates registry.byCategory('read'), defines execute functions"
+    },
+    {
+      "assumption": "BrowserTarget interface provides getPage() for DOM evaluation in read commands",
+      "status": "already-true",
+      "verification": "src/browser/target.ts — BrowserTarget interface with getPage() returning Page"
+    }
+  ],
+  "nonGoals": [
+    "Proxy pool rotation (Phase 4)",
+    "Consent dialog auto-dismiss (Phase 2)",
+    "Google block detection and retry (Phase 2)",
+    "Streaming snapshot output (would require HTTP response streaming)",
+    "Snapshot caching/memoization across commands",
+    "Server-side image compression or thumbnail generation",
+    "SERP extraction for non-Google search engines (Bing, DuckDuckGo)",
+    "Modifying the ref-map building or locator assignment logic"
+  ],
+  "contracts": [
+    {
+      "boundary": "Snapshot windowing → handleSnapshot callers",
+      "producer": "snapshot-window.ts applySnapshotWindow()",
+      "consumer": "snapshot.ts handleSnapshot(), action-context.ts finalizeWriteContext()",
+      "shape": "{ text: string, truncated: boolean, totalChars: number, hasMore: boolean, nextOffset: number | null } — when not truncated, text is the full snapshot unchanged",
+      "consistencyRule": "Windowing is applied AFTER ref-map building and setLastSnapshot. The full snapshot is always stored for delta comparison; only the returned text is windowed. Action context callers (delta/full) may want the unwound version — windowing is opt-in via args."
+    },
+    {
+      "boundary": "SERP fast-path → snapshot handler",
+      "producer": "serp.ts extractGoogleSerp()",
+      "consumer": "inspection.ts handleInspectionCommand('snapshot')",
+      "shape": "string — formatted SERP results with title, URL, snippet per result, plus 'People also ask' and pagination sections",
+      "consistencyRule": "SERP extraction does NOT populate the refMap. It returns a plain text result. Callers that need refs (e.g. click @e3) must use the regular snapshot path. SERP is a read-only fast path for content extraction."
+    },
+    {
+      "boundary": "images command → read handler",
+      "producer": "handleReadCommand('images', args, bm, buffers)",
+      "consumer": "CLI / MCP / chain / flow",
+      "shape": "string — one line per image: 'src alt width x height [size]', or JSON array when --json flag",
+      "consistencyRule": "Images command is read-only, safe to retry, supports @ref selectors for scoping to a container element"
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Snapshot output post-processing",
+      "existingCode": "src/browser/snapshot.ts:547 — output.join('\\n') is the final render point",
+      "source": "local",
+      "action": "wrap"
+    },
+    {
+      "subProblem": "SERP URL detection",
+      "existingCode": "bm.getPage().url() — available in all command contexts",
+      "source": "local",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "DOM evaluation for image extraction",
+      "existingCode": "src/commands/read.ts:72-78 (links command) — page.evaluate pattern for extracting DOM elements",
+      "source": "local",
+      "action": "follow-pattern"
+    },
+    {
+      "subProblem": "Command registration with MCP schema",
+      "existingCode": "src/automation/registry.ts:29-127 — r() helper with inputSchema and argDecode",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Read command dispatch and registration",
+      "existingCode": "src/commands/read.ts:472-495 — registerReadDefinitions()",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Barrel exports for browser modules",
+      "existingCode": "src/browser/index.ts — re-exports snapshot, manager, etc.",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "SERP extraction logic",
+      "existingCode": "camofox-browser server.js lines 1132-1268 (extractGoogleSerp)",
+      "source": "external",
+      "action": "port"
+    },
+    {
+      "subProblem": "Snapshot windowing logic",
+      "existingCode": "camofox-browser lib/snapshot.js (~40 lines, windowing)",
+      "source": "external",
+      "action": "port"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "Windowing splits a ref line mid-string — agent sees @e42 in text but ref was built from full snapshot, so click @e42 still works. However, agent may reference @e50 from metadata hint without seeing its text.",
+      "affectedTasks": ["TASK-001", "TASK-003"],
+      "mitigation": "Return metadata (hasMore, nextOffset) so agents can request next page. Refs remain valid because refMap is built from the full snapshot before windowing. Include a hint line at truncation point: '[truncated — 120K chars total, showing 0-80K. Use snapshot --offset 80000 for next page]'"
+    },
+    {
+      "risk": "Google changes SERP DOM structure — extraction breaks silently returning empty results",
+      "affectedTasks": ["TASK-002", "TASK-004"],
+      "mitigation": "SERP extraction falls back to regular snapshot if zero results extracted. Log a warning so the agent knows the fast path failed. Selectors use multiple fallback patterns (h3, [data-header-feature], .g class)."
+    },
+    {
+      "risk": "Action context finalizeWriteContext calls handleSnapshot for delta/full — windowing would truncate the delta baseline",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "Action context path does NOT apply windowing. The full snapshot is always stored via setLastSnapshot. Windowing is only applied in the inspection.ts snapshot command path, not in action-context.ts."
+    },
+    {
+      "risk": "Images command on pages with hundreds of images returns very large output",
+      "affectedTasks": ["TASK-005"],
+      "mitigation": "Default limit of 100 images. Support --limit N flag. Support --selector to scope to a container. No inline base64 by default — only with --inline flag."
+    },
+    {
+      "risk": "SERP fast-path does not populate refMap — agent tries click @e3 after SERP snapshot and gets 'ref not found'",
+      "affectedTasks": ["TASK-004"],
+      "mitigation": "SERP output clearly states it's a fast-path extraction, not a ref-mapped snapshot. Hint: 'To interact with elements, run snapshot -i instead.' Agent can fall back to full snapshot when clicks are needed."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "applySnapshotWindow() truncates at 80K chars with metadata",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "applySnapshotWindow() preserves tail navigation links",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "applySnapshotWindow() returns full snapshot unchanged when under limit",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "applySnapshotWindow() offset-based pagination returns correct slice",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "extractGoogleSerp() returns structured results from Google SERP HTML",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "extractGoogleSerp() returns null on non-Google pages",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "extractGoogleSerp() falls back gracefully when selectors miss",
+      "coveringTask": "TASK-006",
+      "testType": "unit"
+    },
+    {
+      "codepath": "handleSnapshot with --offset flag returns paginated output",
+      "coveringTask": "TASK-006",
+      "testType": "integration"
+    },
+    {
+      "codepath": "snapshot on Google SERP page uses fast-path extraction",
+      "coveringTask": "TASK-006",
+      "testType": "integration"
+    },
+    {
+      "codepath": "images command returns image metadata from page",
+      "coveringTask": "TASK-006",
+      "testType": "integration"
+    },
+    {
+      "codepath": "images command with --limit flag caps output",
+      "coveringTask": "TASK-006",
+      "testType": "integration"
+    },
+    {
+      "codepath": "images command with @ref scoping extracts from container only",
+      "coveringTask": "TASK-006",
+      "testType": "integration"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Snapshot windowing module (src/browser/snapshot-window.ts)",
+      "description": "Create `src/browser/snapshot-window.ts` — a pure post-processing module that applies windowing to snapshot output strings.\n\nExport `applySnapshotWindow(text: string, opts?: WindowOpts): WindowResult` where:\n- `WindowOpts`: `{ maxChars?: number (default 80000), offset?: number (default 0), tailReserve?: number (default 5000) }`\n- `WindowResult`: `{ text: string, truncated: boolean, totalChars: number, hasMore: boolean, nextOffset: number | null }`\n\nLogic:\n1. If `text.length <= maxChars`, return unchanged with `truncated: false`\n2. Otherwise, find the last complete line boundary before `offset + maxChars - tailReserve`\n3. Extract tail section: scan backwards from end of `text` to find navigation/pagination-related lines (lines containing 'link', 'navigation', 'pagination', 'next', 'previous', 'page'). Reserve up to `tailReserve` chars for this tail.\n4. Compose: `head portion + '\\n[... truncated ...]\\n' + tail portion`\n5. Set `nextOffset = offset + headPortion.length`, `hasMore = nextOffset < totalChars`\n\nAlso export a `formatWindowMetadata(result: WindowResult): string` helper that returns a single metadata line like `[snapshot: 120000 chars, showing 0-80000, hasMore=true, nextOffset=80000]`.\n\nThis module is pure (no Playwright imports, no side effects). It operates on the rendered string output, not on the ARIA tree or ref map.\n\nUpdate `src/browser/index.ts` barrel exports to include `applySnapshotWindow` and `formatWindowMetadata`.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "applySnapshotWindow() returns unchanged text with truncated=false when input is under 80K chars",
+        "applySnapshotWindow() truncates at line boundary and includes tail navigation section when input exceeds 80K chars",
+        "WindowResult metadata (totalChars, hasMore, nextOffset) is accurate for pagination",
+        "Offset-based pagination: applySnapshotWindow(text, { offset: 80000 }) returns the next page of content",
+        "formatWindowMetadata() returns a single-line summary of truncation state"
+      ],
+      "filesToModify": ["src/browser/index.ts"],
+      "filesToCreate": ["src/browser/snapshot-window.ts"],
+      "writeScope": ["src/browser/snapshot-window.ts", "src/browser/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/snapshot-window.ts, revert src/browser/index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Google SERP extraction module (src/browser/serp.ts)",
+      "description": "Create `src/browser/serp.ts` — a module that extracts structured search results from Google SERP pages via DOM evaluation.\n\nExport `isGoogleSerp(url: string): boolean` — returns true if URL matches `google.com/search` or `google.XX/search` patterns.\n\nExport `extractGoogleSerp(page: Page): Promise<string | null>` — runs `page.evaluate()` to extract:\n1. Search results: each with title (from h3), URL (from a[href]), snippet (from .VwiC3b or adjacent span)\n2. 'People also ask' section: questions from expandable cards\n3. Pagination: next/previous page links\n4. Knowledge panel: if present, title and summary text\n\nFormat output as structured text:\n```\n[Google Search Results]\n\n1. Title of Result\n   https://example.com/page\n   Snippet text describing the result...\n\n2. Second Result\n   ...\n\n[People Also Ask]\n- Question one?\n- Question two?\n\n[Pagination]\nNext: page 2\n```\n\nReturn `null` if zero results extracted (triggers fallback to regular snapshot).\n\nUse multiple fallback selectors for each element since Google frequently changes class names. The evaluate function should try selectors in order: `.g h3`, `h3[data-header-feature]`, `div[data-sokoban] h3`.\n\nPort from camofox-browser server.js extractGoogleSerp (lines 1132-1268), adapting from Playwright-Python to Playwright-Node API (page.evaluate instead of page.query_selector_all).\n\nUpdate `src/browser/index.ts` barrel exports to include `isGoogleSerp` and `extractGoogleSerp`.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "isGoogleSerp() correctly identifies google.com/search, google.co.uk/search, google.de/search URLs",
+        "isGoogleSerp() returns false for non-Google URLs and google.com non-search pages",
+        "extractGoogleSerp() returns formatted text with numbered results including title, URL, snippet",
+        "extractGoogleSerp() returns null when no results are found (empty page, non-SERP page)",
+        "extractGoogleSerp() includes 'People also ask' section when present"
+      ],
+      "filesToModify": ["src/browser/index.ts"],
+      "filesToCreate": ["src/browser/serp.ts"],
+      "writeScope": ["src/browser/serp.ts", "src/browser/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/browser/serp.ts, revert src/browser/index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Wire snapshot windowing into snapshot command path",
+      "description": "Integrate the snapshot windowing module into the snapshot command path. CRITICAL: windowing must NOT be applied inside handleSnapshot() itself — it must be applied at the command-handler level only. finalizeWriteContext() (action-context.ts:397) calls handleSnapshot() for delta/full context; if windowing truncated the output there, it would corrupt context deltas and full snapshots for large pages.\n\n1. **Parse new args in parseSnapshotArgs** (`src/browser/snapshot.ts`):\n   - `--offset N`: start position for windowed output (default 0)\n   - `--max-chars N`: override default 80K limit\n   These produce new fields on `SnapshotOptions`: `offset?: number`, `maxChars?: number`.\n   handleSnapshot() returns the FULL snapshot text as before — no windowing inside.\n\n2. **Apply windowing at the command-handler level** (`src/commands/meta/inspection.ts`):\n   In the snapshot case, after calling `handleSnapshot(args, bm)`, apply `applySnapshotWindow(result, { offset: opts.offset, maxChars: opts.maxChars })` to the returned text. If truncated, append the metadata line. This is the ONLY place windowing is applied.\n   The full unwindowed snapshot is already stored by handleSnapshot via `bm.setLastSnapshot(rendered, args)` and `bm.setRefMap(refMap)` — those remain unaffected.\n\n3. **Action context path is explicitly safe**: finalizeWriteContext() calls handleSnapshot() directly and gets the full unwindowed text. No changes needed to action-context.ts. This is a hard invariant: action context must always see the complete snapshot for accurate delta computation.\n\n4. **Update MCP schema in registry.ts**: Add `offset` and `maxChars` optional parameters to the snapshot command's MCP inputSchema.\n\n5. **Also wire windowing in the MCP server path** (`src/mcp/server.ts`): The MCP server calls handleSnapshot and returns the result. Apply windowing after handleSnapshot returns, same as the inspection.ts path.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "snapshot command on a large page returns truncated output with metadata line when ARIA text exceeds 80K chars",
+        "snapshot --offset 80000 returns the next page of a large snapshot",
+        "bm.getLastSnapshot() always returns the FULL unwindowed snapshot text (for delta comparison)",
+        "bm.getRefMap() contains ALL refs from the full snapshot (not just the windowed portion)",
+        "Action context (finalizeWriteContext → handleSnapshot) always receives full unwindowed snapshot — verified by checking that handleSnapshot() never calls applySnapshotWindow()"
+      ],
+      "filesToModify": ["src/browser/snapshot.ts", "src/commands/meta/inspection.ts", "src/mcp/server.ts", "src/automation/registry.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/browser/snapshot.ts", "src/commands/meta/inspection.ts", "src/mcp/server.ts", "src/automation/registry.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert snapshot.ts and registry.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Wire SERP fast-path into snapshot handler",
+      "description": "Integrate the Google SERP extraction module into the snapshot command path in `src/commands/meta/inspection.ts`.\n\nSAFETY: The SERP fast-path is OPT-IN only (default OFF). It activates when (a) `--serp` flag is passed in snapshot args, OR (b) `BROWSE_SERP_FASTPATH=1` env var is set. Without either, snapshot on Google pages uses the standard ARIA snapshot with refs — preserving backward compatibility. This prevents agents from receiving unexpected output format changes.\n\nIn `handleInspectionCommand` case `'snapshot'` (line 48-49), before calling `handleSnapshot(args, bm)`:\n1. Check if SERP fast-path is enabled: args contain `--serp` OR `BROWSE_SERP_FASTPATH === '1'`\n2. If enabled, get current page URL: `bm.getPage().url()`\n3. Call `isGoogleSerp(url)`\n4. If true AND no special flags that require refs (check: args don't contain `-C`, `--offset`), call `extractGoogleSerp(bm.getPage())`\n5. If extraction returns non-null, return `'[Google SERP fast-path]\\n' + result`\n6. If extraction returns null (failed) or SERP not enabled, fall through to regular `handleSnapshot(args, bm)`\n\nThe SERP fast-path skips ref-map building entirely. The output clearly marks itself as `[Google SERP fast-path]` so agents know they can't use @refs.\n\nAdd `BROWSE_SERP_FASTPATH` to src/constants.ts DEFAULTS (default '0').\n\nUpdate the MCP schema for snapshot in `src/automation/registry.ts` to document the SERP fast-path and add the `serp` boolean parameter.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "snapshot on Google WITHOUT --serp flag uses standard ARIA snapshot with refs (backward compatible, default)",
+        "snapshot --serp on a Google search page returns SERP fast-path output prefixed with '[Google SERP fast-path]'",
+        "BROWSE_SERP_FASTPATH=1 enables SERP fast-path without --serp flag",
+        "Failed SERP extraction falls back to regular snapshot silently",
+        "SERP fast-path is NOT triggered during action-context delta/full (those call handleSnapshot directly, not handleInspectionCommand)"
+      ],
+      "filesToModify": ["src/commands/meta/inspection.ts", "src/browser/snapshot.ts", "src/automation/registry.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/meta/inspection.ts", "src/browser/snapshot.ts", "src/automation/registry.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert inspection.ts, snapshot.ts, registry.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Add images read command (src/commands/read.ts + registry)",
+      "description": "Add a new `images` read command that lists `<img>` elements on the page with metadata.\n\n1. **Register in `src/automation/registry.ts`**: Add a new read command registration using the `r()` helper:\n   ```\n   r('images', 'List page images with metadata', { usage: '[sel] [--limit N] [--inline]', safeToRetry: true, pageContent: true, mcp: { ... } })\n   ```\n   MCP schema: optional `selector` (scope to container), optional `limit` (number, default 100), optional `inline` (boolean, include base64 data).\n\n2. **Implement in `src/commands/read.ts`**: Add a case `'images'` to the `handleReadCommand` switch.\n   - Parse args: optional selector (first non-flag arg or @ref), `--limit N`, `--inline`\n   - If selector provided, use `bm.resolveRef()` for @ref support, then scope query to that container\n   - Run `page.evaluate()` to extract all `<img>` elements within scope: `{ src, alt, width, height, naturalWidth, naturalHeight, loading }`\n   - Filter out images with empty src, data:image placeholders under 100 bytes, and tracking pixels (1x1)\n   - Apply limit (default 100)\n   - Format: one line per image — `src | alt | WxH [naturalWxH]`\n   - With `--inline`: include base64 encoded src as additional field (only for same-origin or CORS-enabled images)\n   - Return formatted string\n\n3. **Update read command help** in CLI if applicable.\n\nFollow the pattern of the `links` command (line 72-78 in read.ts) for DOM evaluation, and the `count` command for @ref selector resolution.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse images returns list of page images with src, alt, and dimensions",
+        "browse images --limit 5 caps output to 5 images",
+        "browse images <selector> scopes extraction to elements within container",
+        "browse images @e3 resolves @ref and scopes to that container",
+        "Tracking pixels (1x1) and empty-src images are filtered out",
+        "images command is registered in registry as a read command with MCP schema"
+      ],
+      "filesToModify": ["src/commands/read.ts", "src/automation/registry.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/read.ts", "src/automation/registry.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert read.ts and registry.ts changes",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Tests for snapshot windowing, SERP extraction, images command",
+      "description": "Add comprehensive tests for all Phase 3 features.\n\n1. **Snapshot windowing unit tests** (new describe block in `test/snapshot.test.ts`):\n   - `applySnapshotWindow()` returns unchanged when input < 80K chars\n   - `applySnapshotWindow()` truncates at line boundary when input > 80K chars\n   - Truncated output includes tail navigation links\n   - WindowResult metadata is accurate (totalChars, hasMore, nextOffset)\n   - Offset pagination: second page starts where first page ended\n   - `formatWindowMetadata()` produces correct summary line\n   - Edge case: input exactly at 80K boundary\n   - Edge case: no navigation links in tail\n\n2. **SERP extraction unit tests** (new describe block in `test/snapshot.test.ts`):\n   - `isGoogleSerp()` returns true for google.com/search, google.co.uk/search\n   - `isGoogleSerp()` returns false for google.com/maps, google.com, bing.com/search\n   - `extractGoogleSerp()` with mock SERP HTML fixture returns structured results\n   - `extractGoogleSerp()` returns null on non-SERP page\n\n3. **Snapshot windowing integration test** (in `test/snapshot.test.ts`):\n   - Create a test fixture with a very long page (>80K chars of accessible content)\n   - Run snapshot → verify truncation metadata\n   - Run snapshot --offset N → verify pagination continues correctly\n   - Verify refs from windowed snapshot are still clickable\n\n4. **SERP integration test** (in `test/snapshot.test.ts`):\n   - Create a test fixture that mimics Google SERP DOM structure\n   - Navigate to fixture → run snapshot → verify SERP fast-path activates\n   - Verify --no-serp flag bypasses fast-path\n\n5. **Images command integration tests** (in `test/commands.test.ts`):\n   - Create a test fixture with multiple <img> elements (various sizes, alts, src types)\n   - `images` returns all non-tracking images\n   - `images --limit 2` returns only 2\n   - `images <container-selector>` scopes correctly\n   - 1x1 tracking pixels are filtered\n   - Images with empty src are filtered\n\n6. **Test fixtures** (in `test/fixtures/`):\n   - `large-snapshot.html` — page with >80K chars of accessible content (repeated sections)\n   - `google-serp.html` — static mock of Google SERP DOM structure\n   - `images.html` — page with variety of images (normal, 1x1 pixel, no src, large)\n\nRegister new fixtures in `test/test-server.ts`.",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004", "TASK-005"],
+      "acceptanceCriteria": [
+        "All unit tests for applySnapshotWindow() pass including edge cases",
+        "All unit tests for isGoogleSerp() and extractGoogleSerp() pass",
+        "Integration test confirms snapshot windowing truncates large pages and pagination works",
+        "Integration test confirms SERP fast-path activates on Google SERP fixture",
+        "Integration test confirms images command extracts correct metadata from fixture",
+        "All existing snapshot tests continue to pass (no regression)"
+      ],
+      "filesToModify": ["test/snapshot.test.ts", "test/commands.test.ts", "test/test-server.ts"],
+      "filesToCreate": ["test/fixtures/large-snapshot.html", "test/fixtures/google-serp.html", "test/fixtures/images.html"],
+      "writeScope": ["test/snapshot.test.ts", "test/commands.test.ts", "test/test-server.ts", "test/fixtures/large-snapshot.html", "test/fixtures/google-serp.html", "test/fixtures/images.html"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Revert test file changes, delete new fixture files",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 6,
+    "layerCount": 3,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002", "TASK-005"] },
+      { "layer": 1, "tasks": ["TASK-003", "TASK-004"] },
+      { "layer": 2, "tasks": ["TASK-006"] }
+    ],
+    "criticalPath": ["TASK-001", "TASK-003", "TASK-006"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-001"],
+    "TASK-004": ["TASK-002"],
+    "TASK-005": [],
+    "TASK-006": ["TASK-003", "TASK-004", "TASK-005"]
+  },
+  "linkedPlans": [
+    "phase1-camoufox-runtime",
+    "phase2-real-web-browsing-quality",
+    "phase4-proxy-pool",
+    "phase5-concurrency-lifecycle",
+    "phase6-new-commands"
+  ]
+}

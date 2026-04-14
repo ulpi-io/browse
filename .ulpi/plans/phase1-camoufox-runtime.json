@@ -1,0 +1,296 @@
+{
+  "title": "Phase 1: Camoufox Runtime",
+  "branch": "feat/camoufox-runtime",
+  "mode": "EXPANSION",
+  "overview": "Add Camoufox (anti-detection Firefox fork) as a new browser runtime in browse_cli's pluggable engine system. This gives all 99 browse commands C++ fingerprint spoofing — navigator, canvas, WebGL, WebRTC, audio, fonts, screen, timezone, media devices, geolocation, speech voices, per-context identity, humanized cursor, and virtual display — by adding camoufox-js as a dependency and registering it alongside playwright, rebrowser, lightpanda, and chrome in the runtime registry. Phase 1 of 6 in the camoufox integration roadmap.",
+  "scopeChallenge": "The runtime registry (src/engine/resolver.ts) already supports 4 pluggable runtimes via a lazy-loaded registry pattern. Camoufox fits this pattern exactly: camoufox-js provides launchOptions() that returns Playwright-compatible Firefox launch config. The BrowserRuntime.chromium field accepts any Playwright BrowserType including firefox. Two integration issues: (1) BrowserManager.launchPersistent() hardcodes chromium.launchPersistentContext() — profile mode won't work with camoufox without passing the runtime's BrowserType through, (2) CLI help text and error messages hardcode 'playwright|rebrowser|lightpanda' — need updating. Doctor command needs a camoufox check. Build needs --external camoufox-js. Tests need camoufox in AVAILABLE_RUNTIMES. CDP mode (--cdp) is incompatible with Firefox — needs graceful error.",
+  "prerequisites": [
+    {
+      "assumption": "Runtime registry pattern exists in src/engine/resolver.ts with BrowserRuntime interface",
+      "status": "already-true",
+      "verification": "src/engine/resolver.ts:20 — BrowserRuntime interface, line 58 — registry Record<string, RuntimeLoader>"
+    },
+    {
+      "assumption": "camoufox-js npm package (v0.9.3) provides launchOptions() and Camoufox class",
+      "status": "external",
+      "verification": "npm view camoufox-js — published, exports launchOptions, Camoufox"
+    },
+    {
+      "assumption": "Playwright ariaSnapshot() works on Firefox (used by browse snapshot)",
+      "status": "already-true",
+      "verification": "Playwright docs confirm ariaSnapshot is browser-agnostic; camofox-browser uses it on Firefox successfully"
+    },
+    {
+      "assumption": "esbuild build pipeline supports --external flags for optional deps",
+      "status": "already-true",
+      "verification": "package.json:56 — build script already uses --external:playwright --external:playwright-core etc."
+    }
+  ],
+  "nonGoals": [
+    "Proxy pool rotation (Phase 4)",
+    "Consent dialog auto-dismiss (Phase 2)",
+    "Search macros (Phase 2)",
+    "Google block detection (Phase 2)",
+    "Snapshot windowing (Phase 3)",
+    "Prometheus metrics (skipped)",
+    "Fly.io deployment (skipped)",
+    "Per-context fingerprint rotation via browse commands (comes free with camoufox-js, no CLI exposure needed yet)"
+  ],
+  "contracts": [
+    {
+      "boundary": "Runtime registry → server.ts",
+      "producer": "resolver.ts getRuntime('camoufox')",
+      "consumer": "server.ts start() — line 466-538",
+      "shape": "BrowserRuntime { name: 'camoufox', chromium: firefox (BrowserType), browser?: Browser, close?: () => Promise<void> }",
+      "consistencyRule": "If runtime.browser is set, server uses it directly; otherwise calls runtime.chromium.launch(launchOptions). Camoufox returns pre-connected browser via firefox.launch(opts)."
+    },
+    {
+      "boundary": "CLI → server spawn",
+      "producer": "cli.ts — --runtime flag parsing",
+      "consumer": "server.ts — process.env.BROWSE_RUNTIME",
+      "shape": "BROWSE_RUNTIME='camoufox' in spawn env",
+      "consistencyRule": "CLI validates runtime name exists in AVAILABLE_RUNTIMES before spawning. Error message lists all available runtimes."
+    },
+    {
+      "boundary": "Doctor → camoufox availability",
+      "producer": "system.ts doctor command",
+      "consumer": "User running browse doctor",
+      "shape": "Text line: 'Camoufox: installed (v0.9.3)' or 'Camoufox: NOT INSTALLED — run npm install camoufox-js'",
+      "consistencyRule": "Doctor checks camoufox-js importability and binary availability via camoufox-js fetch status. Does not require camoufox to be the active runtime."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Runtime registration pattern",
+      "existingCode": "src/engine/resolver.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "CLI flag parsing for --runtime",
+      "existingCode": "src/cli.ts:670-681",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Doctor command diagnostics",
+      "existingCode": "src/commands/meta/system.ts:131-210",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Runtime test patterns",
+      "existingCode": "test/features.test.ts:1219-1267",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Build --external flags",
+      "existingCode": "package.json:56",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Camoufox launch config generation",
+      "existingCode": "camoufox-js npm package",
+      "source": "external",
+      "action": "reuse"
+    },
+    {
+      "subProblem": "Profile mode persistent context",
+      "existingCode": "src/browser/manager.ts:239-265",
+      "source": "local",
+      "action": "extend"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "camoufox-js postinstall downloads ~300MB Camoufox binary — may fail in CI or low-disk environments",
+      "affectedTasks": ["TASK-001"],
+      "mitigation": "Install as optionalDependency. Runtime loader catches import failure and throws clear install instructions (same pattern as rebrowser)."
+    },
+    {
+      "risk": "Firefox ariaSnapshot format differs from Chromium — snapshot refs may break",
+      "affectedTasks": ["TASK-005"],
+      "mitigation": "Integration test runs goto + snapshot + click on camoufox runtime. If format differs, snapshot.ts parser already handles YAML-like format agnostically."
+    },
+    {
+      "risk": "User tries --cdp with camoufox — Firefox doesn't support CDP natively",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "Server.ts checks runtime name before CDP connection. Clear error: 'Camoufox (Firefox) does not support CDP. Remove --cdp flag or use --runtime playwright.'"
+    },
+    {
+      "risk": "Profile mode calls chromium.launchPersistentContext — fails with camoufox runtime",
+      "affectedTasks": ["TASK-003"],
+      "mitigation": "BrowserManager.launchPersistent() currently hardcodes chromium import. Needs to accept a BrowserType parameter or read from runtime. Covered in TASK-003."
+    },
+    {
+      "risk": "Camoufox binary not available on all platforms (e.g. aarch64 Linux)",
+      "affectedTasks": ["TASK-004"],
+      "mitigation": "Doctor command reports binary availability. Runtime loader error message includes platform-specific install guidance."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "getRuntime('camoufox') returns valid BrowserRuntime",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "AVAILABLE_RUNTIMES includes 'camoufox'",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "camoufox-js not installed → clear error with install instructions",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "CDP mode + camoufox → graceful error",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "browse doctor shows camoufox status",
+      "coveringTask": "TASK-005",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Full browsing flow: goto → snapshot → click → text on camoufox runtime",
+      "coveringTask": "TASK-005",
+      "testType": "integration"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Add camoufox-js dependency and build config",
+      "description": "Install camoufox-js as an optionalDependency in package.json (same category as rebrowser-playwright — not required for default operation). Add --external:camoufox-js to the esbuild build script so the optional dep is not bundled into dist/browse.cjs. This mirrors how playwright and playwright-core are handled.\n\nFiles:\n- `package.json` — add camoufox-js to optionalDependencies, add --external:camoufox-js to build script\n\nThe optionalDependency pattern means npm install won't fail if camoufox-js can't download its binary (e.g. unsupported platform). The runtime loader (TASK-002) catches the import failure gracefully.",
+      "type": "infra",
+      "effort": "S",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "camoufox-js appears in package.json optionalDependencies",
+        "Build script (npm run build) includes --external:camoufox-js and completes without error",
+        "npm install succeeds even if camoufox-js binary download fails (optionalDependency graceful failure)"
+      ],
+      "filesToModify": ["package.json"],
+      "filesToCreate": [],
+      "writeScope": ["package.json"],
+      "validateCommand": "npm run build && node -e \"const pkg = require('./package.json'); if (!pkg.optionalDependencies?.['camoufox-js']) throw 'missing'\"",
+      "rollbackPlan": "Revert package.json changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Register camoufox runtime in engine resolver",
+      "description": "Add a 'camoufox' entry to the registry in src/engine/resolver.ts. The loader:\n1. Dynamically imports camoufox-js (catches ImportError → throws 'camoufox-js not installed. Run: npm install camoufox-js')\n2. Calls launchOptions({ headless: true, humanize: true, enable_cache: true }) to get Playwright-compatible Firefox launch config\n3. Dynamically imports playwright-core's firefox BrowserType\n4. Returns { name: 'camoufox', chromium: firefox } — note: 'chromium' field is misnamed but accepts any BrowserType\n5. Does NOT pre-launch the browser (server.ts handles launch via runtime.chromium.launch(opts))\n\nAlso add a findCamoufox() helper (exported, like findLightpanda()) that checks if camoufox-js is importable and its binary is available.\n\nUpdate the barrel export in src/engine/index.ts to export findCamoufox.\n\nPattern to follow: the rebrowser loader (line 64-72) for import-failure handling; the lightpanda loader for process-runtime complexity reference (camoufox is simpler — it's a library runtime like playwright).\n\nKey difference from lightpanda: camoufox is a library runtime, not a process runtime. It returns a BrowserType (firefox), and server.ts calls .launch() on it. The launchOptions() from camoufox-js provides the args/env needed for anti-detection.\n\nThe server.ts launch path (line 525-538) calls runtime.chromium.launch(launchOptions). For camoufox, the runtime must merge server's launchOptions (headless, proxy) with camoufox-js's launchOptions (args, env). Store the camoufox launch options on the runtime object so server.ts can merge them.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "getRuntime('camoufox') returns BrowserRuntime with name='camoufox' and a valid BrowserType",
+        "AVAILABLE_RUNTIMES array includes 'camoufox'",
+        "When camoufox-js is not installed, getRuntime('camoufox') throws error containing 'camoufox-js not installed' and install command"
+      ],
+      "filesToModify": ["src/engine/resolver.ts", "src/engine/index.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/engine/resolver.ts", "src/engine/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert resolver.ts and index.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Wire camoufox runtime through server and CLI",
+      "description": "Update the server, CLI, target factory, and BrowserManager to handle the camoufox runtime correctly:\n\n1. **server.ts (line 525-538)**: When runtime.name is 'camoufox', merge camoufox-js launchOptions with server's launchOptions (headless flag, proxy). The camoufox runtime stores its options object; server.ts spreads them into the launch call. Specifically: merge args arrays, merge env objects, preserve camoufox's firefoxUserPrefs.\n\n2. **server.ts CDP guard (line 512-516)**: Before connecting via CDP, check if runtime.name is 'camoufox'. If so, throw: 'Camoufox (Firefox) does not support Chrome DevTools Protocol. Remove --cdp or use --runtime playwright.'\n\n3. **server.ts profile mode (line 474-499)**: Currently calls `createPersistentBrowserTarget(profileDir, onCrash)`. Update to pass the runtime's BrowserType: `createPersistentBrowserTarget(profileDir, onCrash, runtime.chromium)`.\n\n4. **src/session/target-factory.ts (line 50-66)**: `createPersistentBrowserTarget()` currently only accepts `(profileDir, onCrash)` and calls `bm.launchPersistent(profileDir, onCrash)`. Add an optional third parameter `browserType?: BrowserType` and pass it through to `bm.launchPersistent(profileDir, onCrash, browserType)`. This is the critical path — without this change, the runtime's BrowserType never reaches the persistent launch.\n\n5. **BrowserManager.launchPersistent (line 239-265)**: This method hardcodes `chromium.launchPersistentContext()`. Add an optional `browserType` parameter. When provided, use it instead of hardcoded `chromium`. Default to `chromium` import for backward compatibility.\n\n6. **cli.ts (line 676)**: Update the error message for --runtime to include camoufox in the list.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "BROWSE_RUNTIME=camoufox browse goto https://example.com works end-to-end (server launches Firefox via camoufox-js)",
+        "BROWSE_RUNTIME=camoufox with --cdp flag produces clear error about Firefox CDP incompatibility",
+        "Profile mode (--profile test) with BROWSE_RUNTIME=camoufox uses firefox.launchPersistentContext — verified by checking that createPersistentBrowserTarget receives and threads the runtime BrowserType through to BrowserManager.launchPersistent"
+      ],
+      "filesToModify": ["src/server.ts", "src/cli.ts", "src/browser/manager.ts", "src/session/target-factory.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/server.ts", "src/cli.ts", "src/browser/manager.ts", "src/session/target-factory.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert server.ts, cli.ts, manager.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Add camoufox to doctor command diagnostics",
+      "description": "Extend the doctor command in src/commands/meta/system.ts (line 131+) to check camoufox availability. Add a section after the Playwright/Chromium checks:\n\n1. Try dynamic import of camoufox-js\n2. If importable, report version and binary status (camoufox-js provides a way to check if the binary is downloaded)\n3. If not importable, report 'Camoufox: NOT INSTALLED — run npm install camoufox-js (optional — for anti-detection browsing)'\n4. Mark it clearly as optional (unlike Playwright which is required)\n\nFollow the existing pattern: try/catch import, report status line. The doctor command runs server-side (it's a meta command dispatched through the server), so dynamic import works.",
+      "type": "feature",
+      "effort": "S",
+      "priority": "P2",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "browse doctor output includes a 'Camoufox:' line showing installed/not-installed status",
+        "When camoufox-js is installed, doctor shows version number",
+        "When camoufox-js is NOT installed, doctor shows install command and marks it as optional"
+      ],
+      "filesToModify": ["src/commands/meta/system.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/commands/meta/system.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert system.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "none"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Add camoufox runtime tests",
+      "description": "Extend the test suite in test/features.test.ts to cover the camoufox runtime:\n\n1. **Unit tests** (in the existing 'Runtime resolver' describe block, line 1215+):\n   - AVAILABLE_RUNTIMES includes 'camoufox'\n   - findCamoufox() returns null or valid status\n   - getRuntime('camoufox') either succeeds (if installed) or throws with 'camoufox-js not installed'\n\n2. **Integration test** (new describe block 'Camoufox runtime integration'):\n   - Skip if camoufox-js not installed (use test.skipIf pattern)\n   - Launch camoufox runtime, navigate to test server, verify page loads\n   - Run snapshot command, verify @refs are generated\n   - Run click on a ref, verify page state changes\n   - Run text command, verify visible text extraction\n   - Close runtime cleanly\n\n3. **CLI flag test** (extend '--runtime CLI flag' describe block, line 1249+):\n   - AVAILABLE_RUNTIMES includes 'camoufox'\n\nFollow existing test patterns: use the shared test server (test/test-server.ts), BrowserManager for integration tests. For the integration test, use the runtime system (getRuntime + launch) instead of BrowserManager.launch() since that hardcodes chromium.",
+      "type": "test",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "All new tests pass when camoufox-js IS installed: npm test shows camoufox tests passing",
+        "All new tests are skipped gracefully when camoufox-js is NOT installed (no failures, just skips)",
+        "Integration test covers goto → snapshot → click → text flow on camoufox runtime against real test server"
+      ],
+      "filesToModify": ["test/features.test.ts"],
+      "filesToCreate": [],
+      "writeScope": ["test/features.test.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Revert test/features.test.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 5,
+    "layerCount": 3,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002", "TASK-004"] },
+      { "layer": 1, "tasks": ["TASK-003", "TASK-005"] },
+      { "layer": 2, "tasks": [] }
+    ],
+    "criticalPath": ["TASK-002", "TASK-003"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-002"],
+    "TASK-004": [],
+    "TASK-005": ["TASK-002"]
+  },
+  "linkedPlans": [
+    "phase2-real-web-browsing-quality",
+    "phase3-snapshot-large-pages",
+    "phase4-proxy-pool",
+    "phase5-concurrency-lifecycle",
+    "phase6-new-commands"
+  ]
+}

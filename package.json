@@ -1,6 +1,6 @@
 {
   "name": "@ulpi/browse",
-  "version": "2.3.4",
+  "version": "2.4.0",
   "homepage": "https://browse.ulpi.io",
   "repository": {
     "type": "git",
@@ -9,12 +9,28 @@
   "dependencies": {
     "@lightpanda/browser": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@ulpi/browse": "^0.3.0",
     "better-sqlite3": "^11.0.0",
     "diff": "^7.0.0",
     "playwright": "^1.58.2",
     "playwright-core": "^1.58.2",
     "yaml": "^2.8.3"
+  },
+  "main": "dist/lib.mjs",
+  "types": "dist/types/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/lib.d.ts",
+      "import": "./dist/lib.mjs",
+      "default": "./dist/lib.mjs"
+    },
+    "./cli": {
+      "default": "./dist/browse.cjs"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "*": ["dist/types/lib.d.ts"]
+    }
   },
   "bin": {
     "browse": "bin/browse"
@@ -53,7 +69,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --external:@modelcontextprotocol/sdk --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
+    "build:cli": "esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node18 --outfile=dist/browse.cjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --external:@modelcontextprotocol/sdk --external:camoufox-js --banner:js='#!/usr/bin/env node\nconst __import_meta_url = require(\"url\").pathToFileURL(__filename).href;' --define:import.meta.url=__import_meta_url",
+    "build:lib": "esbuild src/lib.ts --bundle --format=esm --platform=node --target=node18 --outfile=dist/lib.mjs --external:playwright --external:playwright-core --external:better-sqlite3 --external:electron --external:chromium-bidi --external:@modelcontextprotocol/sdk --external:camoufox-js && tsc --emitDeclarationOnly --declaration --outDir dist/types",
+    "build": "npm run build:cli && npm run build:lib",
     "build:all": "bash scripts/build-all.sh",
     "dev": "tsx src/cli.ts",
     "server": "tsx src/server.ts",
@@ -73,6 +91,7 @@
     "vitest": "^3.0.0"
   },
   "optionalDependencies": {
+    "camoufox-js": "^0.9.3",
     "rebrowser-playwright": "^1.52.0"
   }
 }

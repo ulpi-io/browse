@@ -36,11 +36,13 @@ const AUTH_COMMANDS = new Set(['auth', 'cookie-import']);
 
 const SYSTEM_COMMANDS = new Set(['status', 'url', 'stop', 'restart', 'chain', 'doctor', 'upgrade']);
 
-const PROFILE_COMMANDS = new Set(['profile', 'react-devtools', 'provider']);
+const PROFILE_COMMANDS = new Set(['profile', 'react-devtools', 'provider', 'profiles']);
 
 const WORKFLOW_COMMANDS = new Set(['flow', 'retry', 'watch']);
 
 const SIM_COMMANDS = new Set(['sim']);
+
+const YOUTUBE_COMMANDS = new Set(['youtube-transcript']);
 
 export async function handleMetaCommand(
   command: string,
@@ -94,6 +96,13 @@ export async function handleMetaCommand(
 
   if (SIM_COMMANDS.has(command)) {
     return handleSimCommand(command, args, bm(), shutdown, sessionManager, currentSession);
+  }
+
+  if (YOUTUBE_COMMANDS.has(command)) {
+    const { handleYoutubeTranscript } = await import('./youtube');
+    // Thread proxy URL for yt-dlp — read from env (same source as server proxy config)
+    const effectiveProxy = process.env.BROWSE_PROXY || undefined;
+    return handleYoutubeTranscript(args, bm(), effectiveProxy);
   }
 
   throw new Error(`Unknown meta command: ${command}`);

@@ -7,7 +7,7 @@
  *   We do NOT try to self-heal — don't hide failure.
  */
 
-import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type BrowserType, type Page, type Locator, type Frame, type FrameLocator, type Request as PlaywrightRequest } from 'playwright';
 import { SessionBuffers, type NetworkEntry } from '../network/buffers';
 import type { HarRecording } from '../network/har';
 import type { DomainFilter } from '../security/domain-filter';
@@ -147,6 +147,9 @@ export class BrowserManager implements BrowserTarget {
   // Whether this instance uses a persistent browser context (profile mode)
   private isPersistent = false;
 
+  // ─── Per-context proxy (survives context recreation) ────
+  private contextProxy: { server: string; username?: string; password?: string } | null = null;
+
   // ─── Handoff state ──────────────────────────────────────
   private isHeaded = false;
   private consecutiveFailures = 0;
@@ -198,15 +201,25 @@ export class BrowserManager implements BrowserTarget {
    * Creates a new BrowserContext on the shared browser.
    * This instance does NOT own the browser — close() only closes the context.
    */
-  async launchWithBrowser(browser: Browser, reuseContext = false) {
+  async launchWithBrowser(
+    browser: Browser,
+    reuseContext = false,
+    contextOptions?: { proxy?: { server: string; username?: string; password?: string } },
+  ) {
     this.browser = browser;
     this.ownsBrowser = false;
+
+    // Store proxy for context recreation (emulateDevice, applyUserAgent)
+    if (contextOptions?.proxy) {
+      this.contextProxy = contextOptions.proxy;
+    }
 
     if (reuseContext) {
       // CDP-connected Chrome: use the existing default context (has user's cookies, extensions)
       const contexts = browser.contexts();
       this.context = contexts[0] || await browser.newContext({
         viewport: { width: 1920, height: 1080 },
+        ...(this.contextProxy ? { proxy: this.contextProxy } : {}),
       });
       await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
       await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
@@ -222,6 +235,7 @@ export class BrowserManager implements BrowserTarget {
       this.context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
         ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+        ...(this.contextProxy ? { proxy: this.contextProxy } : {}),
       });
       await this.context.addInitScript(ESBUILD_KEEPNAMES_POLYFILL);
       await this.context.addInitScript(MUTATION_OBSERVER_SCRIPT);
@@ -236,24 +250,30 @@ export class BrowserManager implements BrowserTarget {
    * Data (cookies, localStorage, cache) persists across restarts.
    * The context IS the browser — closing it closes everything.
    */
-  async launchPersistent(profileDir: string, onCrash?: () => void) {
+  async launchPersistent(profileDir: string, onCrash?: () => void, browserType?: BrowserType, extraLaunchOptions?: Record<string, unknown>) {
+    const launcher = browserType ?? chromium;
+    // Merge runtime-specific launch options (e.g. camoufox args/env/firefoxUserPrefs)
+    const runtimeOpts = extraLaunchOptions ?? {};
+    const baseOpts = {
+      ...runtimeOpts,
+      headless: process.env.BROWSE_HEADED !== '1',
+      viewport: { width: 1920, height: 1080 },
+      ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
+      // Concatenate args arrays from both sources
+      args: [...(Array.isArray(runtimeOpts.args) ? runtimeOpts.args as string[] : [])],
+      // Merge env objects (ours take precedence)
+      ...(runtimeOpts.env ? { env: { ...(runtimeOpts.env as Record<string, string>) } } : {}),
+    };
     let context: BrowserContext;
     try {
-      context = await chromium.launchPersistentContext(profileDir, {
-        headless: process.env.BROWSE_HEADED !== '1',
-        viewport: { width: 1920, height: 1080 },
-        ...(this.customUserAgent ? { userAgent: this.customUserAgent } : {}),
-      });
+      context = await launcher.launchPersistentContext(profileDir, baseOpts);
     } catch (err: any) {
       // Profile might be corrupted — delete and retry once
       if (err.message?.includes('Failed to launch') || err.message?.includes('Target closed')) {
         const fs = await import('fs');
         console.error(`[browse] Profile directory corrupted, recreating: ${profileDir}`);
         fs.rmSync(profileDir, { recursive: true, force: true });
-        context = await chromium.launchPersistentContext(profileDir, {
-          headless: process.env.BROWSE_HEADED !== '1',
-          viewport: { width: 1920, height: 1080 },
-        });
+        context = await launcher.launchPersistentContext(profileDir, baseOpts);
       } else {
         throw err;
       }
@@ -880,6 +900,11 @@ export class BrowserManager implements BrowserTarget {
 
     // Coverage cannot survive context recreation — reset the flag
     this.coverageActive = false;
+
+    // Preserve proxy across context recreation (emulateDevice, applyUserAgent, etc.)
+    if (this.contextProxy && !contextOptions.proxy) {
+      contextOptions = { ...contextOptions, proxy: this.contextProxy };
+    }
 
     // Auto-inject recordVideo when video recording is active (so emulateDevice/applyUserAgent pass it through)
     if (this.videoRecording && !contextOptions.recordVideo) {

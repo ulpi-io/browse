@@ -153,15 +153,41 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Buffer index (e.g. "3") or URL pattern (e.g. "/api/cart").' } }, required: ['query'] },
     argDecode: (p) => [String(p.query)],
   } }),
+  r('images',         'List page images with src, alt, and dimensions',   { usage: '[selector] [--limit N] [--inline]', safeToRetry: true, pageContent: true, mcp: {
+    description: 'List <img> elements on the page with src, alt text, and dimensions. Optional selector to scope. --limit N caps results (default 100). --inline includes base64 data URL for same-origin images.',
+    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to scope image search' }, limit: { type: 'number', description: 'Maximum images to return (default 100)' }, inline: { type: 'boolean', description: 'Include base64 data URLs for same-origin images' } } },
+    argDecode: (p: Record<string, unknown>) => {
+      const args: string[] = [];
+      if (p.selector) args.push(String(p.selector));
+      if (p.limit) args.push('--limit', String(p.limit));
+      if (p.inline) args.push('--inline');
+      return args;
+    },
+  } }),
+  r('schema',         'Extract JSON-LD, Microdata, RDFa structured data', { safeToRetry: true, pageContent: true, mcp: {
+    description: 'Extract structured data from the current page: JSON-LD scripts, Microdata items, and RDFa. Returns parsed JSON. Use for SEO audits and data extraction.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
+  r('meta',           'Extract page meta tags (title, description, OG, canonical)', { safeToRetry: true, pageContent: true, mcp: {
+    description: 'Extract meta information from the current page: title, description, canonical URL, Open Graph tags, Twitter cards, hreflang, robots, and viewport. Returns structured text.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
+  r('headings',       'Extract H1-H6 heading hierarchy',                 { safeToRetry: true, pageContent: true, mcp: {
+    description: 'Extract all headings (H1-H6) from the current page as an indented hierarchy with counts. Use for content structure analysis and SEO audits.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
 ]);
 
 // ─── Write Commands ──────────────────────────────────────────────
 
 registry.registerAll([
-  w('goto',            'Navigate to URL',                                   { usage: '<url>', mcp: {
-    description: 'Navigate to a URL. Waits for DOMContentLoaded. Returns the HTTP status code. This is the primary way to open web pages. May include a [context] line showing state changes after the action.',
-    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'The URL to navigate to (e.g. "https://example.com").' } }, required: ['url'] },
-    argDecode: (p) => [String(p.url)],
+  w('goto',            'Navigate to URL',                                   { usage: '<url> [--ready]', mcp: {
+    description: 'Navigate to a URL. Waits for DOMContentLoaded. Returns the HTTP status code. Supports search macros: @google, @youtube, @amazon, etc. Use --ready to wait for network idle + hydration after navigation. May include a [context] line showing state changes after the action.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'The URL to navigate to (e.g. "https://example.com") or a search macro (e.g. "@google best coffee").' }, ready: { type: 'boolean', description: 'Wait for network idle and page hydration after navigation. Adds ~100-2000ms latency but ensures JS frameworks have finished rendering.' } }, required: ['url'] },
+    argDecode: (p) => { const args = [String(p.url)]; if (p.ready) args.push('--ready'); return args; },
   } }),
   w('back',            'Browser back',                                      { mcp: {
     description: 'Navigate back in browser history (like clicking the back button). Returns the new URL. May include a [context] line showing state changes after the action.',
@@ -409,12 +435,13 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref to highlight.' } }, required: ['selector'] },
     argDecode: (p) => [String(p.selector)],
   } }),
-  w('download',        'Download file by clicking element',                 { usage: '<sel> [path]', mcp: {
-    description: 'Click an element that triggers a download and save the file. Returns the saved file path.',
-    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the download trigger element.' }, path: { type: 'string', description: 'File path to save the download to (defaults to suggested filename).' } }, required: ['selector'] },
+  w('download',        'Download file by clicking element',                 { usage: '<sel> [path] [--inline]', mcp: {
+    description: 'Click an element that triggers a download and save the file. Returns the saved file path, or with inline=true returns the file content as a base64 data URL.',
+    inputSchema: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or @ref for the download trigger element.' }, path: { type: 'string', description: 'File path to save the download to (defaults to suggested filename).' }, inline: { type: 'boolean', description: 'Return file content as base64 data URL instead of just the file path.' } }, required: ['selector'] },
     argDecode: (p) => {
       const args = [String(p.selector)];
       if (p.path) args.push(String(p.path));
+      if (p.inline) args.push('--inline');
       return args;
     },
   } }),
@@ -541,9 +568,9 @@ registry.registerAll([
     inputSchema: { type: 'object', properties: { url1: { type: 'string', description: 'First URL to compare.' }, url2: { type: 'string', description: 'Second URL to compare.' } }, required: ['url1', 'url2'] },
     argDecode: (p) => [String(p.url1), String(p.url2)],
   } }),
-  m('snapshot',         'Accessibility tree with @refs',                    { usage: '[-i] [-f] [-V] [-c] [-C] [-d N] [-s sel]', safeToRetry: true, pageContent: true, mcp: {
+  m('snapshot',         'Accessibility tree with @refs',                    { usage: '[-i] [-f] [-V] [-c] [-C] [-d N] [-s sel] [--offset N] [--max-chars N] [--serp]', safeToRetry: true, pageContent: true, mcp: {
     description: 'Get the accessibility tree of the current page with @ref identifiers for each element. Use -i for interactive elements only (the most common usage). Refs like @e1, @e2 can be used with click, fill, and other commands. This is the primary way to understand page structure and find elements to interact with.',
-    inputSchema: { type: 'object', properties: { interactive: { type: 'boolean', description: 'Show only interactive elements (buttons, links, inputs, etc.). This is the most commonly used mode.' }, compact: { type: 'boolean', description: 'Remove empty structural elements from the tree.' }, cursor: { type: 'boolean', description: 'Include cursor-interactive elements (divs with onclick, cursor:pointer, etc.) that are not in the ARIA tree.' }, depth: { type: 'number', description: 'Limit the tree depth (e.g. 3 = only top 3 levels).' }, selector: { type: 'string', description: 'CSS selector to scope the snapshot to a subtree.' }, viewport: { type: 'boolean', description: 'Only include elements visible in the current viewport.' }, full: { type: 'boolean', description: 'Show full indented ARIA tree with props and children (overrides the default terse flat list when -i is used).' } } },
+    inputSchema: { type: 'object', properties: { interactive: { type: 'boolean', description: 'Show only interactive elements (buttons, links, inputs, etc.). This is the most commonly used mode.' }, compact: { type: 'boolean', description: 'Remove empty structural elements from the tree.' }, cursor: { type: 'boolean', description: 'Include cursor-interactive elements (divs with onclick, cursor:pointer, etc.) that are not in the ARIA tree.' }, depth: { type: 'number', description: 'Limit the tree depth (e.g. 3 = only top 3 levels).' }, selector: { type: 'string', description: 'CSS selector to scope the snapshot to a subtree.' }, viewport: { type: 'boolean', description: 'Only include elements visible in the current viewport.' }, full: { type: 'boolean', description: 'Show full indented ARIA tree with props and children (overrides the default terse flat list when -i is used).' }, offset: { type: 'number', description: 'Line offset for snapshot windowing. Use to paginate through large snapshots. Each page returns complete lines (never cuts mid-line or mid-@ref).' }, maxChars: { type: 'number', description: 'Maximum characters to return (default: 80000). Large snapshots are truncated with pagination hints.' }, serp: { type: 'boolean', description: 'Enable Google SERP fast-path extraction. When on a Google search results page, extracts results via DOM instead of ARIA snapshot for ~2x speed.' } } },
     argDecode: (p) => {
       const args: string[] = [];
       if (p.interactive) args.push('-i');
@@ -553,6 +580,9 @@ registry.registerAll([
       if (p.full) args.push('-f');
       if (p.depth != null) { args.push('-d', String(p.depth)); }
       if (p.selector) { args.push('-s', String(p.selector)); }
+      if (p.offset != null) { args.push('--offset', String(p.offset)); }
+      if (p.maxChars != null) { args.push('--max-chars', String(p.maxChars)); }
+      if (p.serp) args.push('--serp');
       return args;
     },
   } }),
@@ -713,6 +743,11 @@ registry.registerAll([
       return args;
     },
   } }),
+  m('profiles',         'List camoufox profiles',                           { safeToRetry: true, mcp: {
+    description: 'List available camoufox profiles from .browse/camoufox-profiles/. Shows profile names and their configured options.',
+    inputSchema: { type: 'object', properties: {} },
+    argDecode: () => [],
+  } }),
   m('provider',         'Cloud provider management',                        { usage: 'save|list|delete <name> [api-key]', safeToRetry: true, mcp: {
     description: 'Manage cloud browser providers (Browserless, Browserbase). Save API keys, list configured providers, or delete credentials. Use "save" to store a provider API key, then set BROWSE_CDP_URL to connect via CDP.',
     inputSchema: { type: 'object', properties: { action: { type: 'string', description: 'Operation to perform.', enum: ['save', 'list', 'delete'] }, name: { type: 'string', description: 'Provider name (e.g. "browserless", "browserbase"). Required for save and delete.' }, api_key: { type: 'string', description: 'API key for the provider. Required for save.' } }, required: ['action'] },
@@ -798,6 +833,15 @@ registry.registerAll([
       if (p.platform) args.push('--platform', String(p.platform));
       if (p.device) args.push('--device', String(p.device));
       if (p.app) args.push('--app', String(p.app));
+      return args;
+    },
+  } }),
+  m('youtube-transcript', 'Extract captions from a YouTube video',          { usage: '<url> [--lang en]', mcp: {
+    description: 'Extract transcript/captions from a YouTube video. Uses yt-dlp when available (fast), falls back to browser-based intercept. Returns timestamped text.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'YouTube video URL' }, lang: { type: 'string', description: 'Caption language code (default: en)' } }, required: ['url'] },
+    argDecode: (p: Record<string, unknown>) => {
+      const args = [String(p.url)];
+      if (p.lang) args.push('--lang', String(p.lang));
       return args;
     },
   } }),
@@ -1048,7 +1092,8 @@ export function generateHelp(): string {
   lines.push('  --connect                Auto-discover and connect to running Chrome');
   lines.push('  --cdp <port>             Connect to Chrome on specific debugging port');
   lines.push('  --provider <name>        Cloud browser provider (browserless, browserbase)');
-  lines.push('  --runtime <name>         Browser engine (playwright, rebrowser, lightpanda)');
+  lines.push('  --runtime <name>         Browser engine (playwright, rebrowser, lightpanda, camoufox, chrome)');
+  lines.push('  --camoufox-profile <name> Camoufox named profile (server-spawn-only)');
   lines.push('  --mcp                    Run as MCP server (for Cursor, Windsurf, Cline)');
   lines.push('  --mcp --json             MCP server with JSON-wrapped responses');
   lines.push('');

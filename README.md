@@ -87,6 +87,9 @@ browse html [sel]              # Full HTML or element innerHTML
 browse links                   # All links as "text -> href"
 browse forms                   # Form structure as JSON
 browse accessibility           # Raw ARIA snapshot tree
+browse schema                  # JSON-LD, Microdata, RDFa structured data
+browse meta                    # Page meta tags (title, description, OG, canonical, hreflang)
+browse headings                # H1-H6 heading hierarchy with counts
 ```
 
 ### Interaction
@@ -206,6 +209,7 @@ browse cookies                 # Browser cookies as JSON
 browse storage [set <k> <v>]   # localStorage/sessionStorage
 browse perf                    # Navigation timing (dns, ttfb, load)
 browse devices [filter]        # List available device names
+browse images [sel] [--inline] # List page images with src, alt, dimensions
 ```
 
 ### Visual
@@ -872,7 +876,8 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 | `--cdp <port>` | Connect to Chrome on a specific debugging port |
 | `--connect` | Auto-discover and connect to a running Chrome instance |
 | `--provider <name>` | Cloud browser provider (browserless, browserbase) |
-| `--runtime <name>` | Browser runtime: playwright (default), rebrowser (stealth), lightpanda, chrome |
+| `--runtime <name>` | Browser runtime: playwright (default), rebrowser (stealth), lightpanda, camoufox (anti-detection Firefox), chrome |
+| `--camoufox-profile <name>` | Named camoufox profile from `.browse/camoufox-profiles/<name>.json` (server-spawn-only) |
 
 ## Environment Variables
 
@@ -900,7 +905,8 @@ Use `--json` alongside `--mcp` for structured responses (`{success, data, comman
 | `BROWSE_CONFIRM_ACTIONS` | (none) | Commands requiring confirmation |
 | `BROWSE_ENCRYPTION_KEY` | auto-generated | 64-char hex AES key for credential vault |
 | `BROWSE_AUTH_PASSWORD` | (none) | Password for `auth save` (alt to `--password-stdin`) |
-| `BROWSE_RUNTIME` | playwright | Browser runtime (playwright, rebrowser, lightpanda, chrome) |
+| `BROWSE_RUNTIME` | playwright | Browser runtime (playwright, rebrowser, lightpanda, camoufox, chrome) |
+| `BROWSE_CAMOUFOX_PROFILE` | (none) | Named camoufox profile from `.browse/camoufox-profiles/` |
 | `BROWSE_CHROME` | (none) | Set to `1` to use system Chrome |
 | `BROWSE_CHROME_PATH` | auto-detected | Override Chrome executable path |
 

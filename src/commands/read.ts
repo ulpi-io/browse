@@ -2,11 +2,12 @@
  * Read commands — extract data from pages without side effects
  *
  * text, html, links, forms, accessibility, js, eval, css, attrs, state,
- * console, network, cookies, storage, perf
+ * console, network, cookies, storage, perf, schema, meta, headings
  */
 
 import type { BrowserTarget } from '../browser/target';
 import { listDevices } from '../browser/emulation';
+import { isGoogleBlocked, formatGoogleBlockError } from '../browser/detection';
 import type { SessionBuffers } from '../network/buffers';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
@@ -24,9 +25,13 @@ export async function handleReadCommand(
 
   switch (command) {
     case 'text': {
+      // TASK-006: Detect Google block — prepend warning but still return page text
+      const googleBlockWarning = (await isGoogleBlocked(page))
+        ? '[warning: Google has blocked this page] ' + formatGoogleBlockError(page.url()) + '\n\n'
+        : '';
       // TreeWalker-based extraction — never appends to the live DOM,
       // so MutationObservers are not triggered.
-      return await evalCtx.evaluate(() => {
+      const textContent = await evalCtx.evaluate(() => {
         const body = document.body;
         if (!body) return '';
         const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG']);
@@ -50,6 +55,7 @@ export async function handleReadCommand(
         }
         return lines.join('\n');
       });
+      return googleBlockWarning + textContent;
     }
 
     case 'html': {
@@ -76,6 +82,67 @@ export async function handleReadCommand(
         })).filter(l => l.text && l.href)
       );
       return links.map(l => `${l.text} → ${l.href}`).join('\n');
+    }
+
+    case 'images': {
+      const limitIdx = args.indexOf('--limit');
+      const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) || 100 : 100;
+      const inlineMode = args.includes('--inline');
+      const filteredArgs = args.filter((a, i) => a !== '--limit' && a !== '--inline' && (limitIdx === -1 || i !== limitIdx + 1));
+      const selector = filteredArgs[0];
+
+      // Resolve @ref to a locator for scoped queries
+      let scopeHandle: import('playwright-core').ElementHandle | null = null;
+      if (selector) {
+        const resolved = bm.resolveRef(selector);
+        if ('locator' in resolved) {
+          scopeHandle = await resolved.locator.elementHandle();
+        } else {
+          scopeHandle = await page.$(resolved.selector);
+        }
+        if (!scopeHandle) throw new Error(`Element not found: ${selector}`);
+      }
+
+      const images = await evalCtx.evaluate((args: { scope: Node | null; inline: boolean; limit: number }) => {
+        const root = (args.scope as Element | null) || document.body;
+        const imgs: Array<{ src: string; alt: string; width: number; height: number; dataUrl?: string }> = [];
+        const allImgs = root.querySelectorAll('img');
+        for (let i = 0; i < allImgs.length && imgs.length < args.limit; i++) {
+          const el = allImgs[i] as HTMLImageElement;
+          const src = el.src || el.getAttribute('data-src') || '';
+          if (!src || (src.startsWith('data:image') && src.length < 100)) continue;
+          if (el.naturalWidth <= 1 && el.naturalHeight <= 1) continue;
+          const entry: { src: string; alt: string; width: number; height: number; dataUrl?: string } = {
+            src,
+            alt: el.alt || '',
+            width: el.naturalWidth || el.width,
+            height: el.naturalHeight || el.height,
+          };
+          if (args.inline) {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = el.naturalWidth || el.width;
+              canvas.height = el.naturalHeight || el.height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(el, 0, 0);
+                entry.dataUrl = canvas.toDataURL('image/png');
+              }
+            } catch { /* CORS — skip inline for cross-origin */ }
+          }
+          imgs.push(entry);
+        }
+        return imgs;
+      }, { scope: scopeHandle, inline: inlineMode, limit });
+
+      const limited = images;
+      if (limited.length === 0) return 'No images found';
+      return limited.map(img => {
+        let line = `${img.src} | ${img.alt || '(no alt)'} | ${img.width}x${img.height}`;
+        if (img.dataUrl) line += `\n  data: ${img.dataUrl}`;
+        return line;
+      }
+      ).join('\n');
     }
 
     case 'forms': {
@@ -452,6 +519,112 @@ export async function handleReadCommand(
         return `No devices matching "${filter}". Run "browse devices" to see all.`;
       }
       return filtered.join('\n');
+    }
+
+    case 'schema': {
+      const result = await evalCtx.evaluate(() => {
+        const data: unknown[] = [];
+        // JSON-LD
+        document.querySelectorAll('script[type="application/ld+json"]').forEach(el => {
+          try { data.push(JSON.parse(el.textContent || '')); } catch {}
+        });
+        // Microdata
+        document.querySelectorAll('[itemscope]').forEach(el => {
+          const item: Record<string, string> = {};
+          const itemType = el.getAttribute('itemtype');
+          if (itemType) item['@type'] = itemType;
+          el.querySelectorAll('[itemprop]').forEach(prop => {
+            const name = prop.getAttribute('itemprop') || '';
+            item[name] = (prop as HTMLElement).getAttribute('content')
+              || (prop as HTMLAnchorElement).href
+              || (prop as HTMLElement).textContent?.trim() || '';
+          });
+          if (Object.keys(item).length > 0) data.push({ '@microdata': true, ...item });
+        });
+        // RDFa
+        document.querySelectorAll('[typeof]').forEach(el => {
+          const item: Record<string, string> = { '@type': el.getAttribute('typeof') || '' };
+          el.querySelectorAll('[property]').forEach(prop => {
+            const name = prop.getAttribute('property') || '';
+            item[name] = (prop as HTMLElement).getAttribute('content')
+              || (prop as HTMLElement).textContent?.trim() || '';
+          });
+          if (Object.keys(item).length > 1) data.push({ '@rdfa': true, ...item });
+        });
+        return data;
+      });
+      if (!result || (Array.isArray(result) && result.length === 0)) {
+        return '(no structured data found)';
+      }
+      return JSON.stringify(result, null, 2);
+    }
+
+    case 'meta': {
+      const result = await evalCtx.evaluate(() => {
+        const lines: string[] = [];
+        // Title
+        const title = document.title;
+        if (title) lines.push(`title: ${title}`);
+        // Meta tags
+        const getMeta = (name: string): string | null => {
+          const el = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
+          return el?.getAttribute('content') || null;
+        };
+        const desc = getMeta('description');
+        if (desc) lines.push(`description: ${desc}`);
+        // Canonical
+        const canonical = document.querySelector('link[rel="canonical"]');
+        if (canonical) lines.push(`canonical: ${(canonical as HTMLLinkElement).href}`);
+        // Robots
+        const robots = getMeta('robots');
+        if (robots) lines.push(`robots: ${robots}`);
+        // Viewport
+        const viewport = getMeta('viewport');
+        if (viewport) lines.push(`viewport: ${viewport}`);
+        // Open Graph
+        const ogTags = ['og:title', 'og:description', 'og:image', 'og:url', 'og:type', 'og:site_name', 'og:locale'];
+        for (const tag of ogTags) {
+          const val = getMeta(tag);
+          if (val) lines.push(`${tag}: ${val}`);
+        }
+        // Twitter Card
+        const twTags = ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image', 'twitter:site'];
+        for (const tag of twTags) {
+          const val = getMeta(tag);
+          if (val) lines.push(`${tag}: ${val}`);
+        }
+        // Hreflang
+        document.querySelectorAll('link[rel="alternate"][hreflang]').forEach(el => {
+          lines.push(`hreflang:${(el as HTMLLinkElement).hreflang}: ${(el as HTMLLinkElement).href}`);
+        });
+        return lines;
+      });
+      if (!result || result.length === 0) return '(no meta information found)';
+      return result.join('\n');
+    }
+
+    case 'headings': {
+      const result = await evalCtx.evaluate(() => {
+        const headings: { level: number; text: string }[] = [];
+        document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(el => {
+          headings.push({
+            level: parseInt(el.tagName[1], 10),
+            text: (el as HTMLElement).textContent?.trim() || '',
+          });
+        });
+        return headings;
+      });
+      if (!result || result.length === 0) return '(no headings found)';
+      // Count summary
+      const counts: Record<string, number> = {};
+      for (const h of result) {
+        const key = `h${h.level}`;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      const summary = Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(' ');
+      // Indented tree
+      const lines = result.map(h => `${'  '.repeat(h.level - 1)}h${h.level}: ${h.text}`);
+      return `[${summary}]\n${lines.join('\n')}`;
     }
 
     default:

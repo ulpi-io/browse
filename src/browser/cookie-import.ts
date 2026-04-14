@@ -99,6 +99,62 @@ const keyCache = new Map<string, Buffer>();
 // ─── Public API ─────────────────────────────────────────────────
 
 /**
+ * Parse a Netscape-format cookie file (.txt) into Playwright cookie objects.
+ *
+ * Format: domain\tincludeSubdomains\tpath\tsecure\texpires\tname\tvalue
+ * Lines starting with # are comments, except #HttpOnly_ prefix marks httpOnly cookies.
+ * This is the standard format exported by browser extensions like "cookies.txt".
+ */
+export function parseNetscapeCookieFile(content: string): Array<{
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  httpOnly: boolean;
+  secure: boolean;
+}> {
+  const cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    expires: number;
+    httpOnly: boolean;
+    secure: boolean;
+  }> = [];
+
+  for (const line of content.split('\n')) {
+    let trimmed = line.trim();
+    if (!trimmed || (trimmed.startsWith('#') && !trimmed.startsWith('#HttpOnly_'))) continue;
+
+    let httpOnly = false;
+    if (trimmed.startsWith('#HttpOnly_')) {
+      httpOnly = true;
+      trimmed = trimmed.slice('#HttpOnly_'.length);
+    }
+
+    const parts = trimmed.split('\t');
+    if (parts.length < 7) continue;
+
+    const [domain, , cookiePath, secureStr, expiresStr, name, ...valueParts] = parts;
+    const value = valueParts.join('\t'); // value may contain tabs
+
+    cookies.push({
+      name,
+      value,
+      domain,
+      path: cookiePath || '/',
+      expires: parseInt(expiresStr, 10) || -1,
+      httpOnly,
+      secure: secureStr.toUpperCase() === 'TRUE',
+    });
+  }
+
+  return cookies;
+}
+
+/**
  * Find which Chromium browsers are installed (have a cookie DB on disk).
  */
 export function findInstalledBrowsers(): BrowserInfo[] {

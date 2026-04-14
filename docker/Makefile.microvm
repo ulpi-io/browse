@@ -1,0 +1,48 @@
+# Makefile for building Firecracker microVM artifacts.
+#
+# The rootfs is an ext4 image containing Alpine Linux, Node.js,
+# Chromium, and the browse server bundle. The kernel is a minimal
+# vmlinux binary published by the Firecracker team.
+#
+# Usage:
+#   make -f docker/Makefile.microvm rootfs      # Build rootfs image
+#   make -f docker/Makefile.microvm kernel       # Download kernel
+#   make -f docker/Makefile.microvm all          # Build rootfs + download kernel
+#   make -f docker/Makefile.microvm golden       # Build golden snapshot (requires Firecracker)
+#   make -f docker/Makefile.microvm clean        # Remove artifacts
+#   make -f docker/Makefile.microvm check-deps   # Verify prerequisites
+#
+# Override output paths:
+#   make -f docker/Makefile.microvm ROOTFS=my-rootfs.ext4 KERNEL=my-kernel rootfs kernel
+
+ROOTFS ?= rootfs.ext4
+KERNEL ?= vmlinux
+GOLDEN_DIR ?= /var/lib/browse-cloud/golden
+
+.PHONY: all rootfs kernel golden clean check-deps
+
+all: rootfs kernel
+
+rootfs: dist/browse.cjs
+	bash scripts/build-rootfs.sh $(ROOTFS)
+
+kernel:
+	bash scripts/download-kernel.sh $(KERNEL)
+
+dist/browse.cjs:
+	npm run build
+
+golden: rootfs kernel
+	@echo "==> Golden snapshot requires a running Firecracker instance."
+	@echo "    Use: node -e \"import('./src/cloud/golden-snapshot').then(m => m.build('$(ROOTFS)', '$(KERNEL)', '$(GOLDEN_DIR)'))\""
+
+clean:
+	rm -f $(ROOTFS) $(KERNEL)
+	@echo "==> Cleaned microVM artifacts"
+
+check-deps:
+	@echo "Checking dependencies..."
+	@command -v docker >/dev/null 2>&1 || { echo "  MISSING: docker"; exit 1; }
+	@command -v mkfs.ext4 >/dev/null 2>&1 || { echo "  MISSING: mkfs.ext4 (install e2fsprogs)"; exit 1; }
+	@command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || { echo "  MISSING: curl or wget"; exit 1; }
+	@echo "  All dependencies OK"

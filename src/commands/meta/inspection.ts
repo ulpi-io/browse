@@ -4,7 +4,9 @@
 
 import type { BrowserTarget } from '../../browser/target';
 import type { Session } from '../../session/manager';
-import { handleSnapshot } from '../../browser/snapshot';
+import { handleSnapshot, parseSnapshotArgs } from '../../browser/snapshot';
+import { applySnapshotWindow, formatWindowMetadata } from '../../browser/snapshot-window';
+import { isGoogleSerp, extractGoogleSerp } from '../../browser/serp';
 import { DEFAULTS } from '../../constants';
 import { parseExpectArgs, checkConditions } from '../../expect';
 import * as Diff from 'diff';
@@ -46,7 +48,35 @@ export async function handleInspectionCommand(
 ): Promise<string> {
   switch (command) {
     case 'snapshot': {
-      return await handleSnapshot(args, bm);
+      // 1. Parse args
+      const snapshotOpts = parseSnapshotArgs(args);
+
+      // 2. SERP fast-path (opt-in only: --serp flag or BROWSE_SERP_FASTPATH=1)
+      // Skip when flags require the normal ref-building pipeline (-C, --offset, -i with interaction)
+      const serpEnabled = snapshotOpts.serp || process.env.BROWSE_SERP_FASTPATH === '1';
+      const needsNormalPipeline = snapshotOpts.offset != null || args.includes('-C') || args.includes('--offset');
+      if (serpEnabled && !needsNormalPipeline) {
+        const page = bm.getPage();
+        const url = page.url();
+        if (isGoogleSerp(url)) {
+          const serpResult = await extractGoogleSerp(page);
+          if (serpResult) {
+            return '[Google SERP fast-path]\n' + serpResult;
+          }
+          // Fall through to regular snapshot if extraction failed
+        }
+      }
+
+      // 3. Regular snapshot path
+      let result = await handleSnapshot(args, bm);
+
+      // 4. Apply windowing (only at command-handler level, never inside handleSnapshot)
+      const windowed = applySnapshotWindow(result, { offset: snapshotOpts.offset, maxChars: snapshotOpts.maxChars });
+      if (windowed.truncated) {
+        result = windowed.text + '\n' + formatWindowMetadata(windowed);
+      }
+
+      return result;
     }
 
     case 'snapshot-diff': {

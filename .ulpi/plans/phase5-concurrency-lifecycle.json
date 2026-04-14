@@ -1,0 +1,390 @@
+{
+  "title": "Phase 5: Concurrency & Lifecycle Robustness",
+  "branch": "feat/concurrency-lifecycle",
+  "mode": "EXPANSION",
+  "overview": "Add concurrency control and lifecycle robustness features to browse_cli's session and server layers. Tab lock mutex prevents CDP state corruption when concurrent requests target the same tab. Per-user concurrency limits cap parallel requests per session with queued overflow. Tab inactivity reaper closes idle tabs to reclaim resources. Browser warm retry recovers from launch failures with exponential backoff instead of leaving the server dead. All features are runtime-agnostic and integrate with the existing SessionManager and server.ts infrastructure. Phase 5 of 6 in the camoufox integration roadmap.",
+  "scopeChallenge": "The server's handleCommand() function (src/server.ts:205) currently dispatches commands directly to executeCommand() with no serialization or concurrency gating. Multiple concurrent HTTP requests targeting the same tab can interleave CDP protocol messages, causing state corruption (e.g. click + fill racing on the same element, ref map getting overwritten mid-snapshot). The SessionManager tracks lastActivity per session but has no per-tab activity tracking for reaping. Browser launch in start() (src/server.ts:538) is fire-once with no retry — if Chromium fails to launch, the server sits idle with no browser.\n\nFour integration points:\n1. Tab lock: new TabLock class wraps tab operations with per-tab mutex (acquire/release/drain pattern)\n2. Concurrency limiter: new withUserLimit() wraps handleCommand() dispatch to cap per-session parallelism\n3. Tab reaper: SessionManager gets periodic interval checking per-tab lastActivity timestamps\n4. Warm retry: server.ts start() wraps browser launch in exponential backoff loop",
+  "prerequisites": [
+    {
+      "assumption": "SessionManager exists with session lifecycle and lastActivity tracking",
+      "status": "already-true",
+      "verification": "src/session/manager.ts — Session interface with lastActivity field, getOrCreate() updates it"
+    },
+    {
+      "assumption": "server.ts handleCommand() dispatches to executeCommand() pipeline",
+      "status": "already-true",
+      "verification": "src/server.ts:337 — executeCommand(command, args, { context, lifecycle })"
+    },
+    {
+      "assumption": "TabManager tracks per-tab pages with Map<id, Page>",
+      "status": "already-true",
+      "verification": "src/browser/tabs.ts:13 — TabManager.pages Map<number, Page>"
+    },
+    {
+      "assumption": "Browser launch in start() uses runtime.chromium.launch() with no retry",
+      "status": "already-true",
+      "verification": "src/server.ts:538 — single browser = await runtime.chromium.launch(launchOptions)"
+    },
+    {
+      "assumption": "DEFAULTS constants object in src/constants.ts for default config values",
+      "status": "already-true",
+      "verification": "src/constants.ts — DEFAULTS object with PORT_RANGE_START, IDLE_TIMEOUT_MS, etc."
+    }
+  ],
+  "nonGoals": [
+    "Cross-session tab locking (each session has independent tabs — no cross-session contention)",
+    "Distributed locking (single-process server — no need for Redis/file-based locks)",
+    "Rate limiting by IP or API key (CLI is localhost-only with token auth)",
+    "Tab pooling or pre-warming (tabs are created on demand by user commands)",
+    "Automatic browser version upgrades on retry failure",
+    "Graceful degradation to headful mode on headless failure"
+  ],
+  "contracts": [
+    {
+      "boundary": "TabLock → command handlers",
+      "producer": "src/session/tab-lock.ts TabLock.acquire(tabId)",
+      "consumer": "src/session/manager.ts — wraps tab-scoped operations",
+      "shape": "TabLock { acquire(tabId: number, timeoutMs?: number): Promise<() => void> }",
+      "consistencyRule": "acquire() returns a release function. Caller MUST call release() in finally block. Queue drains FIFO. Timeout rejects with TabLockTimeoutError."
+    },
+    {
+      "boundary": "ConcurrencyLimiter → server dispatch",
+      "producer": "src/session/concurrency.ts withUserLimit()",
+      "consumer": "src/server.ts handleCommand()",
+      "shape": "withUserLimit<T>(sessionId: string, operation: () => Promise<T>, timeoutMs?: number): Promise<T>",
+      "consistencyRule": "Max N concurrent operations per session (default 6). Excess requests queue with timeout. When session closes, pending queue is drained with rejection."
+    },
+    {
+      "boundary": "Tab reaper → SessionManager",
+      "producer": "SessionManager.reapInactiveTabs() periodic interval",
+      "consumer": "TabManager pages (closes idle tabs)",
+      "shape": "reapInactiveTabs(maxInactiveMs: number): Promise<string[]> — returns closed tab descriptions",
+      "consistencyRule": "Never close the last tab in a session. Never close tabs with active locks. Activity tracked per command execution, not per CDP message."
+    },
+    {
+      "boundary": "Warm retry → server start()",
+      "producer": "launchWithRetry() in src/server.ts",
+      "consumer": "start() browser initialization",
+      "shape": "launchWithRetry(runtime, launchOptions, maxAttempts, baseDelayMs): Promise<Browser>",
+      "consistencyRule": "Exponential backoff: delay * 2^attempt (1s, 2s, 4s). Max 3 attempts. Server remains running and responds 503 to commands while retrying. On final failure, server shuts down."
+    }
+  ],
+  "existingCodeLeverage": [
+    {
+      "subProblem": "Per-tab state tracking",
+      "existingCode": "src/browser/tabs.ts TabManager (Map<number, Page>)",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Session lifecycle and lastActivity",
+      "existingCode": "src/session/manager.ts SessionManager",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Command dispatch pipeline",
+      "existingCode": "src/server.ts handleCommand() line 205",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Browser launch logic",
+      "existingCode": "src/server.ts start() line 525-546",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Default constants pattern",
+      "existingCode": "src/constants.ts DEFAULTS",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Session barrel exports",
+      "existingCode": "src/session/index.ts",
+      "source": "local",
+      "action": "extend"
+    },
+    {
+      "subProblem": "Idle session cleanup interval pattern",
+      "existingCode": "src/server.ts sessionCleanupInterval",
+      "source": "local",
+      "action": "reuse"
+    }
+  ],
+  "failureModes": [
+    {
+      "risk": "Tab lock deadlock — release() never called due to uncaught exception in command handler",
+      "affectedTasks": ["TASK-001", "TASK-003"],
+      "mitigation": "acquire() returns release function used in finally block. Lock has built-in timeout (default 30s) that auto-releases and rejects. Drain() on session close releases all waiters."
+    },
+    {
+      "risk": "Concurrency limiter starvation — slow request blocks all N slots for one session",
+      "affectedTasks": ["TASK-002", "TASK-004"],
+      "mitigation": "Individual request timeout (from BROWSE_TIMEOUT) still applies. Queue timeout (default 30s) rejects waiting requests. Session close drains all pending operations."
+    },
+    {
+      "risk": "Tab reaper closes tab during active command execution",
+      "affectedTasks": ["TASK-005"],
+      "mitigation": "Reaper checks TabLock — skips tabs with active locks. lastActivity is updated at command start, so active commands keep tabs alive."
+    },
+    {
+      "risk": "Browser warm retry delays server readiness — CLI times out waiting for health check",
+      "affectedTasks": ["TASK-006"],
+      "mitigation": "Server starts HTTP listener BEFORE browser launch. Health endpoint returns { status: 'starting', retryAttempt: N } during retry. CLI health check timeout (2s) already handles slow starts. State file written after HTTP listener is up."
+    },
+    {
+      "risk": "Memory leak from abandoned lock queues if sessions are not properly closed",
+      "affectedTasks": ["TASK-001", "TASK-002"],
+      "mitigation": "Both TabLock and ConcurrencyLimiter have drain() methods called from SessionManager.closeSession(). WeakMap alternative considered but Map + explicit cleanup is more debuggable."
+    }
+  ],
+  "testCoverageMap": [
+    {
+      "codepath": "TabLock acquire/release serialization",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "TabLock timeout rejection",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "TabLock drain() releases all waiters",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "ConcurrencyLimiter enforces max concurrent limit",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "ConcurrencyLimiter queues excess requests and drains on timeout",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Tab inactivity reaper closes idle tabs, preserves last tab",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Tab reaper skips locked tabs",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Browser launch retry with exponential backoff",
+      "coveringTask": "TASK-007",
+      "testType": "unit"
+    },
+    {
+      "codepath": "Concurrent requests serialized per-tab via lock",
+      "coveringTask": "TASK-007",
+      "testType": "integration"
+    },
+    {
+      "codepath": "Per-session concurrency cap queues excess requests",
+      "coveringTask": "TASK-007",
+      "testType": "integration"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "TabLock class with acquire/release/drain",
+      "description": "Create `src/session/tab-lock.ts` with a TabLock class that provides per-tab serialization to prevent CDP state corruption when concurrent requests target the same tab.\n\nThe class uses a proper mutex pattern with a queue — NOT a Promise-chain lock. Each tab ID maps to a queue of waiting resolvers. acquire(tabId, timeoutMs) returns a Promise that resolves to a release() function when the lock is obtained. The caller MUST call release() in a finally block.\n\nKey design:\n- `locks: Map<number, { active: boolean; queue: Array<{ resolve, reject, timer }> }>` — per-tab lock state\n- `acquire(tabId: number, timeoutMs?: number): Promise<() => void>` — returns release function\n- `release()` — dequeues next waiter or marks lock inactive\n- `drain(): void` — rejects all waiters (for session close)\n- `isLocked(tabId: number): boolean` — check if tab has active lock (for reaper)\n- `TabLockTimeoutError extends Error` — thrown when acquire times out\n- Default timeout: 30000ms (DEFAULTS.TAB_LOCK_TIMEOUT_MS)\n\nAdd `TAB_LOCK_TIMEOUT_MS: 30_000` to DEFAULTS in `src/constants.ts`.\n\nExport TabLock and TabLockTimeoutError from `src/session/index.ts` barrel.\n\nReference: camofox-browser server.js lines 274-340 for mutex pattern inspiration.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "TabLock.acquire(tabId) returns a release function that, when called, allows the next queued waiter to proceed",
+        "Two concurrent acquire() calls on the same tabId serialize — second waiter resolves only after first release()",
+        "acquire() with timeout rejects with TabLockTimeoutError after timeoutMs if lock not obtained",
+        "drain() rejects all queued waiters and resets lock state",
+        "isLocked(tabId) returns true when a lock is held, false otherwise",
+        "TAB_LOCK_TIMEOUT_MS added to DEFAULTS in constants.ts"
+      ],
+      "filesToModify": ["src/constants.ts", "src/session/index.ts"],
+      "filesToCreate": ["src/session/tab-lock.ts"],
+      "writeScope": ["src/session/tab-lock.ts", "src/constants.ts", "src/session/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/session/tab-lock.ts, revert constants.ts and index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-002",
+      "title": "Per-user concurrency limiter",
+      "description": "Create `src/session/concurrency.ts` with a ConcurrencyLimiter class and a `withUserLimit()` utility that caps the number of concurrent operations per session.\n\nWhen a session exceeds its limit, excess requests queue with a configurable timeout. This prevents a single agent from monopolizing the browser with many parallel requests.\n\nKey design:\n- `ConcurrencyLimiter` class:\n  - `sessions: Map<string, { active: number; queue: Array<{ resolve, reject, timer }> }>` — per-session state\n  - `constructor(maxConcurrent?: number, queueTimeoutMs?: number)` — defaults from DEFAULTS\n  - `acquire(sessionId: string): Promise<() => void>` — returns release function, queues if at limit\n  - `drain(sessionId: string): void` — reject all queued operations (for session close)\n  - `getStats(sessionId: string): { active: number; queued: number }` — for status reporting\n- `withUserLimit<T>(limiter, sessionId, operation): Promise<T>` — convenience wrapper\n- `ConcurrencyLimitError extends Error` — thrown when queue times out\n\nAdd `MAX_CONCURRENT_PER_SESSION: 6` and `CONCURRENCY_QUEUE_TIMEOUT_MS: 30_000` to DEFAULTS in `src/constants.ts`.\n\nExport ConcurrencyLimiter, ConcurrencyLimitError, and withUserLimit from `src/session/index.ts` barrel.\n\nReference: camofox-browser server.js lines 356-387 for concurrency limit pattern.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P0",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "ConcurrencyLimiter.acquire(sessionId) allows up to maxConcurrent simultaneous operations per session",
+        "When at limit, additional acquire() calls queue and resolve when a slot frees up",
+        "Queue timeout rejects with ConcurrencyLimitError after queueTimeoutMs",
+        "drain(sessionId) rejects all queued operations for that session",
+        "getStats(sessionId) returns accurate active/queued counts",
+        "MAX_CONCURRENT_PER_SESSION and CONCURRENCY_QUEUE_TIMEOUT_MS added to DEFAULTS"
+      ],
+      "filesToModify": ["src/constants.ts", "src/session/index.ts"],
+      "filesToCreate": ["src/session/concurrency.ts"],
+      "writeScope": ["src/session/concurrency.ts", "src/constants.ts", "src/session/index.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Delete src/session/concurrency.ts, revert constants.ts and index.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-003",
+      "title": "Wire tab lock into session manager and command dispatch",
+      "description": "Integrate TabLock into the command execution path so that ALL commands within a session serialize through a single session-level lock.\n\nCRITICAL DESIGN NOTE: The current runtime has one mutable activeTabId per session (TabManager._activeTabId in tabs.ts:14). Command handlers call bm.getPage() which reads this shared pointer. Two concurrent requests — even targeting different tabs — would race on activeTabId and the ref map. Per-tab parallelism requires per-request tab pinning (passing a specific page/tab reference through the command context instead of reading activeTabId), which is a larger refactor. For this phase, use a SESSION-LEVEL lock that serializes ALL commands within a session. This is safe and correct. Per-tab parallelism is a future optimization.\n\nIntegration points:\n\n1. **Session interface** (`src/session/manager.ts`): Add `commandLock: TabLock` field to the Session interface. Initialize a new TabLock() when creating each session in getOrCreate().\n\n2. **server.ts handleCommand()** (line 205): Before calling executeCommand(), acquire the session's commandLock. Wrap the executeCommand() call in a try/finally that releases the lock. ALL commands (read, write, meta) serialize through this lock per session. Different sessions still run in parallel.\n\n3. **Session close** (`src/session/manager.ts`): Call `session.commandLock.drain()` in closeSession() and closeAll() before closing the automation target. This rejects any queued waiters cleanly.\n\nESCAPE HATCH: Read BROWSE_COMMAND_LOCK env var (default '1'). When set to '0', skip lock acquire/release entirely (log a warning that CDP corruption is possible). This allows debugging and performance testing without the lock. Also add to src/constants.ts DEFAULTS.\n\nFuture optimization (NOT this phase): Per-request tab pinning — pass the target page directly through CommandContext instead of reading activeTabId. This would allow different-tab requests within one session to run in parallel. Requires threading a Page reference through the entire command handler chain.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-001"],
+      "acceptanceCriteria": [
+        "Session interface includes commandLock: TabLock field, initialized in getOrCreate()",
+        "ALL commands acquire session commandLock before executeCommand() and release in finally block",
+        "Two concurrent commands to the same session serialize (second waits for first to complete)",
+        "Two concurrent commands to DIFFERENT sessions execute in parallel (no cross-session blocking)",
+        "Session close calls commandLock.drain() before closing automation target"
+      ],
+      "filesToModify": ["src/session/manager.ts", "src/server.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/session/manager.ts", "src/server.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert session/manager.ts and server.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-004",
+      "title": "Wire concurrency limiter into server command dispatch",
+      "description": "Integrate ConcurrencyLimiter into the server's command dispatch path to cap per-session parallelism.\n\nIntegration points:\n\n1. **server.ts module scope**: Create a single ConcurrencyLimiter instance at module level (alongside policyChecker, sessionManager). Read limit from `BROWSE_MAX_CONCURRENT` env var, falling back to `DEFAULTS.MAX_CONCURRENT_PER_SESSION`.\n\n2. **server.ts handleCommand()** (line 205): Wrap the entire command execution (policy check through executeCommand) in `withUserLimit(limiter, session.id, async () => { ... })`. This ensures the concurrency limit applies to the full command lifecycle including context capture and finalization.\n\n3. **server.ts shutdown()**: When closing sessions, call `limiter.drain(sessionId)` for each session being closed. This rejects any queued requests with a clear error.\n\n4. **Status command enrichment**: In the status/health endpoint response, include concurrency stats: `{ ...existing, concurrency: limiter.getStats(sessionId) }`. This helps agents understand if they're being throttled.\n\nThe limiter is per-session, not per-tab. A session with 6 concurrent requests hitting different tabs still counts as 6. The tab lock (TASK-003) handles per-tab serialization separately.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": ["TASK-002"],
+      "acceptanceCriteria": [
+        "Server creates ConcurrencyLimiter at startup with configurable max from BROWSE_MAX_CONCURRENT env var",
+        "handleCommand() wraps dispatch in withUserLimit() — excess requests queue and wait",
+        "When max concurrent reached, next request queues and resolves when a slot opens",
+        "Server shutdown drains limiter for all sessions",
+        "BROWSE_MAX_CONCURRENT env var overrides default limit"
+      ],
+      "filesToModify": ["src/server.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/server.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert server.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-005",
+      "title": "Tab inactivity reaper in session manager",
+      "description": "Add per-tab activity tracking and an automatic reaper that closes tabs idle beyond a configurable threshold. This reclaims browser resources in long-running sessions where agents open many tabs and forget to close them.\n\nIntegration points:\n\n1. **src/session/manager.ts**: Add `tabActivity: Map<number, number>` to Session interface — maps tab ID to last activity timestamp. Update the timestamp in getOrCreate() when session.lastActivity is updated, and expose a `touchTab(sessionId, tabId)` method for the server to call after each command.\n\n2. **src/session/manager.ts**: Add `reapInactiveTabs(maxInactiveMs: number): Promise<string[]>` method. For each session, iterate tabActivity map. Close tabs whose last activity exceeds the threshold. NEVER close the last tab in a session. Skip tabs whose session commandLock is currently held (session.commandLock.isLocked() — a session-level check, not per-tab, since TASK-003 uses a session-level lock). If the lock is held, skip the entire session's tabs for this reap cycle. Returns descriptions of closed tabs for logging.\n\n3. **src/server.ts**: Add a periodic interval (every 60s) that calls `sessionManager.reapInactiveTabs(TAB_INACTIVITY_MS)`. Read `BROWSE_TAB_INACTIVITY_MS` env var, defaulting to `DEFAULTS.TAB_INACTIVITY_MS` (1800000 = 30 min, matching session timeout). Log closed tabs. Clear interval in shutdown().\n\n4. **src/server.ts handleCommand()**: After executeCommand(), call `sessionManager.touchTab(session.id, activeTabId)` to update the tab's activity timestamp.\n\n5. **src/constants.ts**: Add `TAB_INACTIVITY_MS: 1_800_000` (30 min) and `TAB_REAP_INTERVAL_MS: 60_000` (1 min) to DEFAULTS.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Session interface includes tabActivity: Map<number, number> for per-tab timestamps",
+        "touchTab(sessionId, tabId) updates the tab's last activity timestamp",
+        "reapInactiveTabs() closes tabs idle beyond threshold, never closes last tab",
+        "reapInactiveTabs() skips entire session when commandLock is held (session-level lock, not per-tab)",
+        "Server runs reaper on periodic interval, reads BROWSE_TAB_INACTIVITY_MS env var",
+        "TAB_INACTIVITY_MS and TAB_REAP_INTERVAL_MS added to DEFAULTS"
+      ],
+      "filesToModify": ["src/session/manager.ts", "src/server.ts", "src/constants.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/session/manager.ts", "src/server.ts", "src/constants.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert session/manager.ts, server.ts, constants.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-006",
+      "title": "Browser launch warm retry with exponential backoff",
+      "description": "Wrap the browser launch in server.ts start() with retry logic so that transient launch failures (port conflicts, resource exhaustion, Chromium download incomplete) don't leave the server permanently dead.\n\nCRITICAL CLIENT CONTRACT: The CLI (cli.ts:335-344) calls GET /health and checks resp.ok (HTTP 200). If the server returns non-200, the CLI considers it dead and tries to start a new server — creating a race. The /health endpoint MUST return HTTP 200 during retry with a status field indicating startup state, NOT 503. This preserves the CLI contract while communicating the startup state.\n\nIntegration points:\n\n1. **src/server.ts**: Extract browser launch (line 525-546) into a `launchWithRetry(runtime, launchOptions, maxAttempts, baseDelayMs)` function. The function:\n   - Attempts `runtime.chromium.launch(launchOptions)` up to maxAttempts times\n   - On failure, logs the error with attempt number and waits `baseDelayMs * 2^attempt` ms\n   - Exponential backoff: 1s, 2s, 4s for default 3 attempts\n   - On final failure, throws the last error (server.ts catch block handles shutdown)\n\n2. **src/server.ts start()**: Replace the direct `runtime.chromium.launch(launchOptions)` call with `launchWithRetry(runtime, launchOptions, maxAttempts, baseDelayMs)`. Start the HTTP listener BEFORE the browser launch so the server can respond during retry. Read `BROWSE_LAUNCH_RETRIES` env var for max attempts, defaulting to `DEFAULTS.BROWSER_LAUNCH_RETRIES` (3).\n\n3. **src/server.ts health endpoint**: During browser launch retry, health endpoint returns HTTP 200 with `{ status: 'healthy', browserReady: false, retryAttempt: N }`. The 200 status keeps the CLI happy (it won't try to start a new server). The `browserReady: false` field lets callers know commands will fail until launch completes. Command endpoints return 503 with `{ error: 'Browser starting, retry in a moment' }` during the retry window.\n\n4. **src/constants.ts**: Add `BROWSER_LAUNCH_RETRIES: 3` and `BROWSER_LAUNCH_BASE_DELAY_MS: 1_000` to DEFAULTS.\n\nThis does NOT apply to CDP connections (remote browser) or profile mode (persistent context). Only the local browser launch path.",
+      "type": "feature",
+      "effort": "M",
+      "priority": "P1",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "launchWithRetry() retries browser launch up to maxAttempts with exponential backoff",
+        "Launch failure on attempt 1 retries after 1s, attempt 2 after 2s, attempt 3 after 4s",
+        "Server HTTP listener starts BEFORE browser launch — can respond during retry",
+        "Health endpoint returns HTTP 200 with { status: 'healthy', browserReady: false } during retry phase — preserves CLI contract (cli.ts checks resp.ok)",
+        "Final failure triggers server shutdown with clear error",
+        "BROWSE_LAUNCH_RETRIES env var configures max attempts",
+        "BROWSER_LAUNCH_RETRIES and BROWSER_LAUNCH_BASE_DELAY_MS added to DEFAULTS"
+      ],
+      "filesToModify": ["src/server.ts", "src/constants.ts"],
+      "filesToCreate": [],
+      "writeScope": ["src/server.ts", "src/constants.ts"],
+      "validateCommand": "npx tsc --noEmit",
+      "rollbackPlan": "Revert server.ts and constants.ts changes only",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    },
+    {
+      "id": "TASK-007",
+      "title": "Tests for tab lock, concurrency, reaper, and retry",
+      "description": "Add comprehensive tests for all Phase 5 features. Create a new test file `test/concurrency.test.ts` focused on concurrency and lifecycle.\n\nTest groups:\n\n**TabLock unit tests:**\n- acquire() returns release function, calling it allows next waiter\n- Two concurrent acquire() on same tabId serialize correctly\n- acquire() on different tabIds execute in parallel\n- acquire() with timeout rejects with TabLockTimeoutError\n- drain() rejects all queued waiters\n- isLocked() returns correct state\n\n**ConcurrencyLimiter unit tests:**\n- Allows up to maxConcurrent simultaneous acquires per session\n- Queues excess requests, resolves when slot frees\n- Queue timeout rejects with ConcurrencyLimitError\n- drain(sessionId) rejects all queued for that session\n- getStats() returns accurate active/queued counts\n- Different sessions have independent limits\n\n**Tab reaper unit tests:**\n- Closes tabs idle beyond threshold\n- Never closes last tab\n- Skips tabs with active locks\n- Updates tabActivity on touchTab()\n\n**Browser launch retry unit tests:**\n- launchWithRetry succeeds on first attempt — no delay\n- launchWithRetry succeeds on second attempt after backoff\n- launchWithRetry fails after maxAttempts and throws last error\n- Backoff delays are exponential (1s, 2s, 4s)\n\n**Integration tests:**\n- Concurrent write commands to same tab serialize via tab lock\n- Per-session concurrency limit queues excess requests\n\nFollow existing test patterns: use vitest, BrowserManager for integration tests, mock timers for retry/timeout tests.",
+      "type": "test",
+      "effort": "L",
+      "priority": "P2",
+      "dependsOn": ["TASK-003", "TASK-004", "TASK-005", "TASK-006"],
+      "acceptanceCriteria": [
+        "All TabLock unit tests pass: serialization, timeout, drain, isLocked",
+        "All ConcurrencyLimiter unit tests pass: limit enforcement, queue, timeout, drain, stats",
+        "All tab reaper unit tests pass: idle close, last-tab protection, lock-skip",
+        "All launch retry unit tests pass: success, retry, final failure, backoff timing",
+        "Integration tests verify concurrent requests serialize per-tab and cap per-session",
+        "All tests pass with npm test"
+      ],
+      "filesToModify": [],
+      "filesToCreate": ["test/concurrency.test.ts"],
+      "writeScope": ["test/concurrency.test.ts"],
+      "validateCommand": "npm test",
+      "rollbackPlan": "Delete test/concurrency.test.ts",
+      "agent": "nodejs-cli-senior-engineer",
+      "review": "claude"
+    }
+  ],
+  "executionSummary": {
+    "taskCount": 7,
+    "layerCount": 3,
+    "layers": [
+      { "layer": 0, "tasks": ["TASK-001", "TASK-002", "TASK-005", "TASK-006"] },
+      { "layer": 1, "tasks": ["TASK-003", "TASK-004"] },
+      { "layer": 2, "tasks": ["TASK-007"] }
+    ],
+    "criticalPath": ["TASK-001", "TASK-003", "TASK-007"]
+  },
+  "dependencies": {
+    "TASK-001": [],
+    "TASK-002": [],
+    "TASK-003": ["TASK-001"],
+    "TASK-004": ["TASK-002"],
+    "TASK-005": [],
+    "TASK-006": [],
+    "TASK-007": ["TASK-003", "TASK-004", "TASK-005", "TASK-006"]
+  },
+  "linkedPlans": [
+    "phase1-camoufox-runtime",
+    "phase2-real-web-browsing-quality",
+    "phase3-snapshot-large-pages",
+    "phase4-proxy-pool",
+    "phase6-new-commands"
+  ]
+}

@@ -1,0 +1,58 @@
+# .dockerignore — Exclude from Docker build context.
+#
+# IMPORTANT: This file must be at the build context root to take
+# effect. Since docker-compose.cloud.yml uses `context: ..` (the
+# repo root), copy or symlink this file there before building:
+#
+#   cp docker/.dockerignore .dockerignore
+#
+# With Docker BuildKit (default since Docker 23.0), you can also
+# name this file Dockerfile.session.dockerignore and it will be
+# picked up automatically for that Dockerfile.
+
+# Dependencies (re-installed inside container)
+node_modules
+
+# Git
+.git
+.gitignore
+
+# Local state
+.browse
+/tmp/browse-*
+
+# Tests
+test
+vitest.config.*
+coverage
+
+# Development tooling
+.ulpi
+.claude
+.agents
+.vscode
+.idea
+
+# Documentation (not needed at runtime)
+*.md
+
+# Source code (only dist/browse.cjs is needed)
+src
+bin
+scripts
+tsconfig.json
+
+# Platform-specific (mobile/desktop)
+browse-android
+browse-ax
+bin/browse-ios-runner
+
+# Build artifacts not needed
+*.bun-build
+bun.lock
+.DS_Store
+
+# Docker files (avoid recursive context)
+docker/Dockerfile.*
+docker/docker-compose.*
+docker/.dockerignore

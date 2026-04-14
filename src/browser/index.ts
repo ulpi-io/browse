@@ -25,7 +25,10 @@ export { RefManager } from './refs';
 export {
   handleSnapshot,
   parseSnapshotArgs,
+  type SnapshotOptions,
 } from './snapshot';
+
+export { expandMacro, listMacros } from './macros';
 
 export {
   ensureHook,
@@ -44,3 +47,25 @@ export {
   getOwners,
   getContext,
 } from './react-devtools';
+
+export { isGoogleSearchUrl, isGoogleBlocked, formatGoogleBlockError } from './detection';
+
+export { dismissConsentDialog } from './consent';
+
+export { waitForPageReady, type ReadinessOptions } from './readiness';
+
+export { applySnapshotWindow, formatWindowMetadata, type WindowResult } from './snapshot-window';
+
+export { isGoogleSerp, extractGoogleSerp } from './serp';
+
+export { parseNetscapeCookieFile } from './cookie-import';
+
+export {
+  detectYtDlp,
+  hasYtDlp,
+  extractVideoId,
+  ytDlpTranscript,
+  parseJson3,
+  parseVtt,
+  parseXml,
+} from './youtube';

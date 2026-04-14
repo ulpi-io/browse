@@ -41,6 +41,7 @@ const cliFlags = {
   app: '' as string,
   platform: '' as string,
   device: '' as string,
+  camoufoxProfile: '' as string,
 };
 
 // Track whether --state has been applied (only sent on first command)
@@ -283,7 +284,7 @@ async function startServer(): Promise<ServerState> {
       : [nodeExec, '--import', 'tsx', SERVER_SCRIPT];
     // Chrome runtime needs a longer startup timeout (CDP connection + profile load)
     const startTimeout = cliFlags.runtime === 'chrome' ? String(DEFAULTS.CHROME_CDP_TIMEOUT_MS + 5000) : '';
-    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}), ...(cliFlags.runtime ? { BROWSE_RUNTIME: cliFlags.runtime } : {}), ...(startTimeout ? { BROWSE_START_TIMEOUT: startTimeout } : {}) } as NodeJS.ProcessEnv;
+    const spawnEnv = { ...process.env, __BROWSE_SERVER_MODE: '1', BROWSE_LOCAL_DIR: LOCAL_DIR, BROWSE_INSTANCE, ...(cliFlags.headed ? { BROWSE_HEADED: '1' } : {}), ...(cliFlags.cdpUrl ? { BROWSE_CDP_URL: cliFlags.cdpUrl } : {}), ...(cliFlags.profile ? { BROWSE_PROFILE: cliFlags.profile } : {}), ...(cliFlags.runtime ? { BROWSE_RUNTIME: cliFlags.runtime } : {}), ...(cliFlags.camoufoxProfile ? { BROWSE_CAMOUFOX_PROFILE: cliFlags.camoufoxProfile } : {}), ...(startTimeout ? { BROWSE_START_TIMEOUT: startTimeout } : {}) } as NodeJS.ProcessEnv;
     const proc = spawn(spawnCmd[0], spawnCmd.slice(1), {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: spawnEnv,
@@ -584,7 +585,7 @@ export async function main() {
     for (let i = 0; i < a.length; i++) {
       if (!a[i].startsWith('-')) return i;
       // Skip flag values for known value-flags
-      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime' || a[i] === '--app' || a[i] === '--platform' || a[i] === '--device') i++;
+      if (a[i] === '--session' || a[i] === '--allowed-domains' || a[i] === '--cdp' || a[i] === '--state' || a[i] === '--profile' || a[i] === '--provider' || a[i] === '--runtime' || a[i] === '--app' || a[i] === '--platform' || a[i] === '--device' || a[i] === '--camoufox-profile') i++;
     }
     return a.length;
   }
@@ -673,12 +674,24 @@ export async function main() {
   if (runtimeIdx !== -1 && runtimeIdx < findCommandIndex(args)) {
     runtimeName = args[runtimeIdx + 1];
     if (!runtimeName) {
-      console.error('Usage: browse --runtime <playwright|rebrowser|lightpanda> <command> [args...]');
+      console.error('Usage: browse --runtime <playwright|rebrowser|lightpanda|camoufox|chrome> <command> [args...]');
       process.exit(1);
     }
     args.splice(runtimeIdx, 2);
   }
   runtimeName = runtimeName || process.env.BROWSE_RUNTIME || undefined;
+
+  // Extract --camoufox-profile flag (only before command)
+  let camoufoxProfile: string | undefined;
+  const camoIdx = args.indexOf('--camoufox-profile');
+  if (camoIdx !== -1 && camoIdx < findCommandIndex(args)) {
+    camoufoxProfile = args[camoIdx + 1];
+    if (!camoufoxProfile) {
+      console.error('Usage: browse --camoufox-profile <name> <command> [args...]');
+      process.exit(1);
+    }
+    args.splice(camoIdx, 2);
+  }
 
   if (sessionId && profileName) {
     console.error('Cannot use --profile and --session together. Profiles use their own Chromium; sessions share one.');
@@ -889,6 +902,7 @@ export async function main() {
   cliFlags.app = appName || '';
   cliFlags.platform = platform || '';
   cliFlags.device = device || '';
+  cliFlags.camoufoxProfile = camoufoxProfile || '';
 
   // Resolve cloud provider CDP URL
   if (providerName) {

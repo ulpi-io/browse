@@ -24,6 +24,8 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import { fileURLToPath } from 'url';
+import { createProxyPool, type ProxyPool, type ProxyPoolConfig } from './proxy';
+import { ConcurrencyLimiter, withUserLimit } from './session/concurrency';
 
 function nodeServe(opts: { port: number; hostname: string; fetch: (req: Request) => Promise<Response> }) {
   const server = http.createServer(async (nodeReq, nodeRes) => {
@@ -55,7 +57,7 @@ function nodeServe(opts: { port: number; hostname: string; fetch: (req: Request)
 export { type LogEntry, type NetworkEntry };
 
 // ─── Auth (inline) ─────────────────────────────────────────────
-const AUTH_TOKEN = crypto.randomUUID();
+const AUTH_TOKEN = process.env.BROWSE_AUTH_TOKEN || crypto.randomUUID();
 const DEBUG_PORT = parseInt(process.env.BROWSE_DEBUG_PORT || '0', 10);
 const BROWSE_PORT = parseInt(process.env.BROWSE_PORT || '0', 10); // 0 = auto-scan
 const BROWSE_INSTANCE = process.env.BROWSE_INSTANCE || '';
@@ -135,9 +137,14 @@ let sessionManager: SessionManager | null = null;
 let browser: Browser | null = null;
 let profileSession: Session | null = null;
 let activeRuntime: BrowserRuntime | undefined;
+let proxyPool: ProxyPool | null = null;
 let isShuttingDown = false;
 let isRemoteBrowser = false;
+let tabReaperInterval: ReturnType<typeof setInterval> | null = null;
 const policyChecker = new PolicyChecker();
+const concurrencyLimiter = new ConcurrencyLimiter(
+  parseInt(process.env.BROWSE_MAX_CONCURRENT || String(DEFAULTS.MAX_CONCURRENT_PER_SESSION), 10)
+);
 
 /**
  * Narrow the session's AutomationTarget to BrowserTarget.
@@ -393,7 +400,18 @@ async function shutdown() {
   console.log('[browse] Shutting down...');
   clearInterval(flushInterval);
   clearInterval(sessionCleanupInterval);
+  if (tabReaperInterval) clearInterval(tabReaperInterval);
   flushAllBuffers(sessionManager, true);
+
+  // Drain concurrency limiter for all sessions
+  if (sessionManager) {
+    for (const session of sessionManager.getAllSessions()) {
+      concurrencyLimiter.drain(session.id);
+    }
+  }
+  if (profileSession) {
+    concurrencyLimiter.drain(profileSession.id);
+  }
 
   if (profileSession) {
     // Profile mode: close the persistent browser target (closes context + browser)
@@ -468,6 +486,33 @@ async function start() {
   activeRuntime = runtime;
   console.log(`[browse] Runtime: ${runtime.name}`);
 
+  // ─── Proxy Pool ──────────────────────────────────────────────
+  const proxyStrategy = process.env.BROWSE_PROXY_STRATEGY as 'round_robin' | 'backconnect' | undefined;
+  if (proxyStrategy) {
+    const poolConfig: ProxyPoolConfig = {
+      strategy: proxyStrategy,
+      host: process.env.BROWSE_PROXY_HOST || '',
+      ports: (process.env.BROWSE_PROXY_PORTS || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)),
+      username: process.env.BROWSE_PROXY_USERNAME || '',
+      password: process.env.BROWSE_PROXY_PASSWORD || '',
+      backconnectHost: process.env.BROWSE_PROXY_BACKCONNECT_HOST || '',
+      backconnectPort: parseInt(process.env.BROWSE_PROXY_BACKCONNECT_PORT || '7000', 10),
+      providerName: process.env.BROWSE_PROXY_PROVIDER || 'decodo',
+      country: process.env.BROWSE_PROXY_COUNTRY || '',
+      state: process.env.BROWSE_PROXY_STATE || '',
+      city: process.env.BROWSE_PROXY_CITY || '',
+      sessionDurationMinutes: DEFAULTS.PROXY_SESSION_DURATION_MINUTES,
+    };
+    proxyPool = createProxyPool(poolConfig);
+    if (proxyPool) {
+      console.log(`[browse] Proxy pool: ${proxyPool.mode} (${proxyPool.size} endpoints)`);
+    }
+    // BROWSE_PROXY_STRATEGY takes precedence over legacy BROWSE_PROXY
+    if (process.env.BROWSE_PROXY) {
+      console.log('[browse] Warning: BROWSE_PROXY_STRATEGY takes precedence over BROWSE_PROXY');
+    }
+  }
+
   // ─── Profile Mode vs Session Mode ────────────────────────────
   const profileName = process.env.BROWSE_PROFILE;
 
@@ -484,9 +529,9 @@ async function start() {
 
     const profileTarget = await createPersistentBrowserTarget(profileDir, () => {
       if (isShuttingDown) return;
-      console.error('[browse] Chromium disconnected (profile mode). Shutting down.');
+      console.error('[browse] Browser disconnected (profile mode). Shutting down.');
       shutdown();
-    });
+    }, runtime.chromium, runtime.launchOptions);
 
     const outputDir = path.join(LOCAL_DIR, 'sessions', profileName);
     fs.mkdirSync(outputDir, { recursive: true });
@@ -510,6 +555,9 @@ async function start() {
     // Normal mode: launch shared browser, session multiplexing via SessionManager
     const cdpUrl = process.env.BROWSE_CDP_URL;
     if (cdpUrl) {
+      if (runtime.name === 'camoufox') {
+        throw new Error('Camoufox (Firefox) does not support Chrome DevTools Protocol. Remove --cdp or use --runtime playwright.');
+      }
       // Connect to remote Chrome via CDP
       browser = await runtime.chromium.connectOverCDP(cdpUrl);
       isRemoteBrowser = true;
@@ -523,18 +571,39 @@ async function start() {
         shutdown();
       });
     } else {
-      // Launch local Chromium
-      const launchOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
+      // Launch local browser (Chromium or Firefox via camoufox)
+      const serverOptions: Record<string, any> = { headless: process.env.BROWSE_HEADED !== '1' };
       if (DEBUG_PORT > 0) {
-        launchOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
+        serverOptions.args = [`--remote-debugging-port=${DEBUG_PORT}`];
       }
-      const proxyServer = process.env.BROWSE_PROXY;
-      if (proxyServer) {
-        launchOptions.proxy = { server: proxyServer };
-        if (process.env.BROWSE_PROXY_BYPASS) {
-          launchOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+      // Browser-level proxy: pool launch proxy takes precedence over legacy BROWSE_PROXY
+      if (proxyPool) {
+        const launchProxy = proxyPool.getLaunchProxy();
+        serverOptions.proxy = { server: launchProxy.server, username: launchProxy.username, password: launchProxy.password };
+        console.log(`[browse] Browser launch proxy: ${launchProxy.server}`);
+      } else {
+        const proxyServer = process.env.BROWSE_PROXY;
+        if (proxyServer) {
+          serverOptions.proxy = { server: proxyServer };
+          if (process.env.BROWSE_PROXY_BYPASS) {
+            serverOptions.proxy.bypass = process.env.BROWSE_PROXY_BYPASS;
+          }
         }
       }
+
+      // Merge runtime-specific launch options (e.g. camoufox Firefox prefs)
+      const runtimeOpts = runtime.launchOptions ?? {};
+      const launchOptions: Record<string, any> = {
+        ...runtimeOpts,
+        ...serverOptions,
+        // Concatenate args arrays from both sources
+        args: [...(Array.isArray(runtimeOpts.args) ? runtimeOpts.args : []), ...(serverOptions.args ?? [])],
+        // Merge env objects (server env takes precedence)
+        ...(runtimeOpts.env || serverOptions.env
+          ? { env: { ...(runtimeOpts.env as Record<string, string> ?? {}), ...(serverOptions.env as Record<string, string> ?? {}) } }
+          : {}),
+      };
+      // Launch browser — fails fast, CLI handles restart on crash
       browser = await runtime.chromium.launch(launchOptions);
 
       // Chromium crash → clean shutdown (only for owned browser)
@@ -547,8 +616,21 @@ async function start() {
 
     const reuseContext = runtime.name === 'chrome';
     const { createBrowserTargetFactory } = await import('./session/target-factory');
-    sessionManager = new SessionManager(createBrowserTargetFactory(browser), LOCAL_DIR, reuseContext);
+    sessionManager = new SessionManager(createBrowserTargetFactory(browser!, proxyPool ?? undefined), LOCAL_DIR, reuseContext);
+    if (proxyPool) sessionManager.proxyPool = proxyPool;
   }
+
+  // ─── Tab Inactivity Reaper ──────────────────────────────────
+  const tabInactivityMs = parseInt(process.env.BROWSE_TAB_INACTIVITY_MS || String(DEFAULTS.TAB_INACTIVITY_MS), 10);
+  tabReaperInterval = setInterval(async () => {
+    if (isShuttingDown) return;
+    if (sessionManager) {
+      const closed = await sessionManager.reapInactiveTabs(tabInactivityMs);
+      if (closed.length > 0) {
+        console.log(`[browse] Reaped ${closed.length} idle tab(s): ${closed.join(', ')}`);
+      }
+    }
+  }, DEFAULTS.TAB_REAP_INTERVAL_MS);
 
   const startTime = Date.now();
   const server = nodeServe({
@@ -562,7 +644,6 @@ async function start() {
         let healthy: boolean;
         let sessionCount: number;
         if (profileSession) {
-          // Profile mode: check if the browser target context is still alive
           healthy = !isShuttingDown && profileSession.manager.isReady();
           sessionCount = 1;
         } else {
@@ -687,7 +768,33 @@ async function start() {
           maxOutput: parseInt(req.headers.get('x-browse-max-output') || '0', 10) || 0,
           contextLevel,
         };
-        return handleCommand(body, session, opts);
+
+        // Wrap dispatch in concurrency limiter + per-session command lock
+        const response = await withUserLimit(concurrencyLimiter, session.id, async () => {
+          const useLock = process.env.BROWSE_COMMAND_LOCK !== '0';
+          if (useLock && session.commandLock) {
+            await session.commandLock.acquire(DEFAULTS.COMMAND_LOCK_TIMEOUT_MS);
+          }
+          try {
+            const resp = await handleCommand(body, session, opts);
+
+            // Track tab activity for the reaper
+            if (sessionManager && session) {
+              const bt = trySessionBt(session);
+              if (bt) {
+                sessionManager.touchTab(session.id, bt.getActiveTabId());
+              }
+            }
+
+            return resp;
+          } finally {
+            if (useLock && session.commandLock) {
+              session.commandLock.release();
+            }
+          }
+        }, DEFAULTS.CONCURRENCY_QUEUE_TIMEOUT_MS);
+
+        return response;
       }
 
       return new Response('Not found', { status: 404 });

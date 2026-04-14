@@ -32,6 +32,9 @@ Before running any browse command, decide the correct target:
 |---|---|---|
 | Open a URL, test a website, scrape web content | **Browser** (default) | `browse goto <url>` |
 | Test a local dev server (`localhost`) | **Browser** | `browse goto http://localhost:3000` |
+| Browse a site that blocks bots (Cloudflare, Turnstile) | **Camoufox** | `browse --runtime camoufox --headed goto <url>` |
+| Browse with a specific camoufox fingerprint profile | **Camoufox** | `browse --runtime camoufox --camoufox-profile <name> --headed goto <url>` |
+| Search Google, YouTube, Amazon, etc. | **Browser** | `browse goto @google "query"` |
 | Interact with an iOS app (Settings, Safari, custom app) | **iOS Simulator** | `browse --platform ios --app <bundleId> <cmd>` |
 | Interact with an Android app (Settings, Chrome, custom app) | **Android Emulator** | `browse --platform android --app <package> <cmd>` |
 | Interact with a macOS desktop app (System Settings, TextEdit) | **macOS App** | `browse --app <name> <cmd>` |
@@ -40,11 +43,14 @@ Before running any browse command, decide the correct target:
 
 **Key rules:**
 - **No `--platform` or `--app` flag** → browser target (Chromium). Use `goto` to navigate.
+- **`--runtime camoufox --headed`** → anti-detection Firefox. Use when site blocks normal browsing. See `/browse-stealth` skill for Turnstile/CAPTCHA bypass patterns.
+- **`@macro` in goto URL** → search macro expansion. `browse goto @google "query"` expands to Google search URL. 14 macros: @google, @youtube, @amazon, @reddit, @wikipedia, @twitter, @yelp, @spotify, @netflix, @linkedin, @instagram, @tiktok, @twitch, @reddit_subreddit.
 - **`--app` without `--platform`** → macOS app automation. App must be running.
 - **`--platform ios --app`** → iOS Simulator. Use `browse sim start` first if not running.
 - **`--platform android --app`** → Android Emulator. Use `browse sim start` first if not running.
 - **Native app targets do NOT support**: `goto`, `js`, `eval`, `tabs`, `cookies`, `route`, `har`. These are browser-only.
 - **All targets support**: `snapshot`, `text`, `tap`, `fill`, `type`, `press`, `swipe`, `screenshot`.
+- **If a site blocks you**, switch to `--runtime camoufox --headed`. If still blocked, use `/browse-stealth` for the full Turnstile bypass pattern.
 - **If unsure which target to use, ASK the user.** Don't guess — wrong target = wasted work.
 
 ## Goal
@@ -212,6 +218,62 @@ Report:
 - Do not keep the full CLI manual inline in `SKILL.md`.
 - Do not run `browse handoff` without explicit user confirmation.
 - Do not save screenshots outside the browse session directories.
+
+## Runtime Selection
+
+By default, browse uses Chromium via Playwright. Alternative runtimes:
+
+| Runtime | Engine | Use case | Install |
+|---------|--------|----------|---------|
+| `playwright` (default) | Chromium | General browsing, testing | Included |
+| `camoufox` | Firefox (anti-detection) | Sites with bot detection | `npm install camoufox-js && npx camoufox-js fetch` |
+| `rebrowser` | Chromium (stealth) | Alternative stealth approach | `npm install rebrowser-playwright` |
+| `lightpanda` | Lightpanda | Fast headless rendering | See lightpanda.io |
+| `chrome` | System Chrome | Use real Chrome with extensions | Chrome must be installed |
+
+```bash
+browse --runtime camoufox --headed goto https://protected-site.com
+BROWSE_RUNTIME=camoufox browse goto https://example.com
+```
+
+## New Features
+
+### Search Macros
+```bash
+browse goto @google "best coffee beans"    # Google search
+browse goto @youtube "tutorial"            # YouTube search
+browse goto @amazon "laptop"               # Amazon search
+browse goto @reddit "programming"          # Reddit search
+```
+
+All macros: @google, @youtube, @amazon, @reddit, @reddit_subreddit, @wikipedia, @twitter, @yelp, @spotify, @netflix, @linkedin, @instagram, @tiktok, @twitch
+
+### Safety Flags (opt-in features)
+| Flag | Default | What it does |
+|------|---------|-------------|
+| `BROWSE_CONSENT_DISMISS=1` | OFF | Auto-dismiss cookie banners after navigation |
+| `BROWSE_CLICK_FORCE=1` or `--force` | OFF | Force-click through overlay interception |
+| `BROWSE_READINESS=1` or `--ready` | OFF | Wait for hydration after goto |
+| `BROWSE_SERP_FASTPATH=1` or `--serp` | OFF | Google SERP DOM extraction (fast, no refs) |
+| `BROWSE_COMMAND_LOCK=0` | ON | Disable per-session command serialization |
+| `BROWSE_CAMOUFOX_PROFILE=<name>` | OFF | Use a named camoufox profile (`.browse/camoufox-profiles/<name>.json`) |
+
+### New Commands
+| Command | Description |
+|---------|------------|
+| `images [sel] [--limit N] [--inline]` | List page images with src/alt/dimensions |
+| `youtube-transcript <url> [--lang en]` | Extract YouTube captions via yt-dlp or browser |
+| `schema` | Extract JSON-LD, Microdata, RDFa structured data (parsed JSON) |
+| `meta` | Extract page meta tags (title, description, canonical, OG, Twitter, hreflang, robots, viewport) |
+| `headings` | Extract H1-H6 heading hierarchy with counts and indented tree |
+| `profiles` | List available camoufox profiles from `.browse/camoufox-profiles/` |
+
+### Snapshot Windowing
+Large snapshots (>80K chars) are automatically paginated:
+```bash
+browse snapshot -i                     # first page
+browse snapshot -i --offset 500        # next page (line offset from previous output)
+```
 
 ## Output Contract
 

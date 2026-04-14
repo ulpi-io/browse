@@ -9,6 +9,11 @@
 import type { BrowserContext } from 'playwright';
 import type { BrowserTarget } from '../browser/target';
 import { resolveDevice, listDevices } from '../browser/emulation';
+import { expandMacro } from '../browser/macros';
+import { dismissConsentDialog } from '../browser/consent';
+import { isGoogleSearchUrl, isGoogleBlocked, formatGoogleBlockError } from '../browser/detection';
+import { waitForPageReady } from '../browser/readiness';
+import { handleSnapshot } from '../browser/snapshot';
 import type { DomainFilter } from '../security/domain-filter';
 import { DEFAULTS } from '../constants';
 import * as fs from 'fs';
@@ -154,14 +159,32 @@ export async function handleWriteCommand(
 
   switch (command) {
     case 'goto': {
-      const url = args[0];
+      const readyFlag = args.includes('--ready');
+      const filteredGotoArgs = args.filter(a => a !== '--ready');
+      let url = filteredGotoArgs[0];
       if (!url) throw new Error('Usage: browse goto <url>');
+      // TASK-004: Expand search macros (@google, @youtube, etc.)
+      const expanded = expandMacro(url);
+      if (expanded) url = expanded;
       if (domainFilter && !domainFilter.isAllowed(url)) {
         throw new Error(domainFilter.blockedMessage(url));
       }
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULTS.COMMAND_TIMEOUT_MS });
       const status = response?.status() || 'unknown';
-      return `Navigated to ${url} (${status})`;
+      // Readiness: opt-in via --ready flag or BROWSE_READINESS=1 env var
+      if (readyFlag || process.env.BROWSE_READINESS === '1') {
+        await waitForPageReady(page);
+      }
+      // TASK-005: Auto-dismiss consent dialogs (opt-in via BROWSE_CONSENT_DISMISS=1)
+      if (process.env.BROWSE_CONSENT_DISMISS === '1') {
+        await dismissConsentDialog(page).catch(() => {});  // best-effort, never fail goto
+      }
+      // TASK-006: Detect Google blocks — prepend warning, preserve response shape
+      const googleWarning = (isGoogleSearchUrl(url) || isGoogleSearchUrl(page.url()))
+        && await isGoogleBlocked(page)
+        ? '\n[warning] ' + formatGoogleBlockError(page.url())
+        : '';
+      return `Navigated to ${url} (${status})${googleWarning}`;
     }
 
     case 'back': {
@@ -182,10 +205,23 @@ export async function handleWriteCommand(
     case 'click': {
       const ifExists = args.includes('--if-exists');
       const ifVisible = args.includes('--if-visible');
-      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
+      // TASK-008: Parse --force for click fallback chain (opt-in)
+      const forceMode = args.includes('--force') || process.env.BROWSE_CLICK_FORCE === '1';
+      const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible' && a !== '--force');
       const selector = filteredArgs[0];
-      if (!selector) throw new Error('Usage: browse click <selector> [--if-exists] [--if-visible]');
-      const resolved = bm.resolveRef(selector);
+      if (!selector) throw new Error('Usage: browse click <selector> [--if-exists] [--if-visible] [--force]');
+      // TASK-007: Stale ref auto-refresh — if @ref not found, rebuild refs once and retry
+      let resolved: ReturnType<typeof bm.resolveRef>;
+      try {
+        resolved = bm.resolveRef(selector);
+      } catch (refErr: any) {
+        if (selector.startsWith('@') && refErr.message?.includes('not found')) {
+          await handleSnapshot(['-i'], bm);
+          resolved = bm.resolveRef(selector);  // retry once, throw if still not found
+        } else {
+          throw refErr;
+        }
+      }
       const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
       if (ifExists || ifVisible) {
         const count = await locator.count();
@@ -201,9 +237,15 @@ export async function handleWriteCommand(
         } else {
           await page.click(resolved.selector, { timeout: DEFAULTS.ACTION_TIMEOUT_MS });
         }
-      } catch (err) {
-        if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
-        throw err;
+      } catch (err: any) {
+        // TASK-008: Click fallback chain — only when --force or BROWSE_CLICK_FORCE=1
+        if (forceMode && (err.message?.includes('intercepts pointer events') || err.message?.includes('element is covered'))) {
+          // Force click bypasses actionability checks (overlay interception)
+          await locator.click({ force: true, timeout: 3000 });
+        } else {
+          if (!selector.startsWith('@')) await rethrowWithSuggestions(err, page, selector);
+          throw err;
+        }
       }
       // Wait briefly for any navigation/DOM update
       await page.waitForLoadState('domcontentloaded').catch(() => {});
@@ -216,7 +258,18 @@ export async function handleWriteCommand(
       const [selector, ...valueParts] = filteredArgs;
       const value = valueParts.join(' ');
       if (!selector) throw new Error('Usage: browse fill <selector> <value> [--if-empty]');
-      const resolved = bm.resolveRef(selector);
+      // TASK-007: Stale ref auto-refresh
+      let resolved: ReturnType<typeof bm.resolveRef>;
+      try {
+        resolved = bm.resolveRef(selector);
+      } catch (refErr: any) {
+        if (selector.startsWith('@') && refErr.message?.includes('not found')) {
+          await handleSnapshot(['-i'], bm);
+          resolved = bm.resolveRef(selector);
+        } else {
+          throw refErr;
+        }
+      }
       if (ifEmpty) {
         const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
         const currentValue = await locator.first().inputValue().catch(() => '');
@@ -254,7 +307,18 @@ export async function handleWriteCommand(
       const filteredArgs = args.filter(a => a !== '--if-exists' && a !== '--if-visible');
       const selector = filteredArgs[0];
       if (!selector) throw new Error('Usage: browse hover <selector> [--if-exists] [--if-visible]');
-      const resolved = bm.resolveRef(selector);
+      // TASK-007: Stale ref auto-refresh
+      let resolved: ReturnType<typeof bm.resolveRef>;
+      try {
+        resolved = bm.resolveRef(selector);
+      } catch (refErr: any) {
+        if (selector.startsWith('@') && refErr.message?.includes('not found')) {
+          await handleSnapshot(['-i'], bm);
+          resolved = bm.resolveRef(selector);
+        } else {
+          throw refErr;
+        }
+      }
       const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
       if (ifExists || ifVisible) {
         const count = await locator.count();
@@ -730,8 +794,10 @@ export async function handleWriteCommand(
     }
 
     case 'download': {
-      const [selector, savePath] = args;
-      if (!selector) throw new Error('Usage: browse download <selector> [path]');
+      const inline = args.includes('--inline');
+      const filteredArgs = args.filter(a => a !== '--inline');
+      const [selector, savePath] = filteredArgs;
+      if (!selector) throw new Error('Usage: browse download <selector> [path] [--inline]');
       const resolved = bm.resolveRef(selector);
       const locator = 'locator' in resolved ? resolved.locator : page.locator(resolved.selector);
       const [download] = await Promise.all([
@@ -740,6 +806,27 @@ export async function handleWriteCommand(
       ]);
       const finalPath = savePath || download.suggestedFilename();
       await download.saveAs(finalPath);
+
+      if (inline) {
+        const fileContent = fs.readFileSync(finalPath);
+        const base64 = fileContent.toString('base64');
+        const ext = finalPath.toLowerCase();
+        const mimeType = ext.endsWith('.pdf') ? 'application/pdf'
+          : ext.endsWith('.png') ? 'image/png'
+          : ext.endsWith('.jpg') || ext.endsWith('.jpeg') ? 'image/jpeg'
+          : ext.endsWith('.gif') ? 'image/gif'
+          : ext.endsWith('.svg') ? 'image/svg+xml'
+          : ext.endsWith('.webp') ? 'image/webp'
+          : ext.endsWith('.json') ? 'application/json'
+          : ext.endsWith('.csv') ? 'text/csv'
+          : ext.endsWith('.txt') ? 'text/plain'
+          : ext.endsWith('.html') || ext.endsWith('.htm') ? 'text/html'
+          : ext.endsWith('.xml') ? 'application/xml'
+          : ext.endsWith('.zip') ? 'application/zip'
+          : 'application/octet-stream';
+        return `Downloaded ${finalPath} (${fileContent.length} bytes)\ndata:${mimeType};base64,${base64}`;
+      }
+
       return `Downloaded: ${finalPath}`;
     }
 
@@ -1057,7 +1144,34 @@ export function registerWriteDefinitions(registry: CommandRegistry): void {
           }
         }
         const bt = ctx.target as BrowserTarget;
-        return handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
+        let result = await handleWriteCommand(spec.name, ctx.args, bt, ctx.domainFilter);
+
+        // Auto-rotate proxy on Google blocks (goto only)
+        if (spec.name === 'goto'
+            && result.includes('[warning]') && result.includes('blocked')
+            && ctx.session?.proxyPool?.canRotateSessions && ctx.sessionManager) {
+          const maxRetries = DEFAULTS.PROXY_MAX_ROTATE_RETRIES;
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            console.log(`[browse] Google block detected, rotating proxy (attempt ${attempt + 1}/${maxRetries})`);
+            // Close current session and recreate — gets new proxy from pool
+            // Preserve allowedDomains config so domain filter is restored
+            const sessionId = ctx.session.id;
+            const allowedDomains = ctx.session.allowedDomainsConfig;
+            await ctx.sessionManager.closeSession(sessionId);
+            const newSession = await ctx.sessionManager.getOrCreate(sessionId, allowedDomains);
+            const newBt = newSession.manager as BrowserTarget;
+            result = await handleWriteCommand('goto', ctx.args, newBt, ctx.domainFilter);
+            if (!result.includes('[warning]') || !result.includes('blocked')) {
+              result += '\n[info] Proxy rotated successfully after Google block.';
+              break;
+            }
+          }
+          if (result.includes('[warning]') && result.includes('blocked')) {
+            result += '\n[info] Proxy rotation exhausted — try a different proxy provider or country.';
+          }
+        }
+
+        return result;
       },
     });
   }
