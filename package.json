@@ -1,6 +1,6 @@
 {
   "name": "@ulpi/browse",
-  "version": "2.3.4",
+  "version": "2.4.0",
   "homepage": "https://browse.ulpi.io",
   "repository": {
     "type": "git",
@@ -9,7 +9,6 @@
   "dependencies": {
     "@lightpanda/browser": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@ulpi/browse": "^0.3.0",
     "better-sqlite3": "^11.0.0",
     "diff": "^7.0.0",
     "playwright": "^1.58.2",
