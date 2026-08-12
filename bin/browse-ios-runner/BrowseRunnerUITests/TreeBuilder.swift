@@ -196,21 +196,72 @@ enum TreeBuilder {
     static func resolveElement(in app: XCUIApplication, path: [Int]) -> XCUIElement? {
         guard !path.isEmpty else { return nil }
 
-        // Path[0] is always 0 (the root = app itself).
-        // Subsequent indices are child positions.
-        var current: XCUIElement = app
-        for childIndex in path.dropFirst() {
-            let children = current.children(matching: .any)
-            guard childIndex >= 0, childIndex < children.count else {
-                return nil
-            }
-            current = children.element(boundBy: childIndex)
+        // Resolution must walk whichever hierarchy `buildTree` used, because the
+        // snapshot and `children(matching:)` hierarchies are shaped differently.
+        guard let snapshot = try? app.snapshot() else {
+            return resolveByChildWalk(in: app, path: path)
         }
 
-        return current
+        var dict = snapshot.dictionaryRepresentation
+        for childIndex in path.dropFirst() {
+            guard let children = dict[.children] as? [[XCUIElement.AttributeName: Any]],
+                  childIndex >= 0, childIndex < children.count else {
+                return nil
+            }
+            dict = children[childIndex]
+        }
+
+        guard let frameDict = dict[.frame] as? [String: Double] else { return nil }
+        let targetMidX = (frameDict["X"] ?? 0) + (frameDict["Width"] ?? 0) / 2
+        let targetMidY = (frameDict["Y"] ?? 0) + (frameDict["Height"] ?? 0) / 2
+
+        let typeRaw = dict[.elementType] as? Int ?? 0
+        let elementType = XCUIElement.ElementType(rawValue: UInt(typeRaw)) ?? .any
+        let identifier = dict[.identifier] as? String ?? ""
+        let label = dict[.label] as? String ?? ""
+
+        // Narrow in the query itself and bind once: `element(boundBy:)` in a loop
+        // re-resolves the query on every iteration.
+        var query = app.descendants(matching: elementType)
+        if !identifier.isEmpty {
+            query = query.matching(NSPredicate(format: "identifier == %@", identifier))
+        } else if !label.isEmpty {
+            query = query.matching(NSPredicate(format: "label == %@", label))
+        }
+
+        var best: XCUIElement?
+        var bestDistance = Double.greatestFiniteMagnitude
+        for candidate in query.allElementsBoundByAccessibilityElement {
+            let f = candidate.frame
+            let distance = abs(Double(f.midX) - targetMidX) + abs(Double(f.midY) - targetMidY)
+            if distance < bestDistance {
+                bestDistance = distance
+                best = candidate
+            }
+        }
+
+        return bestDistance <= 2.0 ? best : nil
     }
 
     // MARK: - Private
+
+    /// Path resolution for the `walkElement` tree, which filters on `exists`.
+    private static func resolveByChildWalk(in app: XCUIApplication, path: [Int]) -> XCUIElement? {
+        var current: XCUIElement = app
+        for childIndex in path.dropFirst() {
+            let children = current.children(matching: .any)
+            var visible: [XCUIElement] = []
+            for i in 0..<children.count {
+                let child = children.element(boundBy: i)
+                if child.exists {
+                    visible.append(child)
+                }
+            }
+            guard childIndex >= 0, childIndex < visible.count else { return nil }
+            current = visible[childIndex]
+        }
+        return current
+    }
 
     /// Recursively walk an XCUIElement and its children.
     private static func walkElement(_ element: XCUIElement) -> RawIOSNode {
