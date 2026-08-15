@@ -1,6 +1,6 @@
 {
   "name": "@ulpi/browse",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "homepage": "https://browse.ulpi.io",
   "repository": {
     "type": "git",
@@ -29,7 +29,9 @@
   },
   "typesVersions": {
     "*": {
-      "*": ["dist/types/lib.d.ts"]
+      "*": [
+        "dist/types/lib.d.ts"
+      ]
     }
   },
   "bin": {

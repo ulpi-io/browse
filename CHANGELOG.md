@@ -1,5 +1,49 @@
 # Changelog
 
+## v2.4.1
+
+**iOS runner fix:**
+
+- Fixed `Element not found at path` when addressing deep elements in iOS apps — `buildTree` built the tree from `app.snapshot().dictionaryRepresentation` while `resolveElement` walked `children(matching: .any)`. The two hierarchies are shaped differently, so a path taken from the tree did not address the same node when replayed through the query API, and `fill` failed on drifted paths.
+- Element paths now resolve against the snapshot hierarchy, then map back to a live `XCUIElement` by element type, identifier or label, and nearest frame centre
+- Added a matching child-walk fallback for when `snapshot()` throws and `buildTree` falls back to `walkElement`
+- Applied to both tracked copies of the runner sources
+
+## v2.4.0
+
+**Camoufox runtime, SEO/AEO/GEO commands, cloud + SDK extraction:**
+
+**Camoufox — anti-detection browser runtime:**
+- Patched Firefox that spoofs navigator, canvas, WebGL, WebRTC, audio context, fonts, screen, and timezone at the C++ level — below the JavaScript surface where detection scripts look
+- Bypasses Cloudflare Turnstile, DataDome, PerimeterX, and fingerprint-based bot detection
+- `browse --runtime camoufox goto <url>` (requires `npm install camoufox-js`)
+- All 26 camoufox-js launch options configurable via `browse.json` or named profiles
+- Named profiles in `.browse/camoufox-profiles/<name>.json`, switched with `--camoufox-profile <name>`
+- `browse profiles` lists available profiles; names sanitized against path traversal
+- Config errors (missing profile, bad JSON) propagate instead of silently falling back to defaults
+
+**Three new read commands:**
+- `browse schema` — extract JSON-LD, Microdata, and RDFa structured data as parsed JSON
+- `browse meta` — title, description, canonical, Open Graph, Twitter Card, robots, viewport, full hreflang table
+- `browse headings` — H1-H6 hierarchy with count summary (`[h1:1 h2:7 h3:28]`) and indented tree
+- All three exposed via MCP as `browse_schema`, `browse_meta`, `browse_headings`
+
+**Five new skills:**
+- `/browse-seo` — full SEO audit with scored report and prioritized recommendations
+- `/browse-aeo` — Answer Engine Optimization: page audit + SERP analysis across 5 weighted dimensions
+- `/browse-geo` — Generative Engine Optimization: brand visibility across Google AI Overviews, Perplexity, ChatGPT Search
+- `/browse-config` — guided camoufox configuration generator
+- `/browse-stealth` — v2 rewrite against the new profile system
+
+**Runtime registry:** five engines via `--runtime` — `playwright` (default), `rebrowser`, `camoufox`, `lightpanda`, `chrome`
+
+## v2.3.4
+
+- `browse sim start --app <path>` now accepts a file path (`.app`, `.ipa`, `.apk`), not just a bundle ID or package name — extracts the identifier via `plutil`/`aapt2` and installs via `simctl`/`adb`. `.ipa` archives are unzipped to a temp dir, installed from `Payload/*.app`, then cleaned up. Existing bundle-ID usage is unchanged.
+- `browse-qa` skill with multi-flow generation for complex features
+- `browse-test-spec` skill for validating feature specs
+- Restructured skill folders; app file install documented in all skill decision tables and `commands.md`
+
 ## v2.3.3
 
 **Publish fixes:**
